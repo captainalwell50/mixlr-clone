@@ -132,4 +132,13 @@ class Event extends Model
             ->where('last_seen_at', '>=', now()->subSeconds($withinSeconds))
             ->count();
     }
+
+    public function artworkUrl(): ?string
+    {
+        if (is_string($this->artwork_path) && $this->artwork_path !== '') {
+            return $this->artwork_path;
+        }
+
+        return $this->organization?->artworkUrl();
+    }
 }

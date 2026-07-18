@@ -75,4 +75,14 @@ class Organization extends Model
         return $this->theme_color
             ?: data_get($this->branding_config, 'accent', '#3d9b7a');
     }
+
+    public function artworkUrl(): ?string
+    {
+        $path = $this->artwork_path;
+        if (! is_string($path) || $path === '') {
+            return null;
+        }
+
+        return $path;
+    }
 }

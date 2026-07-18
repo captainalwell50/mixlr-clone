@@ -1,4 +1,5 @@
 import './bootstrap';
+import { bindStagePlayer } from './player';
 
 const root = document.getElementById('listen-root');
 const audio = document.getElementById('stream-audio');
@@ -7,6 +8,8 @@ const statusEl = document.getElementById('stream-status');
 /** @type {import('hls.js').default | null} */
 let hls = null;
 let retryTimer = null;
+/** @type {ReturnType<typeof bindStagePlayer> | null} */
+let stagePlayer = null;
 
 function setStatus(message) {
     if (statusEl) {
@@ -34,11 +37,18 @@ async function startPlayback() {
         return;
     }
 
+    if (!stagePlayer) {
+        stagePlayer = bindStagePlayer(audio);
+    }
+
     const hlsUrl = root.dataset.hlsUrl;
     if (!hlsUrl) {
         setStatus('Playback URL missing.');
+        stagePlayer.disable();
         return;
     }
+
+    stagePlayer.enable();
 
     if (!isMarkedLive()) {
         setStatus('Waiting for the broadcast to start. This page will keep trying.');
@@ -62,7 +72,7 @@ async function startPlayback() {
         audio.addEventListener(
             'playing',
             () => {
-                setStatus(isMarkedLive() ? '' : 'Playing');
+                setStatus(isMarkedLive() ? 'On air' : 'Playing');
             },
             { once: true },
         );
@@ -78,6 +88,7 @@ async function startPlayback() {
 
     if (!Hls.isSupported()) {
         setStatus('This browser cannot play HLS.');
+        stagePlayer.disable();
         return;
     }
 
@@ -118,7 +129,7 @@ async function startPlayback() {
     audio.addEventListener(
         'playing',
         () => {
-            setStatus('');
+            setStatus('On air');
         },
         { once: true },
     );

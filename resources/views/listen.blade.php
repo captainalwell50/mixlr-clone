@@ -8,68 +8,74 @@
 
 @php
     $isLive = $stream->status === \App\Enums\StreamStatus::Live;
-    $accent = data_get($organization->branding_config, 'accent');
+    $theme = $organization->themeColor();
+    $artwork = $organization->artworkUrl();
 @endphp
 
 @section('content')
-    @if ($accent)
-        <style>:root { --stream-accent: {{ $accent }}; }</style>
-    @endif
+    <div class="stage" style="--stage-accent: {{ $theme }};">
+        <div
+            class="stage-atmosphere {{ $artwork ? 'has-art' : '' }}"
+            @if ($artwork) style="--stage-art: url('{{ $artwork }}')" @endif
+        ></div>
 
-    <div>
-        <p class="text-xs font-medium uppercase tracking-wide {{ $isLive ? 'text-emerald-400/90' : 'text-zinc-500' }}"
-            @if ($accent && $isLive) style="color: var(--stream-accent)" @endif>
-            @if ($isLive)
-                <span class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 align-middle"></span>
-                Live
-            @else
-                Offline
+        <div class="stage-content">
+            <header class="stage-top stage-rise">
+                <p class="stage-platform">{{ config('app.name', 'Live Mix Audio') }}</p>
+                <a href="{{ route('discover') }}" class="stage-top-link">Discover</a>
+            </header>
+
+            <p class="stage-status stage-rise-delay {{ $isLive ? '' : 'is-idle' }}">
+                @if ($isLive)
+                    <span class="live-dot inline-block h-1.5 w-1.5 rounded-full bg-current"></span>
+                @endif
+                {{ $isLive ? 'Live' : 'Offline' }}
+            </p>
+
+            <h1 class="stage-channel stage-rise-delay">
+                <a href="{{ route('channels.show', $organization) }}">{{ $organization->name }}</a>
+            </h1>
+            <p class="stage-title stage-rise-delay-2">{{ $stream->title }}</p>
+            @if ($stream->description)
+                <p class="stage-meta">{{ $stream->description }}</p>
             @endif
-        </p>
-        <h1 class="mt-1 text-2xl font-semibold text-white">{{ $stream->title }}</h1>
-        <p class="mt-1 text-sm text-zinc-400">{{ $organization->name }}</p>
-        @if ($stream->description)
-            <p class="mt-2 text-sm text-zinc-500">{{ $stream->description }}</p>
-        @endif
-    </div>
 
-    <audio id="stream-audio" class="w-full rounded-lg" controls playsinline></audio>
-    <p id="stream-status" class="text-sm text-zinc-500">
-        @if ($isLive)
-            Connecting…
-        @else
-            Waiting for the broadcast to start. This page will keep trying.
-        @endif
-    </p>
+            @include('partials.stage-player', [
+                'status' => $isLive ? 'Connecting…' : 'Waiting for the broadcast to start. This page will keep trying.',
+                'disabled' => ! $isLive,
+            ])
 
-    <div
-        id="listen-root"
-        data-hls-url="{{ $hlsUrl }}"
-        data-stream-status="{{ $stream->status->value }}"
-        class="hidden"
-    ></div>
-
-    @if ($stream->chat_enabled)
-        <section class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">Chat</h2>
-            <div id="chat-messages" class="mt-3 flex max-h-56 flex-col gap-2 overflow-y-auto"></div>
-            <form id="chat-form" class="mt-3 flex flex-col gap-2">
-                @guest
-                    <input id="chat-name" type="text" maxlength="80" placeholder="Your name" required
-                        class="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
-                @endguest
-                <div class="flex gap-2">
-                    <input id="chat-body" type="text" maxlength="500" placeholder="Say something…" required
-                        class="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
-                    <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">Send</button>
-                </div>
-            </form>
             <div
-                id="chat-root"
+                id="listen-root"
+                data-hls-url="{{ $hlsUrl }}"
+                data-stream-status="{{ $stream->status->value }}"
                 class="hidden"
-                data-poll-url="{{ route('chat.index', $stream) }}"
-                data-post-url="{{ route('chat.store', $stream) }}"
             ></div>
-        </section>
-    @endif
+
+            @if ($stream->chat_enabled)
+                <section class="stage-chat">
+                    <div class="stage-chat-panel">
+                        <h2 class="stage-chat-label">Chat</h2>
+                        <div id="chat-messages" class="stage-chat-messages"></div>
+                        <form id="chat-form" class="mt-3 flex flex-col gap-2">
+                            @guest
+                                <input id="chat-name" type="text" maxlength="80" placeholder="Your name" required
+                                    class="rounded-[0.65rem] border border-white/15 bg-black/40 px-3 py-2 text-sm text-[var(--stage-cream)]">
+                            @endguest
+                            <div class="stage-chat-input">
+                                <input id="chat-body" type="text" maxlength="500" placeholder="Say something…" required>
+                                <button type="submit">Send</button>
+                            </div>
+                        </form>
+                        <div
+                            id="chat-root"
+                            class="hidden"
+                            data-poll-url="{{ route('chat.index', $stream) }}"
+                            data-post-url="{{ route('chat.store', $stream) }}"
+                        ></div>
+                    </div>
+                </section>
+            @endif
+        </div>
+    </div>
 @endsection

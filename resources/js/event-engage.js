@@ -68,7 +68,7 @@ if (root) {
             const data = await res.json();
             heartBtn.dataset.hearted = '1';
             heartBtn.textContent = '♥ Hearted';
-            heartBtn.classList.add('text-rose-300');
+            heartBtn.classList.add('is-on', 'text-rose-300');
             if (heartCountEl && data.hearts != null) {
                 heartCountEl.textContent = String(data.hearts);
             }

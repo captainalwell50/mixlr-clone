@@ -7,14 +7,16 @@
     <meta name="theme-color" content="#3d9b7a">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
-    <title>@yield('title', config('app.name'))</title>
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=fraunces:500,600|source-sans-3:400,500,600" rel="stylesheet" />
+    <title>@yield('title', config('app.name', 'Live Mix Audio'))</title>
     @vite(['resources/css/app.css', 'resources/js/pwa.js'])
     @yield('vite')
 </head>
-<body class="min-h-screen bg-zinc-950 text-zinc-100 antialiased">
-    <nav class="border-b border-zinc-800 bg-zinc-900/80">
+<body class="min-h-screen bg-[#0c1210] font-sans text-[#e8ebe4] antialiased">
+    <nav class="border-b border-white/10 bg-[#141c18]/90 backdrop-blur">
         <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-3">
-            <a href="{{ url('/') }}" class="text-sm font-semibold text-white">{{ config('app.name') }}</a>
+            <a href="{{ url('/') }}" class="font-display text-base font-semibold text-[#e8ebe4]">{{ config('app.name', 'Live Mix Audio') }}</a>
             <div class="flex flex-wrap items-center gap-3 text-sm">
                 <a href="{{ route('discover') }}" class="text-zinc-400 hover:text-white">Discover</a>
                 <a href="{{ route('archive.index') }}" class="text-zinc-400 hover:text-white">Archive</a>

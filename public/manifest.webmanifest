@@ -1,11 +1,11 @@
 {
-  "name": "Church Live",
-  "short_name": "Live",
-  "description": "Live audio — listen and broadcast",
+  "name": "Live Mix Audio",
+  "short_name": "Live Mix",
+  "description": "Live Mix Audio — listen and broadcast",
   "start_url": "/discover",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#09090b",
+  "background_color": "#0c1210",
   "theme_color": "#3d9b7a",
   "icons": [
     {

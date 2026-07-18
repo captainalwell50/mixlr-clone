@@ -115,8 +115,9 @@ function startMeter(stream) {
             const pct = Math.min(100, Math.round(rms * 220));
             if (meterEl) {
                 meterEl.style.width = `${pct}%`;
-                meterEl.classList.toggle('bg-amber-400', pct > 75);
-                meterEl.classList.toggle('bg-emerald-500', pct <= 75);
+                meterEl.style.background = pct > 75
+                    ? '#d4a24c'
+                    : 'var(--stage-accent, #3d9b7a)';
             }
             if (meterLabel) {
                 meterLabel.textContent = pct > 2 ? 'Signal' : 'Silence';
