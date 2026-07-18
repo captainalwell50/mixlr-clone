@@ -1062,3 +1062,276 @@
     font-size: 0.65rem;
     color: color-mix(in srgb, var(--stage-muted) 80%, transparent);
 }
+
+/* ——— Operator console (admin / auth / dashboard) ——— */
+.console {
+    color: var(--stage-cream);
+}
+
+.console-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 4vw, 2.25rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--stage-cream);
+}
+
+.console-lead {
+    margin-top: 0.4rem;
+    font-size: 0.95rem;
+    color: var(--stage-muted);
+}
+
+.console-head {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+@media (min-width: 640px) {
+    .console-head {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
+
+.console-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.console-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.65rem;
+    padding: 0.6rem 1.05rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+    border: 0;
+    cursor: pointer;
+}
+
+.console-btn-primary {
+    background: var(--color-accent);
+    color: white;
+}
+.console-btn-primary:hover {
+    filter: brightness(1.06);
+}
+
+.console-btn-ghost {
+    background: transparent;
+    color: var(--stage-cream);
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 16%, transparent);
+}
+.console-btn-ghost:hover {
+    background: color-mix(in srgb, var(--stage-cream) 6%, transparent);
+}
+
+.console-table {
+    margin-top: 2rem;
+    overflow: hidden;
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 10%, transparent);
+    background: color-mix(in srgb, var(--color-ink-elevated) 55%, transparent);
+}
+
+.console-table table {
+    width: 100%;
+    min-width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.875rem;
+}
+
+.console-table thead {
+    background: color-mix(in srgb, var(--color-ink) 70%, transparent);
+    color: var(--stage-muted);
+}
+
+.console-table th {
+    padding: 0.75rem 1rem;
+    font-weight: 500;
+}
+
+.console-table td {
+    padding: 0.75rem 1rem;
+    border-top: 1px solid color-mix(in srgb, var(--stage-cream) 8%, transparent);
+}
+
+.console-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--stage-cream) 3%, transparent);
+}
+
+.console-pill {
+    display: inline-flex;
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: lowercase;
+    background: color-mix(in srgb, var(--stage-cream) 10%, transparent);
+    color: var(--stage-muted);
+}
+
+.console-pill.is-live {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent);
+}
+
+.console-stat {
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 10%, transparent);
+    background: color-mix(in srgb, var(--color-ink-elevated) 50%, transparent);
+    padding: 1rem 1.15rem;
+}
+
+.console-stat dt {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--stage-muted);
+}
+
+.console-stat dd {
+    margin-top: 0.35rem;
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--stage-cream);
+}
+
+.console-link {
+    color: var(--color-accent);
+    text-decoration: none;
+}
+.console-link:hover {
+    filter: brightness(1.1);
+}
+
+.console-muted-link {
+    color: var(--stage-muted);
+    text-decoration: none;
+}
+.console-muted-link:hover {
+    color: var(--stage-cream);
+}
+
+.console label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--stage-cream) 85%, transparent);
+}
+
+.console input[type='text'],
+.console input[type='email'],
+.console input[type='password'],
+.console input[type='url'],
+.console input[type='number'],
+.console input[type='datetime-local'],
+.console input[type='search'],
+.console select,
+.console textarea {
+    margin-top: 0.35rem;
+    width: 100%;
+    border-radius: 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 14%, transparent);
+    background: color-mix(in srgb, var(--color-ink-elevated) 80%, transparent);
+    padding: 0.6rem 0.8rem;
+    font-size: 0.875rem;
+    color: var(--stage-cream);
+    outline: none;
+}
+
+.console input:focus,
+.console select:focus,
+.console textarea:focus {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.console input[type='checkbox'] {
+    border-radius: 0.25rem;
+    border-color: color-mix(in srgb, var(--stage-cream) 25%, transparent);
+    background: var(--color-ink-elevated);
+    color: var(--color-accent);
+}
+
+.console button[type='submit'],
+.console .bg-emerald-600 {
+    background: var(--color-accent) !important;
+}
+
+.console .text-emerald-400,
+.console .text-emerald-300,
+.console a.text-emerald-400 {
+    color: var(--color-accent) !important;
+}
+
+.console-panel {
+    margin-top: 2rem;
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 10%, transparent);
+    background: color-mix(in srgb, var(--color-ink-elevated) 45%, transparent);
+    padding: 1.25rem;
+}
+
+.app-nav {
+    border-bottom: 1px solid color-mix(in srgb, var(--stage-cream) 10%, transparent);
+    background: color-mix(in srgb, var(--color-ink-elevated) 92%, transparent);
+    backdrop-filter: blur(10px);
+}
+
+.app-nav-inner {
+    margin: 0 auto;
+    max-width: 64rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 1.25rem;
+}
+
+.app-nav a {
+    text-decoration: none;
+}
+
+.app-nav-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.85rem;
+    font-size: 0.875rem;
+}
+
+.app-nav-links a {
+    color: var(--stage-muted);
+}
+.app-nav-links a:hover {
+    color: var(--stage-cream);
+}
+
+.app-nav-links .nav-accent {
+    color: var(--color-accent);
+}
+.app-nav-links .nav-accent:hover {
+    filter: brightness(1.08);
+}
+
+.app-nav-links .nav-warn {
+    color: #d4a24c;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+}
+.app-nav-links .nav-warn:hover {
+    filter: brightness(1.08);
+}

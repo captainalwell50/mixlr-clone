@@ -13,47 +13,50 @@
     @vite(['resources/css/app.css', 'resources/js/pwa.js'])
     @yield('vite')
 </head>
-<body class="min-h-screen bg-[#0c1210] font-sans text-[#e8ebe4] antialiased">
-    <nav class="border-b border-white/10 bg-[#141c18]/90 backdrop-blur">
-        <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-3">
-            <a href="{{ url('/') }}" class="font-display text-base font-semibold text-[#e8ebe4]">{{ config('app.name', 'Live Mix Audio') }}</a>
-            <div class="flex flex-wrap items-center gap-3 text-sm">
-                <a href="{{ route('discover') }}" class="text-zinc-400 hover:text-white">Discover</a>
-                <a href="{{ route('archive.index') }}" class="text-zinc-400 hover:text-white">Archive</a>
+<body class="min-h-screen bg-[var(--color-ink)] font-sans text-[var(--stage-cream)] antialiased">
+    <nav class="app-nav">
+        <div class="app-nav-inner">
+            <a href="{{ url('/') }}" class="font-display text-base font-semibold text-[var(--stage-cream)]">
+                {{ config('app.name', 'Live Mix Audio') }}
+            </a>
+            <div class="app-nav-links">
+                <a href="{{ route('discover') }}">Discover</a>
+                <a href="{{ route('archive.index') }}">Archive</a>
                 @auth
                     @if(auth()->user()->is_admin || auth()->user()->manageableOrganizations()->exists())
-                        <a href="{{ route('admin.events.index') }}" class="text-zinc-400 hover:text-white">Events</a>
-                        <a href="{{ route('admin.analytics.index') }}" class="text-zinc-400 hover:text-white">Analytics</a>
-                        <a href="{{ route('admin.organizations.index') }}" class="text-zinc-400 hover:text-white">Channels</a>
-                        <a href="{{ route('admin.streams.index') }}" class="text-zinc-400 hover:text-white">Streams</a>
+                        <a href="{{ route('admin.events.index') }}">Events</a>
+                        <a href="{{ route('admin.analytics.index') }}">Analytics</a>
+                        <a href="{{ route('admin.organizations.index') }}">Channels</a>
+                        <a href="{{ route('admin.streams.index') }}">Streams</a>
                     @endif
-                    <span class="text-zinc-500">{{ auth()->user()->name }}</span>
+                    <span class="text-[var(--stage-muted)]">{{ auth()->user()->name }}</span>
                     <form method="POST" action="{{ route('logout') }}" class="inline">
                         @csrf
-                        <button type="submit" class="text-amber-400 hover:text-amber-300">Log out</button>
+                        <button type="submit" class="nav-warn">Log out</button>
                     </form>
                 @else
-                    <a href="{{ route('login') }}" class="text-zinc-400 hover:text-white">Log in</a>
+                    <a href="{{ route('login') }}">Log in</a>
                     @if (config('app.registration_enabled') && Route::has('register'))
-                        <a href="{{ route('register') }}" class="text-emerald-400 hover:text-emerald-300">Register</a>
+                        <a href="{{ route('register') }}" class="nav-accent">Register</a>
                     @endif
                 @endauth
             </div>
         </div>
     </nav>
 
-    <main class="@yield('main_class', 'mx-auto max-w-5xl px-4 py-8')">
+    <main class="@yield('main_class', 'console mx-auto max-w-5xl px-4 py-8')">
         @if (session('status'))
-            <div class="mx-auto mb-6 max-w-5xl px-4 pt-6">
-                <div class="rounded-lg border border-emerald-800 bg-emerald-950/50 px-4 py-3 text-sm text-emerald-200">
+            <div class="mx-auto mb-6 max-w-5xl px-4 pt-2">
+                <div class="rounded-lg border px-4 py-3 text-sm text-[var(--stage-cream)]"
+                    style="border-color: color-mix(in srgb, var(--color-accent) 35%, transparent); background: color-mix(in srgb, var(--color-accent) 12%, transparent);">
                     {{ session('status') }}
                 </div>
             </div>
         @endif
 
         @if ($errors->any())
-            <div class="mx-auto mb-6 max-w-5xl px-4 pt-6">
-                <div class="rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+            <div class="mx-auto mb-6 max-w-5xl px-4 pt-2">
+                <div class="rounded-lg border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
                     <ul class="list-inside list-disc space-y-1">
                         @foreach ($errors->all() as $error)
                             <li>{{ $error }}</li>

@@ -5,21 +5,21 @@
 @section('content')
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-            <h1 class="text-2xl font-semibold text-white">{{ $event->title }}</h1>
-            <p class="mt-1 text-sm text-zinc-400">{{ $event->organization->name }} · {{ $event->status->value }}</p>
+            <h1 class="console-title">{{ $event->title }}</h1>
+            <p class="console-lead">{{ $event->organization->name }} · {{ $event->status->value }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
             @if ($event->status->value !== 'live')
                 <form method="POST" action="{{ route('admin.events.go-live', $event) }}">
                     @csrf
-                    <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Go live</button>
+                    <button type="submit" class="console-btn console-btn-primary">Go live</button>
                 </form>
             @else
                 <form method="POST" action="{{ route('admin.events.end', $event) }}">
                     @csrf
                     <button type="submit" class="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-semibold text-white">End event</button>
                 </form>
-                <a href="{{ route('admin.streams.studio', $stream) }}" target="_blank" class="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-white">Open studio</a>
+                <a href="{{ route('admin.streams.studio', $stream) }}" target="_blank" class="console-btn console-btn-ghost">Open studio</a>
             @endif
         </div>
     </div>
@@ -82,8 +82,8 @@
             <input type="checkbox" name="show_listener_count" value="1" @checked(old('show_listener_count', $event->show_listener_count)) class="rounded border-zinc-600"> Show listener count
         </label>
         <div class="flex gap-3">
-            <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Save</button>
-            <a href="{{ route('admin.events.index') }}" class="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300">Back</a>
+            <button type="submit" class="console-btn console-btn-primary">Save</button>
+            <a href="{{ route('admin.events.index') }}" class="console-btn console-btn-ghost">Back</a>
         </div>
     </form>
 

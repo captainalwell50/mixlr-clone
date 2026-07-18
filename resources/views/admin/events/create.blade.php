@@ -3,8 +3,8 @@
 @section('title', 'Schedule event')
 
 @section('content')
-    <h1 class="text-2xl font-semibold text-white">Schedule event</h1>
-    <p class="mt-1 text-sm text-zinc-400">One link for promotion that becomes the live page when you go on air.</p>
+    <h1 class="console-title">Schedule event</h1>
+    <p class="console-lead">One link for promotion that becomes the live page when you go on air.</p>
 
     <form method="POST" action="{{ route('admin.events.store') }}" class="mt-8 max-w-lg space-y-4">
         @csrf
@@ -48,8 +48,8 @@
             <input type="checkbox" name="show_listener_count" value="1" checked class="rounded border-zinc-600"> Show listener count
         </label>
         <div class="flex gap-3">
-            <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Schedule</button>
-            <a href="{{ route('admin.events.index') }}" class="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300">Cancel</a>
+            <button type="submit" class="console-btn console-btn-primary">Schedule</button>
+            <a href="{{ route('admin.events.index') }}" class="console-btn console-btn-ghost">Cancel</a>
         </div>
     </form>
 @endsection

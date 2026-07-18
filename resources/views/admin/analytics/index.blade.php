@@ -3,54 +3,62 @@
 @section('title', 'Analytics')
 
 @section('content')
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 class="text-2xl font-semibold text-white">Analytics</h1>
-        <div class="flex gap-2 text-sm">
+    <div class="console-head">
+        <div>
+            <p class="site-section-label">Operator</p>
+            <h1 class="console-title mt-2">Analytics</h1>
+            <p class="console-lead">Listener reach for your recent events.</p>
+        </div>
+        <div class="console-actions">
             @foreach ([7, 30, 90] as $d)
                 <a href="{{ route('admin.analytics.index', ['days' => $d]) }}"
-                    class="rounded-lg px-3 py-1.5 {{ $days === $d ? 'bg-emerald-600 text-white' : 'border border-zinc-700 text-zinc-400' }}">{{ $d }}d</a>
+                    class="console-btn {{ $days === $d ? 'console-btn-primary' : 'console-btn-ghost' }}">{{ $d }}d</a>
             @endforeach
         </div>
     </div>
 
-    <div class="mt-8 grid gap-4 sm:grid-cols-3">
-        <div class="rounded-xl border border-zinc-800 p-4">
-            <p class="text-xs uppercase tracking-wide text-zinc-500">Unique listeners</p>
-            <p class="mt-1 text-2xl font-semibold text-white">{{ number_format($uniqueListeners) }}</p>
+    <dl class="mt-8 grid gap-4 sm:grid-cols-3">
+        <div class="console-stat">
+            <dt>Unique listeners</dt>
+            <dd>{{ number_format($uniqueListeners) }}</dd>
         </div>
-        <div class="rounded-xl border border-zinc-800 p-4">
-            <p class="text-xs uppercase tracking-wide text-zinc-500">Hearts</p>
-            <p class="mt-1 text-2xl font-semibold text-white">{{ number_format($hearts) }}</p>
+        <div class="console-stat">
+            <dt>Hearts</dt>
+            <dd>{{ number_format($hearts) }}</dd>
         </div>
-        <div class="rounded-xl border border-zinc-800 p-4">
-            <p class="text-xs uppercase tracking-wide text-zinc-500">Chat messages</p>
-            <p class="mt-1 text-2xl font-semibold text-white">{{ number_format($chats) }}</p>
+        <div class="console-stat">
+            <dt>Chat messages</dt>
+            <dd>{{ number_format($chats) }}</dd>
         </div>
-    </div>
+    </dl>
 
-    <div class="mt-10 overflow-hidden rounded-xl border border-zinc-800">
-        <table class="min-w-full divide-y divide-zinc-800 text-left text-sm">
-            <thead class="bg-zinc-900/80 text-zinc-400">
+    <div class="console-table">
+        <table>
+            <thead>
                 <tr>
-                    <th class="px-4 py-3">Event</th>
-                    <th class="px-4 py-3">Channel</th>
-                    <th class="px-4 py-3">Status</th>
-                    <th class="px-4 py-3">Unique listeners</th>
+                    <th>Event</th>
+                    <th>Channel</th>
+                    <th>Status</th>
+                    <th>Unique listeners</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-zinc-800">
+            <tbody>
                 @forelse ($events as $event)
                     <tr>
-                        <td class="px-4 py-3 text-white">
-                            <a href="{{ route('admin.events.edit', $event) }}" class="hover:text-emerald-300">{{ $event->title }}</a>
+                        <td>
+                            <a href="{{ route('admin.events.edit', $event) }}" class="console-link">{{ $event->title }}</a>
                         </td>
-                        <td class="px-4 py-3 text-zinc-400">{{ $event->organization->name }}</td>
-                        <td class="px-4 py-3 text-zinc-500">{{ $event->status->value }}</td>
-                        <td class="px-4 py-3 text-zinc-300">{{ $perEvent[$event->id] ?? 0 }}</td>
+                        <td class="text-[var(--stage-muted)]">{{ $event->organization->name }}</td>
+                        <td>
+                            <span class="console-pill {{ $event->status->value === 'live' ? 'is-live' : '' }}">
+                                {{ $event->status->value }}
+                            </span>
+                        </td>
+                        <td>{{ $perEvent[$event->id] ?? 0 }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="4" class="px-4 py-8 text-center text-zinc-500">No events in this period.</td>
+                        <td colspan="4" class="py-8 text-center text-[var(--stage-muted)]">No events in this period.</td>
                     </tr>
                 @endforelse
             </tbody>

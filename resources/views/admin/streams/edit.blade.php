@@ -5,8 +5,8 @@
 @section('content')
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-            <h1 class="text-2xl font-semibold text-white">{{ $stream->title }}</h1>
-            <p class="mt-1 text-sm text-zinc-400">{{ $stream->organization->name }}</p>
+            <h1 class="console-title">{{ $stream->title }}</h1>
+            <p class="console-lead">{{ $stream->organization->name }}</p>
         </div>
         <span class="inline-flex w-fit items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide
             {{ $stream->status === \App\Enums\StreamStatus::Live ? 'bg-emerald-950 text-emerald-300 ring-1 ring-emerald-800' : 'bg-zinc-800 text-zinc-400 ring-1 ring-zinc-700' }}">
@@ -128,8 +128,8 @@
             Enable live chat
         </label>
         <div class="flex gap-3">
-            <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">Save</button>
-            <a href="{{ route('admin.streams.index') }}" class="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">Back</a>
+            <button type="submit" class="console-btn console-btn-primary">Save</button>
+            <a href="{{ route('admin.streams.index') }}" class="console-btn console-btn-ghost hover:bg-zinc-800">Back</a>
         </div>
     </form>
 

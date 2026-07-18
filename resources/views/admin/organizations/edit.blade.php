@@ -4,7 +4,7 @@
 
 @section('content')
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 class="text-2xl font-semibold text-white">Channel branding</h1>
+        <h1 class="console-title">Channel branding</h1>
         <a href="{{ route('channels.show', $organization) }}" target="_blank" class="text-sm text-emerald-400 hover:text-emerald-300">View channel →</a>
     </div>
 
@@ -53,9 +53,9 @@
             Public channel (discoverable)
         </label>
         <div class="flex gap-3">
-            <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">Save</button>
-            <a href="{{ route('admin.organizations.members', $organization) }}" class="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300">Members</a>
-            <a href="{{ route('admin.organizations.index') }}" class="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300">Back</a>
+            <button type="submit" class="console-btn console-btn-primary">Save</button>
+            <a href="{{ route('admin.organizations.members', $organization) }}" class="console-btn console-btn-ghost">Members</a>
+            <a href="{{ route('admin.organizations.index') }}" class="console-btn console-btn-ghost">Back</a>
         </div>
     </form>
 @endsection

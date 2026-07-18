@@ -5,8 +5,8 @@
 @section('content')
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <h1 class="text-2xl font-semibold text-white">Members</h1>
-            <p class="mt-1 text-sm text-zinc-400">{{ $organization->name }}</p>
+            <h1 class="console-title">Members</h1>
+            <p class="console-lead">{{ $organization->name }}</p>
         </div>
         <a href="{{ route('admin.organizations.edit', $organization) }}" class="text-sm text-zinc-400 hover:text-white">Edit org</a>
     </div>
@@ -32,7 +32,7 @@
                 <option value="owner">owner — manage members + streams</option>
             </select>
         </div>
-        <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">Add</button>
+        <button type="submit" class="console-btn console-btn-primary">Add</button>
     </form>
 
     <div class="mt-10 overflow-hidden rounded-xl border border-zinc-800">
