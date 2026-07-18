@@ -16,5 +16,17 @@ class ExampleTest extends TestCase
 
         $response->assertOk();
         $response->assertSee(config('app.name'), false);
+        $response->assertSee('When the room gathers', false);
+        $response->assertDontSee('From link to live stage in three beats', false);
+    }
+
+    public function test_how_it_works_page_is_available(): void
+    {
+        $response = $this->get(route('how-it-works'));
+
+        $response->assertOk();
+        $response->assertSee('How it works', false);
+        $response->assertSee('Schedule the event', false);
+        $response->assertSee('Go live from Studio', false);
     }
 }

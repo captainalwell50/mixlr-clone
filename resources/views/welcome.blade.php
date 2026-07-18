@@ -27,6 +27,7 @@
             </a>
 
             <nav class="mkt-nav" aria-label="Primary">
+                <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
                 <a href="{{ route('archive.index') }}">Archive</a>
                 @auth
@@ -126,58 +127,33 @@
         </div>
     </section>
 
-    <section class="mkt-section" id="how-it-works">
-        <div class="mkt-section-inner">
-            <p class="site-section-label">How it works</p>
-            <h2 class="mkt-section-title">From link to live stage in three beats.</h2>
-            <p class="mkt-section-lede">No video stack. No clutter. Just audio people can join from any phone.</p>
-            <ol class="mkt-steps">
-                <li>
-                    <span class="mkt-step-num">01</span>
-                    <h3>Create the event</h3>
-                    <p>Set a title, artwork, and go-live time. One shareable URL is your stage door.</p>
-                </li>
-                <li>
-                    <span class="mkt-step-num">02</span>
-                    <h3>Broadcast clean</h3>
-                    <p>Open Studio, hit live, and stream. Listeners hear you with a dedicated listen UI — not a video player with the camera off.</p>
-                </li>
-                <li>
-                    <span class="mkt-step-num">03</span>
-                    <h3>Keep the archive</h3>
-                    <p>Recordings land in Archive so latecomers and midweek listeners can catch up.</p>
-                </li>
-            </ol>
-        </div>
-    </section>
-
-    <section class="mkt-section mkt-section-alt" id="for-churches">
-        <div class="mkt-section-inner mkt-split">
-            <div>
-                <p class="site-section-label">For churches</p>
-                <h2 class="mkt-section-title">Built for rooms that gather — online and in the pews.</h2>
-                <p class="mkt-section-lede">
-                    Channels for each campus or ministry, event pages your congregation can bookmark, and a listen experience that feels like presence — chat, hearts, and an installable home-screen app.
-                </p>
-                <div class="mkt-cta">
-                    <a href="{{ route('discover') }}" class="site-btn site-btn-primary">Browse channels</a>
-                    <a href="{{ route('archive.index') }}" class="site-btn site-btn-ghost">Open archive</a>
-                </div>
+    <section class="mkt-demo" aria-label="Live stage demonstration">
+        <div class="mkt-demo-scene" aria-hidden="true">
+            <div class="mkt-demo-haze"></div>
+            <div class="mkt-demo-beam mkt-demo-beam-a"></div>
+            <div class="mkt-demo-beam mkt-demo-beam-b"></div>
+            <div class="mkt-demo-beam mkt-demo-beam-c"></div>
+            <div class="mkt-demo-stage-floor"></div>
+            <div class="mkt-demo-silhouettes">
+                <span class="mkt-demo-person mkt-demo-p1"></span>
+                <span class="mkt-demo-person mkt-demo-p2"></span>
+                <span class="mkt-demo-person mkt-demo-p3"></span>
+                <span class="mkt-demo-person mkt-demo-p4"></span>
+                <span class="mkt-demo-person mkt-demo-p5"></span>
+                <span class="mkt-demo-person mkt-demo-p6"></span>
+                <span class="mkt-demo-person mkt-demo-p7"></span>
+                <span class="mkt-demo-person mkt-demo-p8"></span>
             </div>
-            <ul class="mkt-points">
-                <li>
-                    <strong>One link per gathering</strong>
-                    <span>Share Sunday once. It stays the stage for chat and audio.</span>
-                </li>
-                <li>
-                    <strong>Presence without video pressure</strong>
-                    <span>Hearts and chat keep remote members connected without a camera feed.</span>
-                </li>
-                <li>
-                    <strong>Branded listen pages</strong>
-                    <span>Accent color and artwork follow your channel — not a generic player skin.</span>
-                </li>
-            </ul>
+            <div class="mkt-demo-pulpit"></div>
+            <div class="mkt-demo-glow-ring"></div>
+        </div>
+        <div class="mkt-demo-copy">
+            <h2 class="mkt-demo-title">When the room gathers, the stage goes live.</h2>
+            <p class="mkt-demo-lede">One event link becomes the shared listen experience — for the hall and everyone joining from home.</p>
+            <div class="mkt-cta">
+                <a href="{{ route('discover') }}" class="site-btn site-btn-primary">Discover live</a>
+                <a href="{{ route('how-it-works') }}" class="site-btn site-btn-ghost">How it works</a>
+            </div>
         </div>
     </section>
 
@@ -198,6 +174,7 @@
             </a>
             <p>Channels, events, and a stage made for listening.</p>
             <nav aria-label="Footer">
+                <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
                 <a href="{{ route('archive.index') }}">Archive</a>
                 @auth

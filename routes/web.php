@@ -23,6 +23,10 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+Route::get('/how-it-works', function () {
+    return view('how-it-works');
+})->name('how-it-works');
+
 Route::get('/discover', [DiscoverController::class, 'index'])->name('discover');
 
 Route::get('/c/{organization}', [ChannelController::class, 'show'])->name('channels.show');

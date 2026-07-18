@@ -20,6 +20,7 @@
                 {{ config('app.name', 'Live Mix Audio') }}
             </a>
             <div class="app-nav-links">
+                <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
                 <a href="{{ route('archive.index') }}">Archive</a>
                 @auth
