@@ -25,17 +25,26 @@ function setStatus(message) {
     }
 }
 
+function httpsStudioUrl() {
+    const u = new URL(window.location.href);
+    u.protocol = 'https:';
+    return u.href;
+}
+
 function friendlyError(err) {
     if (!(err instanceof Error)) {
         return 'Could not go live.';
     }
     const name = err.name || '';
     const msg = err.message || '';
+    if (!window.isSecureContext || /secure origin|insecure/i.test(msg)) {
+        return `Studio needs HTTPS for the microphone. Open ${httpsStudioUrl()}`;
+    }
     if (name === 'NotAllowedError' || /permission|denied/i.test(msg)) {
         return 'Microphone permission denied. Allow the mic in your browser settings and try again.';
     }
-    if (name === 'NotFoundError' || /device/i.test(msg)) {
-        return 'No microphone found. Plug in an interface or choose another input.';
+    if (name === 'NotFoundError' || /requested device not found/i.test(msg)) {
+        return 'Could not open that microphone. Pick another input, or reload and allow mic access.';
     }
     if (/WHIP|403|401|forbidden/i.test(msg)) {
         return 'Publish rejected. Check that this stream still exists and the studio link is valid.';
@@ -44,6 +53,21 @@ function friendlyError(err) {
         return 'Could not reach the media server (ICE/network). On Azure, confirm UDP 8189 and webrtcAdditionalHosts.';
     }
     return msg || 'Could not go live.';
+}
+
+async function openMicrophone() {
+    const preferredId = audioSelect?.value || '';
+    if (preferredId) {
+        try {
+            return await navigator.mediaDevices.getUserMedia({
+                audio: { deviceId: { ideal: preferredId } },
+                video: false,
+            });
+        } catch {
+            /* fall through to default input */
+        }
+    }
+    return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 }
 
 function stopMeter() {
@@ -126,6 +150,13 @@ async function loadDevices() {
 }
 
 async function primeMicrophone() {
+    if (!window.isSecureContext) {
+        setStatus(`Studio needs HTTPS for the microphone. Open ${httpsStudioUrl()}`);
+        if (btnStart) {
+            btnStart.disabled = true;
+        }
+        return;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
         setStatus('This browser does not support microphone capture.');
         return;
@@ -149,6 +180,10 @@ if (navigator.mediaDevices && 'addEventListener' in navigator.mediaDevices) {
 }
 
 btnStart?.addEventListener('click', async () => {
+    if (!window.isSecureContext) {
+        setStatus(`Studio needs HTTPS for the microphone. Open ${httpsStudioUrl()}`);
+        return;
+    }
     if (!whipUrl) {
         setStatus('WHIP URL is not configured.');
         return;
@@ -157,13 +192,7 @@ btnStart?.addEventListener('click', async () => {
     setStatus('Starting…');
 
     try {
-        const constraints = {
-            audio: audioSelect?.value
-                ? { deviceId: { exact: audioSelect.value } }
-                : true,
-            video: false,
-        };
-        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        mediaStream = await openMicrophone();
         startMeter(mediaStream);
 
         pc = new RTCPeerConnection({
