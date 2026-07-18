@@ -18,8 +18,9 @@ webrtcAddress: :8889
 webrtcEncryption: false
 webrtcAllowOrigins: ['*']
 webrtcLocalUDPAddress: :8189
-webrtcIPsFromInterfaces: true
-# Local: leave empty. Production Azure VM: list public hostname or IP.
+# Docker advertises bridge IPs if true — break ICE from browsers. Prefer false + public hosts.
+webrtcIPsFromInterfaces: false
+# Local: leave empty. Production Azure VM: list public IP and hostname.
 webrtcAdditionalHosts: []
 
 hls: true

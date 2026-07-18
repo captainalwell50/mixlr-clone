@@ -7,22 +7,29 @@
 #   MEDIAMTX_WEBRTC_PUBLIC_BASE=https://stream.example.org/rtc
 #
 # Also open NSG UDP/TCP 8189 for WebRTC ICE to the VM public IP.
-# Set MediaMTX webrtcAdditionalHosts: ['stream.example.org']
+# Set MediaMTX webrtcAdditionalHosts to the public IP and hostname.
+#
+# IMPORTANT: /hls and /rtc must be in their own `handle` blocks *before* the
+# Laravel catch-all. Otherwise php_fastcgi steals WHIP/HLS and Studio fails.
 
 stream.example.org {
 	encode gzip zstd
-	root * /var/www/app/public
-	php_fastcgi unix//run/php/php8.4-fpm.sock
-	file_server
-	try_files {path} {path}/ /index.php?{query}
 
-	handle_path /hls/* {
+	handle /hls/* {
+		uri strip_prefix /hls
 		reverse_proxy 127.0.0.1:8888
 	}
 
-	handle_path /rtc/* {
+	handle /rtc/* {
 		uri strip_prefix /rtc
 		reverse_proxy 127.0.0.1:8889
+	}
+
+	handle {
+		root * /var/www/app/public
+		php_fastcgi unix//run/php/php8.4-fpm.sock
+		file_server
+		try_files {path} {path}/ /index.php?{query}
 	}
 }
 

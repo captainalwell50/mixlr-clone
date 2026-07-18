@@ -46,11 +46,14 @@ function friendlyError(err) {
     if (name === 'NotFoundError' || /requested device not found/i.test(msg)) {
         return 'Could not open that microphone. Pick another input, or reload and allow mic access.';
     }
-    if (/WHIP|403|401|forbidden/i.test(msg)) {
-        return 'Publish rejected. Check that this stream still exists and the studio link is valid.';
+    if (/WHIP|403|401|forbidden|publish secret|Not Found|<!DOCTYPE/i.test(msg)) {
+        return 'Publish rejected or media proxy misconfigured. Confirm /rtc reaches MediaMTX (not Laravel).';
     }
-    if (/ICE|failed|network/i.test(msg)) {
-        return 'Could not reach the media server (ICE/network). On Azure, confirm UDP 8189 and webrtcAdditionalHosts.';
+    if (/ICE|icegather|DTLS|Could not establish|peerconnection/i.test(msg)) {
+        return 'Could not reach the media server (ICE/network). On Azure, confirm UDP 8189 and webrtcAdditionalHosts (public IP).';
+    }
+    if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+        return 'Could not reach the WHIP endpoint. Check HTTPS, Caddy /rtc proxy, and MediaMTX.';
     }
     return msg || 'Could not go live.';
 }

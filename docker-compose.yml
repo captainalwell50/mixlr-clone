@@ -14,6 +14,8 @@ services:
       WEBHOOK_URL: ${MEDIAMTX_WEBHOOK_URL:-}
       WEBHOOK_SECRET: ${MEDIAMTX_WEBHOOK_SECRET:-}
       # Laravel auth callback (publish gate). Override for Azure VM public HTTPS.
+      # MediaMTX reads MTX_AUTHHTTPADDRESS; AUTH_HTTP_ADDRESS kept for hook scripts.
+      MTX_AUTHHTTPADDRESS: ${MEDIAMTX_AUTH_URL:-http://host.docker.internal:8000/api/mediamtx/auth}
       AUTH_HTTP_ADDRESS: ${MEDIAMTX_AUTH_URL:-http://host.docker.internal:8000/api/mediamtx/auth}
       PUBLISH_SECRET: ${MEDIAMTX_PUBLISH_SECRET:-}
     volumes:

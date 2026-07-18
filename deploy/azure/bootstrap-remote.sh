@@ -130,19 +130,35 @@ php artisan db:seed --force
 sudo chown -R www-data:www-data storage bootstrap/cache database
 sudo chmod -R ug+rwx storage bootstrap/cache database
 
-# MediaMTX ICE host + auth callback for production
+# MediaMTX ICE hosts + auth callback for production
 APP_HOST="$APP_HOST" APP_URL="$APP_URL" python3 <<'PY'
 import os
 import re
+import socket
 from pathlib import Path
 
 host = os.environ["APP_HOST"]
 auth = f"{os.environ['APP_URL']}/api/mediamtx/auth"
+hosts = [host]
+try:
+    ip = socket.gethostbyname(host)
+    if ip and ip not in hosts:
+        hosts.insert(0, ip)
+except OSError:
+    pass
+host_yaml = "webrtcAdditionalHosts:\n" + "".join(f"  - {h}\n" for h in hosts)
+
 p = Path("docker/mediamtx/mediamtx.yml")
 text = p.read_text()
 text = re.sub(
+    r"webrtcIPsFromInterfaces:\s*\w+",
+    "webrtcIPsFromInterfaces: false",
+    text,
+    count=1,
+)
+text = re.sub(
     r"webrtcAdditionalHosts:\s*(?:\[\])?(?:\n(?:\s*-\s*.*)+)?",
-    f"webrtcAdditionalHosts:\n  - {host}",
+    host_yaml.rstrip(),
     text,
     count=1,
 )
@@ -153,7 +169,7 @@ text = re.sub(
     count=1,
 )
 p.write_text(text if text.endswith("\n") else text + "\n")
-print("Updated webrtcAdditionalHosts + authHTTPAddress")
+print("Updated webrtcAdditionalHosts + authHTTPAddress:", hosts)
 PY
 
 export MEDIAMTX_WEBHOOK_URL="${APP_URL}/api/webhooks/mediamtx"
@@ -172,18 +188,22 @@ echo "==> Configuring Caddy"
 sudo tee /etc/caddy/Caddyfile >/dev/null <<EOF
 ${APP_HOST} {
 	encode gzip zstd
-	root * ${APP_DIR}/public
-	php_fastcgi unix//run/php/php8.4-fpm.sock
-	file_server
-	try_files {path} {path}/ /index.php?{query}
 
-	handle_path /hls/* {
+	handle /hls/* {
+		uri strip_prefix /hls
 		reverse_proxy 127.0.0.1:8888
 	}
 
-	handle_path /rtc/* {
+	handle /rtc/* {
 		uri strip_prefix /rtc
 		reverse_proxy 127.0.0.1:8889
+	}
+
+	handle {
+		root * ${APP_DIR}/public
+		php_fastcgi unix//run/php/php8.4-fpm.sock
+		file_server
+		try_files {path} {path}/ /index.php?{query}
 	}
 }
 EOF
