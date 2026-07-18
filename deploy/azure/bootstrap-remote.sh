@@ -126,25 +126,30 @@ php artisan db:seed --force
 sudo chown -R www-data:www-data storage bootstrap/cache database
 sudo chmod -R ug+rwx storage bootstrap/cache database
 
-# MediaMTX ICE host
-APP_HOST="$APP_HOST" python3 <<'PY'
+# MediaMTX ICE host + auth callback for production
+APP_HOST="$APP_HOST" APP_URL="$APP_URL" python3 <<'PY'
 import os
 import re
 from pathlib import Path
 
 host = os.environ["APP_HOST"]
+auth = f"{os.environ['APP_URL']}/api/mediamtx/auth"
 p = Path("docker/mediamtx/mediamtx.yml")
 text = p.read_text()
-pattern = r"webrtcAdditionalHosts:\s*\n(?:\s*-\s*.*\n)*"
-replacement = f"webrtcAdditionalHosts:\n  - {host}\n"
-text2, n = re.subn(pattern, replacement, text, count=1)
-if n == 0:
-    if "webrtcAdditionalHosts:" in text:
-        text2 = text.replace("webrtcAdditionalHosts:", f"webrtcAdditionalHosts:\n  - {host}", 1)
-    else:
-        text2 = text.rstrip() + f"\n\nwebrtcAdditionalHosts:\n  - {host}\n"
-p.write_text(text2)
-print("Updated webrtcAdditionalHosts")
+text = re.sub(
+    r"webrtcAdditionalHosts:\s*(?:\[\])?(?:\n(?:\s*-\s*.*)+)?",
+    f"webrtcAdditionalHosts:\n  - {host}",
+    text,
+    count=1,
+)
+text = re.sub(
+    r"(?m)^authHTTPAddress:.*$",
+    f"authHTTPAddress: {auth}",
+    text,
+    count=1,
+)
+p.write_text(text if text.endswith("\n") else text + "\n")
+print("Updated webrtcAdditionalHosts + authHTTPAddress")
 PY
 
 export MEDIAMTX_WEBHOOK_URL="${APP_URL}/api/webhooks/mediamtx"

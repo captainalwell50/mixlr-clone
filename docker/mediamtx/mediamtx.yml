@@ -4,9 +4,8 @@
 
 logLevel: info
 
-# External auth → Laravel /api/mediamtx/auth (env substituted by entry wrapper if needed).
-# MediaMTX 1.15 reads authHTTPAddress from this file; compose sets AUTH for docs —
-# use the concrete URL below for local Docker → host Laravel.
+# External auth → Laravel /api/mediamtx/auth
+# Local Docker: host.docker.internal:8000. Production: set to https://<host>/api/mediamtx/auth
 authMethod: http
 authHTTPAddress: http://host.docker.internal:8000/api/mediamtx/auth
 authHTTPExclude:
@@ -20,7 +19,7 @@ webrtcEncryption: false
 webrtcAllowOrigins: ['*']
 webrtcLocalUDPAddress: :8189
 webrtcIPsFromInterfaces: true
-# Local: leave empty. Production Azure VM: ['stream.yourchurch.org'] or public IP.
+# Local: leave empty. Production Azure VM: list public hostname or IP.
 webrtcAdditionalHosts: []
 
 hls: true
@@ -34,7 +33,7 @@ hlsSegmentDuration: 2s
 # OBS / ffmpeg ingest (publish auth via Laravel HTTP callback + stream_key)
 rtmp: true
 rtmpAddress: :1935
-rtmpEncryption: false
+rtmpEncryption: "no"
 
 pathDefaults:
   source: publisher
