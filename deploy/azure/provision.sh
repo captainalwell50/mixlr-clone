@@ -81,4 +81,5 @@ echo "VM ready."
 echo "  Public IP: $IP"
 echo "  SSH:       ssh ${ADMIN_USER}@${IP}"
 echo "  App host:  ${IP}.sslip.io"
+echo "  Git branch for bootstrap: $REPO_BRANCH"
 echo "$IP" > /tmp/church-live-vm-ip.txt
