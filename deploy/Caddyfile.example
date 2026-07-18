@@ -25,11 +25,32 @@ stream.example.org {
 		reverse_proxy 127.0.0.1:8889
 	}
 
+	# Static / PWA assets — serve from disk; do not fall through to index.php
+	handle /build/* {
+		root * /var/www/app/public
+		file_server
+	}
+
+	handle /icons/* {
+		root * /var/www/app/public
+		file_server
+	}
+
+	handle /manifest.webmanifest {
+		root * /var/www/app/public
+		file_server
+	}
+
+	handle /favicon.ico {
+		root * /var/www/app/public
+		file_server
+	}
+
 	handle {
 		root * /var/www/app/public
+		try_files {path} {path}/ /index.php?{query}
 		php_fastcgi unix//run/php/php8.4-fpm.sock
 		file_server
-		try_files {path} {path}/ /index.php?{query}
 	}
 }
 
