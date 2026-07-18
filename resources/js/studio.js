@@ -8,6 +8,10 @@ const btnStop = document.getElementById('btn-stop');
 const statusEl = document.getElementById('studio-status');
 const meterEl = document.getElementById('level-meter');
 const meterLabel = document.getElementById('meter-label');
+const stageEl = document.getElementById('studio-stage');
+const modeEl = document.getElementById('studio-mode');
+const copyBtn = document.getElementById('btn-copy-listen');
+const listenUrlEl = document.getElementById('listen-url');
 
 let pc = null;
 let mediaStream = null;
@@ -24,6 +28,33 @@ function setStatus(message) {
         statusEl.textContent = message;
     }
 }
+
+function setOnAir(live) {
+    stageEl?.classList.toggle('is-on-air', live);
+    if (modeEl) {
+        modeEl.textContent = live ? 'On air' : 'Broadcaster';
+        modeEl.classList.toggle('stage-broadcaster', !live);
+    }
+    if (btnStart) {
+        btnStart.textContent = live ? 'On air' : 'Go live';
+    }
+}
+
+copyBtn?.addEventListener('click', async () => {
+    const text = listenUrlEl?.textContent?.trim();
+    if (!text) {
+        return;
+    }
+    try {
+        await navigator.clipboard.writeText(text);
+        copyBtn.textContent = 'Copied';
+        window.setTimeout(() => {
+            copyBtn.textContent = 'Copy link';
+        }, 1600);
+    } catch {
+        copyBtn.textContent = 'Copy failed';
+    }
+});
 
 function httpsStudioUrl() {
     const u = new URL(window.location.href);
@@ -247,12 +278,14 @@ btnStart?.addEventListener('click', async () => {
             sdp: answerSdp,
         });
 
-        setStatus('Live — audio is publishing. Keep this tab open.');
+        setStatus('You’re on air — keep this tab open.');
+        setOnAir(true);
         btnStop.disabled = false;
     } catch (e) {
         console.error(e);
         setStatus(friendlyError(e));
         btnStart.disabled = false;
+        setOnAir(false);
         await teardown();
     }
 });
@@ -261,12 +294,13 @@ btnStop?.addEventListener('click', async () => {
     btnStop.disabled = true;
     setStatus('Stopping…');
     await teardown();
-    setStatus('Stopped.');
+    setStatus('Stopped. Ready when you are.');
     btnStart.disabled = false;
 });
 
 async function teardown() {
     stopMeter();
+    setOnAir(false);
     if (whipResourceUrl) {
         try {
             await fetch(whipResourceUrl, { method: 'DELETE' });

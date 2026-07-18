@@ -12,7 +12,7 @@
 @endphp
 
 @section('content')
-    <div class="stage" style="--stage-accent: {{ $theme }};">
+    <div id="studio-stage" class="stage" style="--stage-accent: {{ $theme }};">
         <div
             class="stage-atmosphere {{ $artwork ? 'has-art' : '' }}"
             @if ($artwork) style="--stage-art: url('{{ $artwork }}')" @endif
@@ -24,13 +24,18 @@
                 <a href="{{ route('dashboard') }}" class="stage-top-link">Dashboard</a>
             </header>
 
-            <p class="stage-status stage-rise-delay stage-broadcaster">
+            <p id="studio-mode" class="stage-status stage-rise-delay stage-broadcaster">
                 Broadcaster
             </p>
 
             <h1 class="stage-channel stage-rise-delay">{{ $organization->name }}</h1>
             <p class="stage-title stage-rise-delay-2">{{ $stream->title }}</p>
-            <p class="stage-meta">Share the listener link when you’re on air. Keep this tab open while broadcasting.</p>
+            <p class="stage-meta">You’re at the desk. Go live, then share the listener link. Keep this tab open.</p>
+
+            <p class="stage-on-air-pill" id="studio-on-air-pill" aria-live="polite">
+                <span class="live-dot inline-block h-1.5 w-1.5 rounded-full bg-current"></span>
+                You’re on air
+            </p>
 
             <div class="stage-desk stage-rise-delay-2">
                 <div>
@@ -56,6 +61,11 @@
                 <p id="studio-status" class="stage-status-line" style="text-align: left">
                     Allow microphone access when prompted, then press Go live.
                 </p>
+
+                <div class="stage-copy-row">
+                    <code id="listen-url" title="{{ $listenUrl }}">{{ $listenUrl }}</code>
+                    <button type="button" id="btn-copy-listen">Copy link</button>
+                </div>
             </div>
 
             <div
