@@ -6,10 +6,13 @@ set -euo pipefail
 RG="${RG:-rg-church-live}"
 LOCATION="${LOCATION:-eastus}"
 VM_NAME="${VM_NAME:-vm-church-live}"
-VM_SIZE="${VM_SIZE:-Standard_B2s}"
+# B-series often hits capacity limits on Free Trial; D2as_v7 is a reliable fallback.
+VM_SIZE="${VM_SIZE:-Standard_D2as_v7}"
 ADMIN_USER="${ADMIN_USER:-azureuser}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519.pub}"
 IMAGE="${IMAGE:-Canonical:ubuntu-24_04-lts:server:latest}"
+# Deploy scripts clone this branch (never main for this project).
+REPO_BRANCH="${REPO_BRANCH:-project/mixlr-clone}"
 
 if [[ ! -f "$SSH_KEY" ]]; then
   echo "SSH public key not found: $SSH_KEY" >&2

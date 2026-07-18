@@ -2,9 +2,11 @@
 # Run on the Azure VM as azureuser (or any sudo user in docker + www-data groups).
 # Usage:
 #   REPO_URL=https://github.com/OWNER/REPO.git APP_HOST=x.x.x.x.sslip.io bash bootstrap-remote.sh
+# Optional: REPO_BRANCH (default: project/mixlr-clone — do not deploy from main)
 set -euo pipefail
 
 REPO_URL="${REPO_URL:?Set REPO_URL to the git clone URL}"
+REPO_BRANCH="${REPO_BRANCH:-project/mixlr-clone}"
 APP_HOST="${APP_HOST:?Set APP_HOST to the public hostname (e.g. IP.sslip.io)}"
 APP_DIR="${APP_DIR:-/var/www/app}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
@@ -50,14 +52,16 @@ fi
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER" || true
 
-echo "==> Cloning / updating app"
+echo "==> Cloning / updating app (branch: ${REPO_BRANCH})"
 sudo mkdir -p "$(dirname "$APP_DIR")"
 if [[ ! -d "$APP_DIR/.git" ]]; then
   sudo rm -rf "$APP_DIR"
-  sudo git clone "$REPO_URL" "$APP_DIR"
+  sudo git clone --branch "$REPO_BRANCH" --single-branch "$REPO_URL" "$APP_DIR"
   sudo chown -R "$USER":www-data "$APP_DIR"
 else
-  git -C "$APP_DIR" pull --ff-only
+  git -C "$APP_DIR" fetch origin "$REPO_BRANCH"
+  git -C "$APP_DIR" checkout "$REPO_BRANCH"
+  git -C "$APP_DIR" pull --ff-only origin "$REPO_BRANCH"
 fi
 
 cd "$APP_DIR"

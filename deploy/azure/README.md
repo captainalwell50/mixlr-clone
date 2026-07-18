@@ -40,11 +40,15 @@ Install [Caddy](https://caddyserver.com/docs/install#debian-ubuntu-raspbian) and
 
 ## 3. App deploy
 
+Use the project branch `project/mixlr-clone` (not `main`):
+
 ```bash
 sudo mkdir -p /var/www/app
 sudo chown "$USER":www-data /var/www/app
-git clone <your-repo-url> /var/www/app
+git clone --branch project/mixlr-clone --single-branch <your-repo-url> /var/www/app
 cd /var/www/app
+# Or bootstrap:
+# REPO_URL=<your-repo-url> REPO_BRANCH=project/mixlr-clone APP_HOST=<host> bash deploy/azure/bootstrap-remote.sh
 composer install --no-dev --optimize-autoloader
 cp .env.example .env
 php artisan key:generate
