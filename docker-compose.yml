@@ -1,0 +1,25 @@
+services:
+  mediamtx:
+    build:
+      context: ./deploy/mediamtx
+      dockerfile: Dockerfile
+    image: mixlr-mediamtx:local
+    ports:
+      - '8888:8888'
+      - '8889:8889'
+      - '8189:8189/udp'
+      - '8189:8189/tcp'
+      - '1935:1935'
+    environment:
+      WEBHOOK_URL: ${MEDIAMTX_WEBHOOK_URL:-}
+      WEBHOOK_SECRET: ${MEDIAMTX_WEBHOOK_SECRET:-}
+      # Laravel auth callback (publish gate). Override for Azure VM public HTTPS.
+      AUTH_HTTP_ADDRESS: ${MEDIAMTX_AUTH_URL:-http://host.docker.internal:8000/api/mediamtx/auth}
+      PUBLISH_SECRET: ${MEDIAMTX_PUBLISH_SECRET:-}
+    volumes:
+      - ./docker/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./docker/mediamtx/hooks:/hooks:ro
+      - ./storage/app/mediamtx-recordings:/recordings
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    restart: unless-stopped

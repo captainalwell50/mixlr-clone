@@ -1,0 +1,49 @@
+# Production MediaMTX — keep in sync with docker/mediamtx/mediamtx.yml.
+# On Azure VM: set authHTTPAddress to https://<your-host>/api/mediamtx/auth
+# and webrtcAdditionalHosts to your public DNS or IP.
+
+logLevel: info
+
+authMethod: http
+authHTTPAddress: https://stream.example.org/api/mediamtx/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+webrtc: true
+webrtcAddress: :8889
+webrtcEncryption: false
+webrtcAllowOrigins: ['*']
+webrtcLocalUDPAddress: :8189
+webrtcIPsFromInterfaces: true
+webrtcAdditionalHosts: ['stream.example.org']
+
+hls: true
+hlsAddress: :8888
+hlsEncryption: false
+hlsAllowOrigins: ['*']
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 2s
+
+rtmp: true
+rtmpAddress: :1935
+rtmpEncryption: false
+
+pathDefaults:
+  source: publisher
+  overridePublisher: true
+  record: true
+  recordFormat: fmp4
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordPartDuration: 1s
+  recordSegmentDuration: 4h
+  recordDeleteAfter: 8760h
+  runOnReady: sh /hooks/run-ready.sh
+  runOnNotReady: sh /hooks/run-not-ready.sh
+  runOnRecordSegmentComplete: sh /hooks/run-record-segment-complete.sh
+
+paths:
+  '~^live/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$':
+    source: publisher

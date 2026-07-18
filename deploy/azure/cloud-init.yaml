@@ -1,0 +1,49 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - docker.io
+  - docker-compose-v2
+  - git
+  - curl
+  - unzip
+  - ufw
+  - nginx
+  - certbot
+  - python3-certbot-nginx
+  - php8.3-fpm
+  - php8.3-cli
+  - php8.3-sqlite3
+  - php8.3-mysql
+  - php8.3-xml
+  - php8.3-mbstring
+  - php8.3-curl
+  - php8.3-zip
+  - php8.3-bcmath
+  - composer
+  - nodejs
+  - npm
+
+groups:
+  - docker
+
+users:
+  - default
+  - name: azureuser
+    groups: [docker, www-data]
+    shell: /bin/bash
+
+write_files:
+  - path: /opt/church-live/bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      # Placeholder — real bootstrap pulled from repo after first boot via deploy script.
+
+runcmd:
+  - systemctl enable --now docker
+  - usermod -aG docker azureuser || true
+  - mkdir -p /var/www /opt/church-live
+  - chown -R azureuser:azureuser /opt/church-live /var/www

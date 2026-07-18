@@ -1,0 +1,54 @@
+# Browser publish: POST SDP to http://<host>:8889/live/<uuid>/whip
+# HLS playback:    http://<host>:8888/live/<uuid>/index.m3u8
+# Azure / NAT: set webrtcAdditionalHosts to your public hostname or VM IP.
+
+logLevel: info
+
+# External auth → Laravel /api/mediamtx/auth (env substituted by entry wrapper if needed).
+# MediaMTX 1.15 reads authHTTPAddress from this file; compose sets AUTH for docs —
+# use the concrete URL below for local Docker → host Laravel.
+authMethod: http
+authHTTPAddress: http://host.docker.internal:8000/api/mediamtx/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+webrtc: true
+webrtcAddress: :8889
+webrtcEncryption: false
+webrtcAllowOrigins: ['*']
+webrtcLocalUDPAddress: :8189
+webrtcIPsFromInterfaces: true
+# Local: leave empty. Production Azure VM: ['stream.yourchurch.org'] or public IP.
+webrtcAdditionalHosts: []
+
+hls: true
+hlsAddress: :8888
+hlsEncryption: false
+hlsAllowOrigins: ['*']
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 2s
+
+# OBS / ffmpeg ingest (publish auth via Laravel HTTP callback + stream_key)
+rtmp: true
+rtmpAddress: :1935
+rtmpEncryption: false
+
+pathDefaults:
+  source: publisher
+  overridePublisher: true
+  record: true
+  recordFormat: fmp4
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordPartDuration: 1s
+  recordSegmentDuration: 4h
+  recordDeleteAfter: 8760h
+  runOnReady: sh /hooks/run-ready.sh
+  runOnNotReady: sh /hooks/run-not-ready.sh
+  runOnRecordSegmentComplete: sh /hooks/run-record-segment-complete.sh
+
+paths:
+  '~^live/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$':
+    source: publisher

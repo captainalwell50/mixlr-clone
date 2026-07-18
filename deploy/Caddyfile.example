@@ -1,0 +1,30 @@
+# Azure VM / single-host: Laravel + MediaMTX behind one HTTPS hostname.
+# Replace stream.example.org and the PHP-FPM socket. Point DNS A record at the VM.
+#
+# Laravel .env:
+#   APP_URL=https://stream.example.org
+#   MEDIAMTX_HLS_PUBLIC_BASE=https://stream.example.org/hls
+#   MEDIAMTX_WEBRTC_PUBLIC_BASE=https://stream.example.org/rtc
+#
+# Also open NSG UDP/TCP 8189 for WebRTC ICE to the VM public IP.
+# Set MediaMTX webrtcAdditionalHosts: ['stream.example.org']
+
+stream.example.org {
+	encode gzip zstd
+	root * /var/www/app/public
+	php_fastcgi unix//run/php/php8.4-fpm.sock
+	file_server
+	try_files {path} {path}/ /index.php?{query}
+
+	handle_path /hls/* {
+		reverse_proxy 127.0.0.1:8888
+	}
+
+	handle_path /rtc/* {
+		uri strip_prefix /rtc
+		reverse_proxy 127.0.0.1:8889
+	}
+}
+
+# WHIP: POST https://stream.example.org/rtc/live/<uuid>/whip
+# HLS:  GET  https://stream.example.org/hls/live/<uuid>/index.m3u8

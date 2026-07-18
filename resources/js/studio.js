@@ -1,0 +1,255 @@
+import './bootstrap';
+
+const root = document.getElementById('studio-root');
+const whipUrl = root?.dataset.whipUrl;
+const audioSelect = document.getElementById('audio-input');
+const btnStart = document.getElementById('btn-start');
+const btnStop = document.getElementById('btn-stop');
+const statusEl = document.getElementById('studio-status');
+const meterEl = document.getElementById('level-meter');
+const meterLabel = document.getElementById('meter-label');
+
+let pc = null;
+let mediaStream = null;
+/** @type {string|null} */
+let whipResourceUrl = null;
+/** @type {AudioContext|null} */
+let audioCtx = null;
+/** @type {AnalyserNode|null} */
+let analyser = null;
+let meterRaf = 0;
+
+function setStatus(message) {
+    if (statusEl) {
+        statusEl.textContent = message;
+    }
+}
+
+function friendlyError(err) {
+    if (!(err instanceof Error)) {
+        return 'Could not go live.';
+    }
+    const name = err.name || '';
+    const msg = err.message || '';
+    if (name === 'NotAllowedError' || /permission|denied/i.test(msg)) {
+        return 'Microphone permission denied. Allow the mic in your browser settings and try again.';
+    }
+    if (name === 'NotFoundError' || /device/i.test(msg)) {
+        return 'No microphone found. Plug in an interface or choose another input.';
+    }
+    if (/WHIP|403|401|forbidden/i.test(msg)) {
+        return 'Publish rejected. Check that this stream still exists and the studio link is valid.';
+    }
+    if (/ICE|failed|network/i.test(msg)) {
+        return 'Could not reach the media server (ICE/network). On Azure, confirm UDP 8189 and webrtcAdditionalHosts.';
+    }
+    return msg || 'Could not go live.';
+}
+
+function stopMeter() {
+    if (meterRaf) {
+        cancelAnimationFrame(meterRaf);
+        meterRaf = 0;
+    }
+    if (audioCtx) {
+        void audioCtx.close().catch(() => {});
+        audioCtx = null;
+    }
+    analyser = null;
+    if (meterEl) {
+        meterEl.style.width = '0%';
+    }
+    if (meterLabel) {
+        meterLabel.textContent = '—';
+    }
+}
+
+function startMeter(stream) {
+    stopMeter();
+    try {
+        audioCtx = new AudioContext();
+        const source = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+
+        const tick = () => {
+            if (!analyser) {
+                return;
+            }
+            analyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) {
+                const v = (data[i] - 128) / 128;
+                sum += v * v;
+            }
+            const rms = Math.sqrt(sum / data.length);
+            const pct = Math.min(100, Math.round(rms * 220));
+            if (meterEl) {
+                meterEl.style.width = `${pct}%`;
+                meterEl.classList.toggle('bg-amber-400', pct > 75);
+                meterEl.classList.toggle('bg-emerald-500', pct <= 75);
+            }
+            if (meterLabel) {
+                meterLabel.textContent = pct > 2 ? 'Signal' : 'Silence';
+            }
+            meterRaf = requestAnimationFrame(tick);
+        };
+        meterRaf = requestAnimationFrame(tick);
+    } catch {
+        /* meter is optional */
+    }
+}
+
+async function loadDevices() {
+    if (!audioSelect) {
+        return;
+    }
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices.filter((d) => d.kind === 'audioinput');
+        const previous = audioSelect.value;
+        audioSelect.innerHTML = '';
+        for (const d of inputs) {
+            const opt = document.createElement('option');
+            opt.value = d.deviceId;
+            opt.textContent = d.label || `Input ${audioSelect.length + 1}`;
+            audioSelect.appendChild(opt);
+        }
+        if (previous) {
+            audioSelect.value = previous;
+        }
+    } catch {
+        setStatus('Could not list audio devices.');
+    }
+}
+
+async function primeMicrophone() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus('This browser does not support microphone capture.');
+        return;
+    }
+    try {
+        const priming = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        for (const t of priming.getTracks()) {
+            t.stop();
+        }
+        await loadDevices();
+        setStatus('Microphone ready. Choose an input and press Go live.');
+    } catch (e) {
+        setStatus(friendlyError(e));
+    }
+}
+
+await primeMicrophone();
+
+if (navigator.mediaDevices && 'addEventListener' in navigator.mediaDevices) {
+    navigator.mediaDevices.addEventListener('devicechange', loadDevices);
+}
+
+btnStart?.addEventListener('click', async () => {
+    if (!whipUrl) {
+        setStatus('WHIP URL is not configured.');
+        return;
+    }
+    btnStart.disabled = true;
+    setStatus('Starting…');
+
+    try {
+        const constraints = {
+            audio: audioSelect?.value
+                ? { deviceId: { exact: audioSelect.value } }
+                : true,
+            video: false,
+        };
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        startMeter(mediaStream);
+
+        pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        });
+
+        for (const track of mediaStream.getTracks()) {
+            pc.addTrack(track, mediaStream);
+        }
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        await new Promise((resolve) => {
+            if (pc.iceGatheringState === 'complete') {
+                resolve();
+                return;
+            }
+            const done = () => {
+                if (pc.iceGatheringState === 'complete') {
+                    pc.removeEventListener('icegatheringstatechange', done);
+                    resolve();
+                }
+            };
+            pc.addEventListener('icegatheringstatechange', done);
+            setTimeout(resolve, 2000);
+        });
+
+        const res = await fetch(whipUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/sdp',
+            },
+            body: pc.localDescription?.sdp ?? '',
+        });
+
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || `WHIP failed (${res.status})`);
+        }
+
+        const loc = res.headers.get('Location');
+        whipResourceUrl = loc ? new URL(loc, whipUrl).href : null;
+
+        const answerSdp = await res.text();
+        await pc.setRemoteDescription({
+            type: 'answer',
+            sdp: answerSdp,
+        });
+
+        setStatus('Live — audio is publishing. Keep this tab open.');
+        btnStop.disabled = false;
+    } catch (e) {
+        console.error(e);
+        setStatus(friendlyError(e));
+        btnStart.disabled = false;
+        await teardown();
+    }
+});
+
+btnStop?.addEventListener('click', async () => {
+    btnStop.disabled = true;
+    setStatus('Stopping…');
+    await teardown();
+    setStatus('Stopped.');
+    btnStart.disabled = false;
+});
+
+async function teardown() {
+    stopMeter();
+    if (whipResourceUrl) {
+        try {
+            await fetch(whipResourceUrl, { method: 'DELETE' });
+        } catch {
+            /* ignore */
+        }
+        whipResourceUrl = null;
+    }
+    if (pc) {
+        pc.close();
+        pc = null;
+    }
+    if (mediaStream) {
+        for (const t of mediaStream.getTracks()) {
+            t.stop();
+        }
+        mediaStream = null;
+    }
+}
