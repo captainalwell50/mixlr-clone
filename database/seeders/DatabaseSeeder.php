@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -17,11 +18,16 @@ class DatabaseSeeder extends Seeder
     {
         $adminEmail = config('app.admin_email') ?: 'admin@example.com';
 
-        User::factory()->create([
-            'name' => 'Church admin',
-            'email' => $adminEmail,
-            'is_admin' => true,
-        ]);
+        // Avoid UserFactory/fake() so production (`composer --no-dev`) can seed.
+        User::query()->updateOrCreate(
+            ['email' => $adminEmail],
+            [
+                'name' => 'Church admin',
+                'password' => Hash::make('password'),
+                'is_admin' => true,
+                'email_verified_at' => now(),
+            ],
+        );
 
         $this->call(ChurchDemoSeeder::class);
     }

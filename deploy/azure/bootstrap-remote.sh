@@ -120,7 +120,8 @@ npm ci
 npm run build
 
 touch database/database.sqlite
-php artisan migrate --force --seed
+php artisan migrate --force
+php artisan db:seed --force
 
 sudo chown -R www-data:www-data storage bootstrap/cache database
 sudo chmod -R ug+rwx storage bootstrap/cache database
