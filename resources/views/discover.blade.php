@@ -1,49 +1,76 @@
 @extends('layouts.app')
 
-@section('title', 'Discover · '.config('app.name'))
+@section('title', 'Discover · '.config('app.name', 'Live Mix Audio'))
+@section('main_class', 'w-full')
 
 @section('content')
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-            <h1 class="text-2xl font-semibold text-white">Discover</h1>
-            <p class="mt-1 text-sm text-zinc-400">Live and upcoming public events.</p>
+    <div class="discover-page site-page">
+        <div class="discover-head stage-rise">
+            <div>
+                <p class="site-section-label is-live">Live Mix Audio</p>
+                <h1 class="mt-2">Discover</h1>
+                <p class="mt-2 max-w-md text-sm text-[var(--stage-muted)]">
+                    What’s on air now — and what’s coming up.
+                </p>
+            </div>
+            <form method="GET" action="{{ route('discover') }}" class="discover-search">
+                <input type="search" name="q" value="{{ $q }}" placeholder="Search events or channels" aria-label="Search">
+                <button type="submit">Search</button>
+            </form>
         </div>
-        <form method="GET" action="{{ route('discover') }}" class="flex w-full gap-2 sm:w-auto">
-            <input type="search" name="q" value="{{ $q }}" placeholder="Search events or channels"
-                class="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white sm:w-64 focus:border-emerald-600 focus:outline-none">
-            <button type="submit" class="rounded-lg bg-zinc-800 px-4 py-2 text-sm text-white hover:bg-zinc-700">Search</button>
-        </form>
+
+        <section class="mt-10 stage-rise-delay">
+            <h2 class="site-section-label is-live">Live now</h2>
+
+            @if ($live->isEmpty())
+                <p class="site-empty">No one is live right now{{ $q ? ' matching that search' : '' }}.</p>
+            @else
+                <div class="live-rail">
+                    @foreach ($live as $event)
+                        @php
+                            $accent = $event->organization->themeColor();
+                            $art = $event->artworkUrl();
+                        @endphp
+                        <a href="{{ route('events.show', $event) }}"
+                            class="live-card"
+                            style="--tile-accent: {{ $accent }};">
+                            <div
+                                class="live-card-art {{ $art ? 'has-art' : '' }}"
+                                @if ($art) style="--tile-art: url('{{ $art }}')" @endif
+                            >
+                                <div class="live-card-copy">
+                                    <span class="live-badge">
+                                        <span class="live-dot inline-block h-1.5 w-1.5 rounded-full bg-current"></span>
+                                        Live
+                                    </span>
+                                    <h3>{{ $event->title }}</h3>
+                                    <p>{{ $event->organization->name }}</p>
+                                </div>
+                            </div>
+                        </a>
+                    @endforeach
+                </div>
+            @endif
+        </section>
+
+        <section class="mt-14 stage-rise-delay-2">
+            <h2 class="site-section-label">Upcoming</h2>
+            @if ($upcoming->isEmpty())
+                <p class="site-empty">No upcoming public events.</p>
+            @else
+                <div class="art-grid">
+                    @foreach ($upcoming as $event)
+                        @include('partials.art-tile', [
+                            'href' => route('events.show', $event),
+                            'title' => $event->title,
+                            'subtitle' => $event->organization->name
+                                .' · '.($event->scheduled_at?->format('M j, H:i') ?: 'TBA'),
+                            'artwork' => $event->artworkUrl(),
+                            'accent' => $event->organization->themeColor(),
+                        ])
+                    @endforeach
+                </div>
+            @endif
+        </section>
     </div>
-
-    <section class="mt-10">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-emerald-400/90">Live now</h2>
-        <div class="mt-4 grid gap-4 sm:grid-cols-2">
-            @forelse ($live as $event)
-                <a href="{{ route('events.show', $event) }}"
-                    class="block rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-4 transition hover:border-emerald-700/60">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400">Live</p>
-                    <h3 class="mt-1 text-lg font-semibold text-white">{{ $event->title }}</h3>
-                    <p class="mt-1 text-sm text-zinc-400">{{ $event->organization->name }}</p>
-                </a>
-            @empty
-                <p class="col-span-full text-sm text-zinc-500">No one is live right now{{ $q ? ' matching that search' : '' }}.</p>
-            @endforelse
-        </div>
-    </section>
-
-    <section class="mt-12">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">Upcoming</h2>
-        <div class="mt-4 grid gap-3 sm:grid-cols-2">
-            @forelse ($upcoming as $event)
-                <a href="{{ route('events.show', $event) }}"
-                    class="block rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 hover:border-zinc-700">
-                    <h3 class="font-medium text-white">{{ $event->title }}</h3>
-                    <p class="mt-1 text-sm text-zinc-500">{{ $event->organization->name }}</p>
-                    <p class="mt-1 text-xs text-zinc-600">{{ $event->scheduled_at?->format('M j, H:i') ?: 'TBA' }}</p>
-                </a>
-            @empty
-                <p class="col-span-full text-sm text-zinc-500">No upcoming public events.</p>
-            @endforelse
-        </div>
-    </section>
 @endsection

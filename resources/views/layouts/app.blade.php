@@ -42,20 +42,24 @@
         </div>
     </nav>
 
-    <main class="mx-auto max-w-5xl px-4 py-8">
+    <main class="@yield('main_class', 'mx-auto max-w-5xl px-4 py-8')">
         @if (session('status'))
-            <div class="mb-6 rounded-lg border border-emerald-800 bg-emerald-950/50 px-4 py-3 text-sm text-emerald-200">
-                {{ session('status') }}
+            <div class="mx-auto mb-6 max-w-5xl px-4 pt-6">
+                <div class="rounded-lg border border-emerald-800 bg-emerald-950/50 px-4 py-3 text-sm text-emerald-200">
+                    {{ session('status') }}
+                </div>
             </div>
         @endif
 
         @if ($errors->any())
-            <div class="mb-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">
-                <ul class="list-inside list-disc space-y-1">
-                    @foreach ($errors->all() as $error)
-                        <li>{{ $error }}</li>
-                    @endforeach
-                </ul>
+            <div class="mx-auto mb-6 max-w-5xl px-4 pt-6">
+                <div class="rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+                    <ul class="list-inside list-disc space-y-1">
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
             </div>
         @endif
 
