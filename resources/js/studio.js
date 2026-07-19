@@ -152,21 +152,28 @@ function needsGraphFx() {
     return fxChecked(fxHighpass) || fxChecked(fxCompress) || fxChecked(fxLimit);
 }
 
-/** Mixer when mono, files, level ≠ 100%, or Web Audio enhance FX. */
+/**
+ * Mixer remuxes through Web Audio and costs quality — only when needed.
+ * Mono alone stays on the direct mic path (native channelCount + Opus mono).
+ */
 function needsMixer() {
-    return isMono() || fileChannels.size > 0 || micGainPercent() !== 100 || needsGraphFx();
+    return fileChannels.size > 0 || micGainPercent() !== 100 || needsGraphFx();
 }
 
 function captureConstraints() {
-    return {
+    const constraints = {
         sampleRate: { ideal: 48000 },
         sampleSize: { ideal: 16 },
-        channelCount: { ideal: 2 },
+        channelCount: { ideal: captureChannelCount() },
         echoCancellation: fxChecked(fxEcho),
         noiseSuppression: fxChecked(fxNoise),
         autoGainControl: fxChecked(fxAgc),
-        voiceIsolation: fxChecked(fxVoice),
     };
+    // Chromium-only; omit when off so it cannot force processing.
+    if (fxChecked(fxVoice)) {
+        constraints.voiceIsolation = true;
+    }
+    return constraints;
 }
 
 function loadFxPrefs() {
@@ -279,7 +286,7 @@ async function startMeterFromStream(stream) {
     stopMeter();
     try {
         if (!audioCtx) {
-            audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
+            audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
         }
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
@@ -447,7 +454,7 @@ async function ensureMixer() {
         return;
     }
     if (!audioCtx) {
-        audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
+        audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
     } else if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
     }
@@ -767,11 +774,8 @@ async function publishWhip(stream) {
 
     try {
         await track.applyConstraints({
-            channelCount: captureChannelCount(),
+            ...captureConstraints(),
             sampleRate: 48000,
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
         });
     } catch {
         /* optional */
@@ -851,7 +855,7 @@ async function primeMicrophone() {
             t.stop();
         }
         await loadDevices();
-        setStatus('Microphone ready. Mono by default. Open Advanced audio only if you need noise reduction (laptop mic).');
+        setStatus('Microphone ready. Mono + direct publish by default (best quality). Use Advanced only for laptop mics.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -879,7 +883,7 @@ btnStart?.addEventListener('click', async () => {
         let stream;
         if (needsMixer()) {
             publishMode = 'mixer';
-            setStatus('Starting mix (files / mic level)…');
+            setStatus('Starting mix (files / level / Advanced FX)…');
             await attachMicrophoneToMixer();
             for (const channel of fileChannels.values()) {
                 wireFileChannelAudio(channel);
@@ -888,7 +892,11 @@ btnStart?.addEventListener('click', async () => {
         } else {
             // Highest quality: mic track → WebRTC with no Web Audio remux.
             publishMode = 'direct';
-            setStatus('Starting direct mic (highest quality)…');
+            setStatus(
+                isMono()
+                    ? 'Starting direct mono mic (highest quality)…'
+                    : 'Starting direct stereo mic (highest quality)…',
+            );
             stream = await openMicOnly();
         }
 

@@ -66,7 +66,7 @@
                         <option value="stereo">Stereo — left / right</option>
                     </select>
                     <p class="mt-1 text-xs" style="color: var(--stage-muted)">
-                        Use Mono if you only hear one side. Stereo keeps left/right from a stereo interface or files.
+                        Mono captures one channel and plays in both ears (Scarlett left-only stays clear). Stereo keeps L/R. Leave Level at 100% and Advanced off for highest quality.
                     </p>
                 </div>
 
