@@ -64,7 +64,7 @@
                         <option value="stereo">Stereo — left / right</option>
                     </select>
                     <p class="mt-1 text-xs" style="color: var(--stage-muted)">
-                        Mono = both ears from one Scarlett input (clean PCM clone, not the dull Web Audio remux). Stereo = true left/right. Turn 2i2 gain up until the meter moves strongly.
+                        Mono = both ears from one Scarlett input. Stereo = true left/right. Studio never plays audio — monitor on the listen link (or Scarlett Direct Monitor).
                     </p>
                 </div>
 

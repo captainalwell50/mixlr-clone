@@ -48,12 +48,14 @@ let mixDest = null;
 let micGain = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
+/** @type {ChannelSplitterNode|null} */
+let micSplitter = null;
+/** @type {GainNode|null} */
+let micMonoSum = null;
+/** @type {ChannelMergerNode|null} */
+let micMerger = null;
 /** @type {MediaStream|null} */
 let micStream = null;
-/** @type {AbortController|null} */
-let dualMonoAbort = null;
-/** @type {MediaStreamTrackGenerator|null} */
-let dualMonoGenerator = null;
 /** @type {AnalyserNode|null} */
 let analyser = null;
 /** @type {MediaStreamAudioSourceNode|null} */
@@ -136,26 +138,9 @@ function isMono() {
     return audioLayout() === 'mono';
 }
 
-/** Mixer only for audio files. Mono both-ears uses a PCM track transform (not Web Audio remux). */
+/** Mixer / dual-mono graph when Mono (both ears) or audio files are used. */
 function needsMixer() {
-    return fileChannels.size > 0;
-}
-
-function canDualMonoTransform() {
-    return typeof MediaStreamTrackProcessor !== 'undefined'
-        && typeof MediaStreamTrackGenerator !== 'undefined'
-        && typeof AudioData !== 'undefined';
-}
-
-function stopDualMono() {
-    dualMonoAbort?.abort();
-    dualMonoAbort = null;
-    try {
-        dualMonoGenerator?.stop();
-    } catch {
-        /* ignore */
-    }
-    dualMonoGenerator = null;
+    return isMono() || fileChannels.size > 0;
 }
 
 try {
@@ -448,14 +433,19 @@ async function openMicrophone() {
 function disconnectMicGraph() {
     try {
         micSource?.disconnect();
+        micSplitter?.disconnect();
+        micMonoSum?.disconnect();
+        micMerger?.disconnect();
     } catch {
         /* ignore */
     }
     micSource = null;
+    micSplitter = null;
+    micMonoSum = null;
+    micMerger = null;
 }
 
 function stopMicTracks() {
-    stopDualMono();
     if (micStream) {
         for (const t of micStream.getTracks()) {
             t.stop();
@@ -465,120 +455,71 @@ function stopMicTracks() {
 }
 
 /**
- * Sum Scarlett L+R into dual-mono stereo PCM without Web Audio MediaStreamDestination
- * (that remux is what made the stream sound dull after the last deploy).
- * @param {MediaStream} input
+ * Both-ears mono on a silent AudioContext (no speakers).
+ * Avoid MediaStreamTrackGenerator — Chrome was playing that track in the Studio tab.
  */
-async function toDualMonoStream(input) {
-    const track = input.getAudioTracks()[0];
-    if (!track || !canDualMonoTransform()) {
-        return input;
+async function attachMicrophoneToMixer() {
+    await ensureMixer();
+    disconnectMicGraph();
+    stopMicTracks();
+    micStream = await openMicrophone();
+    micSource = audioCtx.createMediaStreamSource(micStream);
+
+    if (isMono()) {
+        micSplitter = audioCtx.createChannelSplitter(2);
+        micMonoSum = audioCtx.createGain();
+        micMonoSum.gain.value = 0.707;
+        micMerger = audioCtx.createChannelMerger(2);
+        micSource.connect(micSplitter);
+        micSplitter.connect(micMonoSum, 0);
+        micSplitter.connect(micMonoSum, 1);
+        micMonoSum.connect(micMerger, 0, 0);
+        micMonoSum.connect(micMerger, 0, 1);
+        micMerger.connect(micGain);
+    } else {
+        micSource.connect(micGain);
     }
-
-    stopDualMono();
-    stopMeter();
-    const processor = new MediaStreamTrackProcessor({ track });
-    const generator = new MediaStreamTrackGenerator({ kind: 'audio' });
-    dualMonoGenerator = generator;
-    dualMonoAbort = new AbortController();
-    const { signal } = dualMonoAbort;
-    const reader = processor.readable.getReader();
-    const writer = generator.writable.getWriter();
-    let meterTick = 0;
-
-    void (async () => {
-        try {
-            while (!signal.aborted) {
-                const { value, done } = await reader.read();
-                if (done || !value) {
-                    break;
-                }
-                /** @type {AudioData} */
-                const frame = value;
-                const frames = frame.numberOfFrames;
-                const rate = frame.sampleRate;
-                const chans = frame.numberOfChannels;
-                const left = new Float32Array(frames);
-                frame.copyTo(left, { planeIndex: 0, format: 'f32-planar' });
-                let mono = left;
-                if (chans > 1) {
-                    const right = new Float32Array(frames);
-                    frame.copyTo(right, { planeIndex: 1, format: 'f32-planar' });
-                    mono = new Float32Array(frames);
-                    for (let i = 0; i < frames; i += 1) {
-                        mono[i] = 0.707 * (left[i] + right[i]);
-                    }
-                }
-                // Meter from PCM here — do not attach the generator to an AudioContext
-                // (that was playing the mic locally in the Studio tab).
-                meterTick += 1;
-                if (meterTick % 4 === 0) {
-                    let sum = 0;
-                    for (let i = 0; i < mono.length; i += 1) {
-                        sum += mono[i] * mono[i];
-                    }
-                    updateMeterFromRms(Math.sqrt(sum / mono.length));
-                }
-                const planar = new Float32Array(frames * 2);
-                planar.set(mono, 0);
-                planar.set(mono, frames);
-                const out = new AudioData({
-                    format: 'f32-planar',
-                    sampleRate: rate,
-                    numberOfFrames: frames,
-                    numberOfChannels: 2,
-                    timestamp: frame.timestamp,
-                    data: planar,
-                });
-                frame.close();
-                await writer.write(out);
-                out.close();
-            }
-        } catch (e) {
-            if (!signal.aborted) {
-                console.warn('Dual-mono transform ended', e);
-            }
-        } finally {
-            try {
-                reader.releaseLock();
-            } catch {
-                /* ignore */
-            }
-            try {
-                await writer.close();
-            } catch {
-                /* ignore */
-            }
-        }
-    })();
-
-    return new MediaStream([generator]);
+    await startMeterFromStream(mixDest.stream);
 }
 
 async function openMicOnly() {
     disconnectMicGraph();
     stopMicTracks();
     micStream = await openMicrophone();
-    if (isMono() && canDualMonoTransform()) {
-        // Publish dual-mono; meter runs inside the transform (no local AudioContext tap).
-        return toDualMonoStream(micStream);
-    }
     await startMeterFromStream(micStream);
     return micStream;
 }
 
-async function attachMicrophoneToMixer() {
-    await ensureMixer();
-    disconnectMicGraph();
-    stopMicTracks();
-    micStream = await openMicrophone();
-    let intoMix = micStream;
-    if (isMono()) {
-        intoMix = await toDualMonoStream(micStream);
+/** Drop any remote audio — Studio must never play the live stream locally. */
+function silenceRemoteAudio(peer) {
+    peer.ontrack = (ev) => {
+        try {
+            ev.track.enabled = false;
+            ev.track.stop();
+        } catch {
+            /* ignore */
+        }
+        for (const stream of ev.streams || []) {
+            for (const t of stream.getTracks()) {
+                try {
+                    t.enabled = false;
+                    t.stop();
+                } catch {
+                    /* ignore */
+                }
+            }
+        }
+    };
+    for (const receiver of peer.getReceivers()) {
+        if (receiver.track) {
+            try {
+                receiver.track.enabled = false;
+                receiver.track.stop();
+            } catch {
+                /* ignore */
+            }
+        }
     }
-    micSource = audioCtx.createMediaStreamSource(intoMix);
-    micSource.connect(micGain);
-    await startMeterFromStream(mixDest.stream);
 }
 
 async function loadDevices() {
@@ -789,6 +730,7 @@ async function publishWhip(stream) {
     pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
+    silenceRemoteAudio(pc);
 
     try {
         await track.applyConstraints(CLEAN_AUDIO);
@@ -852,6 +794,7 @@ async function publishWhip(stream) {
         throw new Error('Server answered without Opus (phone codec). Stop and Go live again after refresh.');
     }
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    silenceRemoteAudio(pc);
     await applyMaxAudioBitrate(pc);
 
     const sender = transceiver.sender || pc.getSenders().find((s) => s.track?.kind === 'audio');
@@ -883,11 +826,7 @@ async function primeMicrophone() {
             t.stop();
         }
         await loadDevices();
-        setStatus(
-            canDualMonoTransform()
-                ? 'Microphone ready. Mono = both ears (clean PCM). Stereo = true L/R. Pick Scarlett, then Go live.'
-                : 'Microphone ready. Use Stereo for best quality in this browser (Mono both-ears needs Chrome/Edge).',
-        );
+        setStatus('Microphone ready. Mono = both ears. Stereo = true L/R. Studio stays silent — use the listen link to hear the stream.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -915,7 +854,7 @@ btnStart?.addEventListener('click', async () => {
         let stream;
         if (needsMixer()) {
             publishMode = 'mixer';
-            setStatus('Starting file mix…');
+            setStatus(isMono() ? 'Starting both-ears publish (Studio muted)…' : 'Starting file mix…');
             await attachMicrophoneToMixer();
             for (const channel of fileChannels.values()) {
                 wireFileChannelAudio(channel);
@@ -923,11 +862,7 @@ btnStart?.addEventListener('click', async () => {
             stream = mixDest.stream;
         } else {
             publishMode = 'direct';
-            setStatus(
-                isMono()
-                    ? 'Starting clean Scarlett → both ears (PCM dual-mono, Opus stereo)…'
-                    : 'Starting clean Scarlett → Opus stereo…',
-            );
+            setStatus('Starting clean Scarlett → Opus stereo…');
             stream = await openMicOnly();
         }
 
@@ -935,10 +870,10 @@ btnStart?.addEventListener('click', async () => {
 
         setStatus(
             isMono()
-                ? 'You’re on air — both ears, full-rate Opus (no Web Audio remux). Keep this tab open.'
+                ? 'You’re on air — both ears. This tab is silent; use the listen link to monitor.'
                 : publishMode === 'direct'
-                    ? 'You’re on air — direct Opus stereo. Keep this tab open.'
-                    : 'You’re on air — file mix / Opus stereo. Keep this tab open.',
+                    ? 'You’re on air — direct Opus stereo. This tab is silent; use the listen link to monitor.'
+                    : 'You’re on air — file mix. This tab is silent; use the listen link to monitor.',
         );
         setOnAir(true);
         btnStop.disabled = false;
