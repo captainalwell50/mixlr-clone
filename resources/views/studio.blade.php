@@ -12,15 +12,15 @@
 @endphp
 
 @section('content')
-    <div id="studio-stage" class="stage" style="--stage-accent: {{ $theme }};">
+    <div id="studio-stage" class="stage stage--cinema" style="--stage-accent: {{ $theme }};">
         <div
-            class="stage-atmosphere {{ $artwork ? 'has-art' : '' }}"
-            @if ($artwork) style="--stage-art: url('{{ $artwork }}')" @endif
+            class="stage-atmosphere has-art"
+            style="--stage-art: url('{{ $artwork ?: asset('images/listen-stage-bg.jpg') }}')"
         ></div>
 
-        <div class="stage-content">
+        <div class="stage-frame stage-frame--desk">
             <header class="stage-top stage-rise">
-                <p class="stage-platform">{{ config('app.name', 'Live Mix Audio') }}</p>
+                <a href="{{ url('/') }}" class="stage-platform">{{ config('app.name', 'Live Mix Audio') }}</a>
                 <a href="{{ route('dashboard') }}" class="stage-top-link">Dashboard</a>
             </header>
 
