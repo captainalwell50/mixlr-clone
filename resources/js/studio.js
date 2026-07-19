@@ -48,14 +48,12 @@ let mixDest = null;
 let micGain = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
-/** @type {ChannelSplitterNode|null} */
-let micSplitter = null;
-/** @type {GainNode|null} */
-let micMonoSum = null;
-/** @type {ChannelMergerNode|null} */
-let micMerger = null;
 /** @type {MediaStream|null} */
 let micStream = null;
+/** @type {AbortController|null} */
+let dualMonoAbort = null;
+/** @type {MediaStreamTrackGenerator|null} */
+let dualMonoGenerator = null;
 /** @type {AnalyserNode|null} */
 let analyser = null;
 /** @type {MediaStreamAudioSourceNode|null} */
@@ -138,12 +136,26 @@ function isMono() {
     return audioLayout() === 'mono';
 }
 
-/**
- * Mixer when Mono (duplicate summed mic to L+R) or when files are added.
- * Always publish Opus stereo @ full bitrate — Opus mono was capping ~260 kb/s.
- */
+/** Mixer only for audio files. Mono both-ears uses a PCM track transform (not Web Audio remux). */
 function needsMixer() {
-    return isMono() || fileChannels.size > 0;
+    return fileChannels.size > 0;
+}
+
+function canDualMonoTransform() {
+    return typeof MediaStreamTrackProcessor !== 'undefined'
+        && typeof MediaStreamTrackGenerator !== 'undefined'
+        && typeof AudioData !== 'undefined';
+}
+
+function stopDualMono() {
+    dualMonoAbort?.abort();
+    dualMonoAbort = null;
+    try {
+        dualMonoGenerator?.stop();
+    } catch {
+        /* ignore */
+    }
+    dualMonoGenerator = null;
 }
 
 try {
@@ -419,19 +431,14 @@ async function openMicrophone() {
 function disconnectMicGraph() {
     try {
         micSource?.disconnect();
-        micSplitter?.disconnect();
-        micMonoSum?.disconnect();
-        micMerger?.disconnect();
     } catch {
         /* ignore */
     }
     micSource = null;
-    micSplitter = null;
-    micMonoSum = null;
-    micMerger = null;
 }
 
 function stopMicTracks() {
+    stopDualMono();
     if (micStream) {
         for (const t of micStream.getTracks()) {
             t.stop();
@@ -440,12 +447,95 @@ function stopMicTracks() {
     }
 }
 
+/**
+ * Sum Scarlett L+R into dual-mono stereo PCM without Web Audio MediaStreamDestination
+ * (that remux is what made the stream sound dull after the last deploy).
+ * @param {MediaStream} input
+ */
+async function toDualMonoStream(input) {
+    const track = input.getAudioTracks()[0];
+    if (!track || !canDualMonoTransform()) {
+        return input;
+    }
+
+    stopDualMono();
+    const processor = new MediaStreamTrackProcessor({ track });
+    const generator = new MediaStreamTrackGenerator({ kind: 'audio' });
+    dualMonoGenerator = generator;
+    dualMonoAbort = new AbortController();
+    const { signal } = dualMonoAbort;
+    const reader = processor.readable.getReader();
+    const writer = generator.writable.getWriter();
+
+    void (async () => {
+        try {
+            while (!signal.aborted) {
+                const { value, done } = await reader.read();
+                if (done || !value) {
+                    break;
+                }
+                /** @type {AudioData} */
+                const frame = value;
+                const frames = frame.numberOfFrames;
+                const rate = frame.sampleRate;
+                const chans = frame.numberOfChannels;
+                const left = new Float32Array(frames);
+                frame.copyTo(left, { planeIndex: 0, format: 'f32-planar' });
+                let mono = left;
+                if (chans > 1) {
+                    const right = new Float32Array(frames);
+                    frame.copyTo(right, { planeIndex: 1, format: 'f32-planar' });
+                    mono = new Float32Array(frames);
+                    for (let i = 0; i < frames; i += 1) {
+                        mono[i] = 0.707 * (left[i] + right[i]);
+                    }
+                }
+                const planar = new Float32Array(frames * 2);
+                planar.set(mono, 0);
+                planar.set(mono, frames);
+                const out = new AudioData({
+                    format: 'f32-planar',
+                    sampleRate: rate,
+                    numberOfFrames: frames,
+                    numberOfChannels: 2,
+                    timestamp: frame.timestamp,
+                    data: planar,
+                });
+                frame.close();
+                await writer.write(out);
+                out.close();
+            }
+        } catch (e) {
+            if (!signal.aborted) {
+                console.warn('Dual-mono transform ended', e);
+            }
+        } finally {
+            try {
+                reader.releaseLock();
+            } catch {
+                /* ignore */
+            }
+            try {
+                await writer.close();
+            } catch {
+                /* ignore */
+            }
+        }
+    })();
+
+    return new MediaStream([generator]);
+}
+
 async function openMicOnly() {
     disconnectMicGraph();
     stopMicTracks();
     micStream = await openMicrophone();
-    await startMeterFromStream(micStream);
-    return micStream;
+    let publish = micStream;
+    if (isMono()) {
+        publish = await toDualMonoStream(micStream);
+    }
+    await startMeterFromStream(publish);
+    return publish;
 }
 
 async function attachMicrophoneToMixer() {
@@ -453,24 +543,12 @@ async function attachMicrophoneToMixer() {
     disconnectMicGraph();
     stopMicTracks();
     micStream = await openMicrophone();
-    micSource = audioCtx.createMediaStreamSource(micStream);
-
+    let intoMix = micStream;
     if (isMono()) {
-        // Sum L+R (Scarlett often only has Input 1 or 2 live), then feed both ears.
-        // Keep a stereo MediaStream so Opus stays at full ~510 kb/s (not Opus-mono ~260).
-        micSplitter = audioCtx.createChannelSplitter(2);
-        micMonoSum = audioCtx.createGain();
-        micMonoSum.gain.value = 0.707;
-        micMerger = audioCtx.createChannelMerger(2);
-        micSource.connect(micSplitter);
-        micSplitter.connect(micMonoSum, 0);
-        micSplitter.connect(micMonoSum, 1);
-        micMonoSum.connect(micMerger, 0, 0);
-        micMonoSum.connect(micMerger, 0, 1);
-        micMerger.connect(micGain);
-    } else {
-        micSource.connect(micGain);
+        intoMix = await toDualMonoStream(micStream);
     }
+    micSource = audioCtx.createMediaStreamSource(intoMix);
+    micSource.connect(micGain);
     await startMeterFromStream(mixDest.stream);
 }
 
@@ -773,7 +851,11 @@ async function primeMicrophone() {
             t.stop();
         }
         await loadDevices();
-        setStatus('Microphone ready. Mono (both ears) is selected by default. Pick your Scarlett, then Go live.');
+        setStatus(
+            canDualMonoTransform()
+                ? 'Microphone ready. Mono = both ears (clean PCM). Stereo = true L/R. Pick Scarlett, then Go live.'
+                : 'Microphone ready. Use Stereo for best quality in this browser (Mono both-ears needs Chrome/Edge).',
+        );
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -801,16 +883,19 @@ btnStart?.addEventListener('click', async () => {
         let stream;
         if (needsMixer()) {
             publishMode = 'mixer';
-            setStatus(isMono() ? 'Starting both-ears mix (full-rate Opus stereo)…' : 'Starting file mix…');
+            setStatus('Starting file mix…');
             await attachMicrophoneToMixer();
             for (const channel of fileChannels.values()) {
                 wireFileChannelAudio(channel);
             }
             stream = mixDest.stream;
         } else {
-            // True stereo Scarlett → WebRTC Opus, no remux.
             publishMode = 'direct';
-            setStatus('Starting clean Scarlett → Opus stereo…');
+            setStatus(
+                isMono()
+                    ? 'Starting clean Scarlett → both ears (PCM dual-mono, Opus stereo)…'
+                    : 'Starting clean Scarlett → Opus stereo…',
+            );
             stream = await openMicOnly();
         }
 
@@ -818,7 +903,7 @@ btnStart?.addEventListener('click', async () => {
 
         setStatus(
             isMono()
-                ? 'You’re on air — both ears, Opus stereo ~510 kb/s. Keep this tab open.'
+                ? 'You’re on air — both ears, full-rate Opus (no Web Audio remux). Keep this tab open.'
                 : publishMode === 'direct'
                     ? 'You’re on air — direct Opus stereo. Keep this tab open.'
                     : 'You’re on air — file mix / Opus stereo. Keep this tab open.',
