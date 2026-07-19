@@ -48,10 +48,6 @@ let mixDest = null;
 let micGain = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
-/** @type {ChannelSplitterNode|null} */
-let micSplitter = null;
-/** @type {GainNode|null} */
-let micMonoSum = null;
 /** @type {MediaStream|null} */
 let micStream = null;
 /** @type {AnalyserNode|null} */
@@ -136,13 +132,13 @@ function isMono() {
     return audioLayout() === 'mono';
 }
 
-function captureChannelCount() {
-    return isMono() ? 1 : 2;
-}
-
-/** Mixer for mono L+R downmix or when audio files are added. Stereo mic-only stays direct. */
+/**
+ * Mixer only when audio files are added.
+ * Mono no longer remuxes through Web Audio (that muffled the Scarlett) —
+ * both-ears mono is Opus stereo=0 on the direct mic track.
+ */
 function needsMixer() {
-    return isMono() || fileChannels.size > 0;
+    return fileChannels.size > 0;
 }
 
 try {
@@ -368,7 +364,7 @@ async function ensureMixer() {
             await audioCtx.resume();
         }
         try {
-            mixDest.channelCount = captureChannelCount();
+            mixDest.channelCount = 2;
         } catch {
             /* optional */
         }
@@ -381,7 +377,7 @@ async function ensureMixer() {
     }
     mixDest = audioCtx.createMediaStreamDestination();
     try {
-        mixDest.channelCount = captureChannelCount();
+        mixDest.channelCount = 2;
         mixDest.channelCountMode = 'explicit';
         mixDest.channelInterpretation = 'speakers';
     } catch {
@@ -418,14 +414,10 @@ async function openMicrophone() {
 function disconnectMicGraph() {
     try {
         micSource?.disconnect();
-        micSplitter?.disconnect();
-        micMonoSum?.disconnect();
     } catch {
         /* ignore */
     }
     micSource = null;
-    micSplitter = null;
-    micMonoSum = null;
 }
 
 function stopMicTracks() {
@@ -447,28 +439,12 @@ async function openMicOnly() {
 
 async function attachMicrophoneToMixer() {
     await ensureMixer();
-    try {
-        mixDest.channelCount = captureChannelCount();
-    } catch {
-        /* optional */
-    }
     disconnectMicGraph();
     stopMicTracks();
     micStream = await openMicrophone();
     micSource = audioCtx.createMediaStreamSource(micStream);
-
-    if (isMono()) {
-        // Sum left + right so a left-only Scarlett input still plays in both ears.
-        micSplitter = audioCtx.createChannelSplitter(2);
-        micMonoSum = audioCtx.createGain();
-        micMonoSum.gain.value = 0.707;
-        micSource.connect(micSplitter);
-        micSplitter.connect(micMonoSum, 0);
-        micSplitter.connect(micMonoSum, 1);
-        micMonoSum.connect(micGain);
-    } else {
-        micSource.connect(micGain);
-    }
+    // File mix keeps a clean stereo graph; Opus mono flag still handles both-ears encode.
+    micSource.connect(micGain);
     await startMeterFromStream(mixDest.stream);
 }
 
@@ -799,26 +775,30 @@ btnStart?.addEventListener('click', async () => {
         let stream;
         if (needsMixer()) {
             publishMode = 'mixer';
-            setStatus(isMono() ? 'Starting mono mix (both ears)…' : 'Starting file mix…');
+            setStatus('Starting file mix…');
             await attachMicrophoneToMixer();
             for (const channel of fileChannels.values()) {
                 wireFileChannelAudio(channel);
             }
             stream = mixDest.stream;
         } else {
-            // Stereo mic-only: Scarlett track → WebRTC, no remux.
+            // Scarlett track → WebRTC Opus (no Web Audio remux).
             publishMode = 'direct';
-            setStatus('Starting clean stereo Scarlett path…');
+            setStatus(
+                isMono()
+                    ? 'Starting clean Scarlett → Opus mono (both ears)…'
+                    : 'Starting clean Scarlett → Opus stereo…',
+            );
             stream = await openMicOnly();
         }
 
         await publishWhip(stream);
 
-        const layoutLabel = isMono() ? 'mono (both ears)' : 'stereo';
+        const layoutLabel = isMono() ? 'Opus mono (both ears)' : 'Opus stereo';
         setStatus(
             publishMode === 'direct'
-                ? `You’re on air — clean direct ${layoutLabel}. Keep this tab open.`
-                : `You’re on air — ${layoutLabel}. Keep this tab open.`,
+                ? `You’re on air — direct ${layoutLabel}. Keep this tab open.`
+                : `You’re on air — file mix / ${layoutLabel}. Keep this tab open.`,
         );
         setOnAir(true);
         btnStop.disabled = false;

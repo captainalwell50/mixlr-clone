@@ -308,8 +308,11 @@ async function startHls(hlsUrl) {
     }
 
     hls = new Hls({
-        lowLatencyMode: true,
+        lowLatencyMode: false,
         backBufferLength: 30,
+        maxBufferLength: 30,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 6,
     });
     hls.loadSource(hlsUrl);
     hls.attachMedia(audio);

@@ -23,10 +23,9 @@ hls: true
 hlsAddress: :8888
 hlsEncryption: false
 hlsAllowOrigins: ['*']
-hlsVariant: lowLatency
-hlsSegmentCount: 7
-hlsSegmentDuration: 2s
-hlsPartDuration: 200ms
+hlsVariant: fmp4
+hlsSegmentCount: 5
+hlsSegmentDuration: 4s
 hlsAlwaysRemux: true
 
 rtmp: true

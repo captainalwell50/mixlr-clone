@@ -27,11 +27,10 @@ hls: true
 hlsAddress: :8888
 hlsEncryption: false
 hlsAllowOrigins: ['*']
-hlsVariant: lowLatency
-hlsSegmentCount: 7
-# Slightly longer segments = fewer boundaries (better for high-bitrate Opus remux).
-hlsSegmentDuration: 2s
-hlsPartDuration: 200ms
+# Stable fMP4 for Opus (LL-HLS parts can stutter on audio-only).
+hlsVariant: fmp4
+hlsSegmentCount: 5
+hlsSegmentDuration: 4s
 # Remux Opus as-is into fMP4; do not re-encode (preserves studio bitrate).
 hlsAlwaysRemux: true
 
