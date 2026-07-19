@@ -60,17 +60,6 @@
                 </div>
 
                 <div>
-                    <label for="audio-layout">Output</label>
-                    <select id="audio-layout" class="mt-2">
-                        <option value="mono" selected>Mono — both ears (recommended for one mic)</option>
-                        <option value="stereo">Stereo — left / right</option>
-                    </select>
-                    <p class="mt-1 text-xs" style="color: var(--stage-muted)">
-                        Use Mono if you only hear one side. Stereo keeps left/right from a stereo interface or files.
-                    </p>
-                </div>
-
-                <div>
                     <div class="mb-1 flex items-center justify-between text-xs" style="color: var(--stage-muted)">
                         <span>Mix level</span>
                         <span id="meter-label">—</span>
