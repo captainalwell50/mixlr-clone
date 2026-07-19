@@ -23,6 +23,7 @@ class ListenPageTest extends TestCase
             'uuid' => fake()->uuid(),
             'title' => 'Main',
             'status' => StreamStatus::Live,
+            'is_public' => true,
         ]);
         $event = Event::query()->create([
             'organization_id' => $org->id,
@@ -35,6 +36,25 @@ class ListenPageTest extends TestCase
 
         $this->get(route('listen.stream', $stream))
             ->assertRedirect(route('events.show', $event));
+    }
+
+    public function test_listen_shows_player_when_stream_has_no_event(): void
+    {
+        $org = Organization::query()->create(['name' => 'G', 'slug' => 'g-listen', 'is_public' => true]);
+        $stream = Stream::query()->create([
+            'organization_id' => $org->id,
+            'uuid' => fake()->uuid(),
+            'title' => 'Sunday Service',
+            'status' => StreamStatus::Live,
+            'is_public' => true,
+        ]);
+
+        $this->get(route('listen.stream', $stream))
+            ->assertOk()
+            ->assertSee('Sunday Service', false)
+            ->assertSee('listen-root', false)
+            ->assertSee('stream-audio', false)
+            ->assertSee('Live', false);
     }
 
     public function test_event_page_shows_live_badge(): void

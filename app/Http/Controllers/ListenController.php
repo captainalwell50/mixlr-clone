@@ -5,11 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\Event;
 use App\Models\Stream;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 class ListenController extends Controller
 {
-    public function show(Stream $stream): RedirectResponse
+    public function show(Request $request, Stream $stream): View|RedirectResponse
     {
+        $stream->loadMissing('organization');
+
         $event = Event::query()
             ->where('stream_id', $stream->id)
             ->latest('id')
@@ -19,12 +23,19 @@ class ListenController extends Controller
             return redirect()->route('events.show', $event);
         }
 
-        // Legacy stream without event — send to org channel if possible
-        return redirect()->route('channels.show', $stream->organization);
+        $this->authorizeListen($request, $stream);
+
+        return view('listen', [
+            'stream' => $stream,
+            'organization' => $stream->organization,
+            'hlsUrl' => $stream->hlsPlaylistUrl(),
+        ]);
     }
 
-    public function embed(Stream $stream): RedirectResponse
+    public function embed(Request $request, Stream $stream): View|RedirectResponse
     {
+        $stream->loadMissing('organization');
+
         $event = Event::query()
             ->where('stream_id', $stream->id)
             ->latest('id')
@@ -34,6 +45,22 @@ class ListenController extends Controller
             return redirect()->route('events.embed', $event);
         }
 
-        abort(404);
+        $this->authorizeListen($request, $stream);
+
+        return view('embed-listen', [
+            'stream' => $stream,
+            'hlsUrl' => $stream->hlsPlaylistUrl(),
+        ]);
+    }
+
+    private function authorizeListen(Request $request, Stream $stream): void
+    {
+        $organization = $stream->organization;
+
+        abort_unless(
+            ($stream->is_public && ($organization?->is_public ?? false))
+            || $request->user()?->canManageOrganization($organization),
+            404
+        );
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\EventStatus;
+use App\Enums\StreamStatus;
 use App\Models\Organization;
 use App\Models\Recording;
 use Illuminate\Http\Request;
@@ -18,6 +19,14 @@ class ChannelController extends Controller
             ->where('status', EventStatus::Live)
             ->latest('started_at')
             ->first();
+
+        $liveStream = $live
+            ? null
+            : $organization->streams()
+                ->where('status', StreamStatus::Live)
+                ->where('is_public', true)
+                ->latest('started_at')
+                ->first();
 
         $upcoming = $organization->events()
             ->where('status', EventStatus::Scheduled)
@@ -37,6 +46,6 @@ class ChannelController extends Controller
 
         $following = $request->user()?->followsChannel($organization) ?? false;
 
-        return view('channel.show', compact('organization', 'live', 'upcoming', 'recordings', 'following'));
+        return view('channel.show', compact('organization', 'live', 'liveStream', 'upcoming', 'recordings', 'following'));
     }
 }

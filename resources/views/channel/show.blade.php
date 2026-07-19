@@ -6,8 +6,12 @@
 @php
     $theme = $organization->themeColor();
     $artwork = $organization->artworkUrl();
+    $isOnAir = $live || $liveStream;
+    $listenUrl = $live
+        ? route('events.show', $live)
+        : ($liveStream ? route('listen.stream', $liveStream) : null);
     $thisSunday = $live ?? $upcoming->first();
-    $hasPrimaryCta = $live || $thisSunday;
+    $hasPrimaryCta = $isOnAir || $thisSunday;
 @endphp
 
 @section('content')
@@ -24,7 +28,7 @@
 
                 <p class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em]"
                     style="color: var(--site-accent)">
-                    @if ($live)
+                    @if ($isOnAir)
                         <span class="live-dot inline-block h-1.5 w-1.5 rounded-full bg-current"></span>
                         Live now
                     @else
@@ -39,8 +43,8 @@
                 @endif
 
                 <div class="site-actions stage-rise-delay-2">
-                    @if ($live)
-                        <a href="{{ route('events.show', $live) }}" class="site-btn site-btn-primary">Listen live</a>
+                    @if ($listenUrl)
+                        <a href="{{ $listenUrl }}" class="site-btn site-btn-primary">Listen live</a>
                     @elseif ($thisSunday)
                         <a href="{{ route('events.show', $thisSunday) }}" class="site-btn site-btn-primary">This Sunday</a>
                     @endif
@@ -73,7 +77,18 @@
         </header>
 
         <div class="site-body">
-            @if ($thisSunday)
+            @if ($liveStream && ! $live)
+                <section class="this-sunday stage-rise">
+                    <p class="site-section-label is-live">On air</p>
+                    <h2>{{ $liveStream->title }}</h2>
+                    <p>Happening now — open the stage and listen in.</p>
+                    <div class="site-actions">
+                        <a href="{{ route('listen.stream', $liveStream) }}" class="site-btn site-btn-primary">
+                            Enter stage
+                        </a>
+                    </div>
+                </section>
+            @elseif ($thisSunday)
                 <section class="this-sunday stage-rise">
                     <p class="site-section-label {{ $live ? 'is-live' : '' }}">
                         {{ $live ? 'On air' : 'This Sunday' }}
