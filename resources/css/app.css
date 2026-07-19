@@ -178,7 +178,9 @@
     }
 }
 
-.stage-cinema .stage-shell {
+.stage-cinema .stage-shell,
+.stage--cinema .stage-shell,
+.stage--cinema .stage-frame {
     position: relative;
     z-index: 1;
     display: flex;
@@ -187,6 +189,12 @@
     width: 100%;
     min-height: 100dvh;
     padding: 1rem clamp(1rem, 3vw, 2.5rem) 1.5rem;
+}
+
+.stage--cinema .stage-frame--desk {
+    max-width: 36rem;
+    margin: 0 auto;
+    width: 100%;
 }
 
 .stage-bar {
