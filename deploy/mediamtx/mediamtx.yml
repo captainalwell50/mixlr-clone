@@ -26,6 +26,8 @@ hlsAllowOrigins: ['*']
 hlsVariant: lowLatency
 hlsSegmentCount: 7
 hlsSegmentDuration: 2s
+hlsPartDuration: 200ms
+hlsAlwaysRemux: true
 
 rtmp: true
 rtmpAddress: :1935

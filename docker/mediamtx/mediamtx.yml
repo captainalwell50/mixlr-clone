@@ -29,7 +29,11 @@ hlsEncryption: false
 hlsAllowOrigins: ['*']
 hlsVariant: lowLatency
 hlsSegmentCount: 7
+# Slightly longer segments = fewer boundaries (better for high-bitrate Opus remux).
 hlsSegmentDuration: 2s
+hlsPartDuration: 200ms
+# Remux Opus as-is into fMP4; do not re-encode (preserves studio bitrate).
+hlsAlwaysRemux: true
 
 # OBS / ffmpeg ingest (publish auth via Laravel HTTP callback + stream_key)
 rtmp: true

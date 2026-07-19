@@ -605,6 +605,134 @@ a.stage-platform:hover {
     color: var(--stage-cream);
 }
 
+.stage-channels {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.stage-channel-card {
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 12%, transparent);
+    background: color-mix(in srgb, var(--stage-ink) 55%, transparent);
+    padding: 0.9rem 1rem;
+}
+
+.stage-channel-head {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin-bottom: 0.35rem;
+}
+
+.stage-channel-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.4rem;
+    border-radius: 999px;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--stage-ink);
+    background: var(--stage-accent);
+}
+
+.stage-channel-card[data-channel='file'] .stage-channel-badge {
+    background: #d4a24c;
+}
+
+.stage-channel-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--stage-cream) 88%, transparent);
+}
+
+.stage-channel-remove {
+    border: 0;
+    background: transparent;
+    color: color-mix(in srgb, var(--stage-cream) 55%, transparent);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+.stage-channel-remove:hover {
+    color: #f0a0a0;
+}
+
+.stage-channel-gain {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.55rem;
+    margin-top: 0.65rem;
+}
+
+.stage-channel-gain label {
+    font-size: 0.75rem;
+    color: color-mix(in srgb, var(--stage-cream) 55%, transparent);
+}
+
+.stage-channel-gain input[type='range'] {
+    width: 100%;
+    accent-color: var(--stage-accent);
+}
+
+.stage-channel-gain-value {
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: color-mix(in srgb, var(--stage-cream) 60%, transparent);
+    min-width: 2.5rem;
+    text-align: right;
+}
+
+.stage-channel-file-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.65rem;
+}
+
+.stage-channel-file-controls button {
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 14%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--stage-ink) 40%, transparent);
+    padding: 0.35rem 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: var(--stage-cream);
+    cursor: pointer;
+}
+.stage-channel-file-controls button:hover {
+    background: color-mix(in srgb, var(--stage-cream) 10%, transparent);
+}
+
+.stage-channel-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-channel-add {
+    border: 1px dashed color-mix(in srgb, var(--stage-cream) 22%, transparent);
+    border-radius: 0.65rem;
+    background: transparent;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 550;
+    color: color-mix(in srgb, var(--stage-cream) 75%, transparent);
+    cursor: pointer;
+}
+.btn-channel-add:hover {
+    border-color: color-mix(in srgb, var(--stage-accent) 60%, transparent);
+    color: var(--stage-cream);
+}
+
 .stage-meter-track {
     height: 0.4rem;
     overflow: hidden;

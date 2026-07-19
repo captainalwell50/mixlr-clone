@@ -5,6 +5,9 @@ const whipUrl = root?.dataset.whipUrl;
 const audioSelect = document.getElementById('audio-input');
 const btnStart = document.getElementById('btn-start');
 const btnStop = document.getElementById('btn-stop');
+const btnAddFile = document.getElementById('btn-add-file');
+const fileInput = document.getElementById('file-input');
+const channelsEl = document.getElementById('audio-channels');
 const statusEl = document.getElementById('studio-status');
 const meterEl = document.getElementById('level-meter');
 const meterLabel = document.getElementById('meter-label');
@@ -12,16 +15,56 @@ const stageEl = document.getElementById('studio-stage');
 const modeEl = document.getElementById('studio-mode');
 const copyBtn = document.getElementById('btn-copy-listen');
 const listenUrlEl = document.getElementById('listen-url');
+const micGainInput = document.getElementById('mic-gain');
+const micGainLabel = document.getElementById('mic-gain-label');
+
+/** Opus fullband stereo max (bits/sec). */
+const OPUS_MAX_BITRATE = 510_000;
+
+const HIGH_QUALITY_AUDIO = {
+    channelCount: { ideal: 2 },
+    sampleRate: { ideal: 48000 },
+    sampleSize: { ideal: 16 },
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+    // Chromium / Safari extras that soften desk mixes when left on.
+    voiceIsolation: false,
+};
 
 let pc = null;
-let mediaStream = null;
 /** @type {string|null} */
 let whipResourceUrl = null;
 /** @type {AudioContext|null} */
 let audioCtx = null;
+/** @type {MediaStreamAudioDestinationNode|null} */
+let mixDest = null;
+/** @type {GainNode|null} */
+let micGain = null;
+/** @type {MediaStreamAudioSourceNode|null} */
+let micSource = null;
+/** @type {MediaStream|null} */
+let micStream = null;
 /** @type {AnalyserNode|null} */
 let analyser = null;
+/** @type {MediaStreamAudioSourceNode|null} */
+let meterSource = null;
 let meterRaf = 0;
+let fileChannelSeq = 0;
+let isLive = false;
+/** @type {'direct' | 'mixer' | null} */
+let publishMode = null;
+
+/** @type {Map<string, {
+ *   id: string,
+ *   name: string,
+ *   objectUrl: string,
+ *   audio: HTMLAudioElement,
+ *   source: MediaElementAudioSourceNode|null,
+ *   gain: GainNode|null,
+ *   card: HTMLElement,
+ * }>} */
+const fileChannels = new Map();
 
 function setStatus(message) {
     if (statusEl) {
@@ -30,6 +73,7 @@ function setStatus(message) {
 }
 
 function setOnAir(live) {
+    isLive = live;
     stageEl?.classList.toggle('is-on-air', live);
     if (modeEl) {
         modeEl.textContent = live ? 'On air' : 'Broadcaster';
@@ -39,22 +83,6 @@ function setOnAir(live) {
         btnStart.textContent = live ? 'On air' : 'Go live';
     }
 }
-
-copyBtn?.addEventListener('click', async () => {
-    const text = listenUrlEl?.textContent?.trim();
-    if (!text) {
-        return;
-    }
-    try {
-        await navigator.clipboard.writeText(text);
-        copyBtn.textContent = 'Copied';
-        window.setTimeout(() => {
-            copyBtn.textContent = 'Copy link';
-        }, 1600);
-    } catch {
-        copyBtn.textContent = 'Copy failed';
-    }
-});
 
 function httpsStudioUrl() {
     const u = new URL(window.location.href);
@@ -81,7 +109,7 @@ function friendlyError(err) {
         return 'Publish rejected or media proxy misconfigured. Confirm /rtc reaches MediaMTX (not Laravel).';
     }
     if (/ICE|icegather|DTLS|Could not establish|peerconnection/i.test(msg)) {
-        return 'Could not reach the media server (ICE/network). On Azure, confirm UDP 8189 and webrtcAdditionalHosts (public IP).';
+        return 'Could not reach the media server (ICE/network). Confirm UDP 8189 and webrtcAdditionalHosts.';
     }
     if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
         return 'Could not reach the WHIP endpoint. Check HTTPS, Caddy /rtc proxy, and MediaMTX.';
@@ -89,30 +117,43 @@ function friendlyError(err) {
     return msg || 'Could not go live.';
 }
 
-async function openMicrophone() {
-    const preferredId = audioSelect?.value || '';
-    if (preferredId) {
-        try {
-            return await navigator.mediaDevices.getUserMedia({
-                audio: { deviceId: { ideal: preferredId } },
-                video: false,
-            });
-        } catch {
-            /* fall through to default input */
-        }
-    }
-    return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+function micGainPercent() {
+    return Number(micGainInput?.value ?? 100);
 }
+
+/** Mixer only when files are in use or mic level is not unity (Web Audio remux hurts quality). */
+function needsMixer() {
+    return fileChannels.size > 0 || micGainPercent() !== 100;
+}
+
+copyBtn?.addEventListener('click', async () => {
+    const text = listenUrlEl?.textContent?.trim();
+    if (!text) {
+        return;
+    }
+    try {
+        await navigator.clipboard.writeText(text);
+        copyBtn.textContent = 'Copied';
+        window.setTimeout(() => {
+            copyBtn.textContent = 'Copy link';
+        }, 1600);
+    } catch {
+        copyBtn.textContent = 'Copy failed';
+    }
+});
 
 function stopMeter() {
     if (meterRaf) {
         cancelAnimationFrame(meterRaf);
         meterRaf = 0;
     }
-    if (audioCtx) {
-        void audioCtx.close().catch(() => {});
-        audioCtx = null;
+    try {
+        meterSource?.disconnect();
+        analyser?.disconnect();
+    } catch {
+        /* ignore */
     }
+    meterSource = null;
     analyser = null;
     if (meterEl) {
         meterEl.style.width = '0%';
@@ -122,14 +163,23 @@ function stopMeter() {
     }
 }
 
-function startMeter(stream) {
+/**
+ * Meter-only tap (never used as the published track).
+ * @param {MediaStream} stream
+ */
+async function startMeterFromStream(stream) {
     stopMeter();
     try {
-        audioCtx = new AudioContext();
-        const source = audioCtx.createMediaStreamSource(stream);
+        if (!audioCtx) {
+            audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
+        }
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        meterSource = audioCtx.createMediaStreamSource(stream);
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
-        source.connect(analyser);
+        meterSource.connect(analyser);
         const data = new Uint8Array(analyser.frequencyBinCount);
 
         const tick = () => {
@@ -161,6 +211,158 @@ function startMeter(stream) {
     }
 }
 
+/**
+ * @param {string} sdp
+ */
+function preferHighQualityOpus(sdp) {
+    const opusPts = new Set();
+    for (const match of sdp.matchAll(/^a=rtpmap:(\d+) opus\/48000(?:\/\d+)?/gim)) {
+        opusPts.add(match[1]);
+    }
+    if (opusPts.size === 0) {
+        return sdp;
+    }
+
+    const fmtpValue = `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
+    let out = sdp;
+
+    for (const pt of opusPts) {
+        const fmtpRe = new RegExp(`^a=fmtp:${pt} .*`, 'im');
+        if (fmtpRe.test(out)) {
+            out = out.replace(fmtpRe, `a=fmtp:${pt} ${fmtpValue}`);
+        } else {
+            const rtpmapRe = new RegExp(`^(a=rtpmap:${pt} opus\\/48000(?:\\/\\d+)?)`, 'im');
+            out = out.replace(rtpmapRe, `$1\r\na=fmtp:${pt} ${fmtpValue}`);
+        }
+    }
+
+    return out;
+}
+
+/**
+ * @param {RTCPeerConnection} peer
+ */
+async function applyMaxAudioBitrate(peer) {
+    for (const sender of peer.getSenders()) {
+        if (sender.track?.kind !== 'audio') {
+            continue;
+        }
+        try {
+            const params = sender.getParameters();
+            if (!params.encodings || params.encodings.length === 0) {
+                params.encodings = [{}];
+            }
+            for (const encoding of params.encodings) {
+                encoding.maxBitrate = OPUS_MAX_BITRATE;
+                encoding.priority = 'high';
+                encoding.networkPriority = 'high';
+            }
+            await sender.setParameters(params);
+        } catch (e) {
+            console.warn('Could not set audio maxBitrate', e);
+        }
+    }
+}
+
+async function ensureMixer() {
+    if (audioCtx && mixDest && micGain) {
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        return;
+    }
+    if (!audioCtx) {
+        audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
+    } else if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+    }
+    mixDest = audioCtx.createMediaStreamDestination();
+    try {
+        mixDest.channelCount = 2;
+        mixDest.channelCountMode = 'explicit';
+        mixDest.channelInterpretation = 'speakers';
+    } catch {
+        /* optional */
+    }
+    micGain = audioCtx.createGain();
+    micGain.gain.value = micGainPercent() / 100;
+    micGain.connect(mixDest);
+}
+
+async function openMicrophone() {
+    const preferredId = audioSelect?.value || '';
+    const base = { ...HIGH_QUALITY_AUDIO };
+    if (preferredId) {
+        try {
+            return await navigator.mediaDevices.getUserMedia({
+                audio: { ...base, deviceId: { exact: preferredId } },
+                video: false,
+            });
+        } catch {
+            try {
+                return await navigator.mediaDevices.getUserMedia({
+                    audio: { ...base, deviceId: { ideal: preferredId } },
+                    video: false,
+                });
+            } catch {
+                /* fall through */
+            }
+        }
+    }
+    return navigator.mediaDevices.getUserMedia({ audio: base, video: false });
+}
+
+function disconnectMicGraph() {
+    if (micSource) {
+        try {
+            micSource.disconnect();
+        } catch {
+            /* ignore */
+        }
+        micSource = null;
+    }
+}
+
+function stopMicTracks() {
+    if (micStream) {
+        for (const t of micStream.getTracks()) {
+            t.stop();
+        }
+        micStream = null;
+    }
+}
+
+async function openMicOnly() {
+    disconnectMicGraph();
+    stopMicTracks();
+    micStream = await openMicrophone();
+    await startMeterFromStream(micStream);
+    return micStream;
+}
+
+async function attachMicrophoneToMixer() {
+    await ensureMixer();
+    disconnectMicGraph();
+    stopMicTracks();
+    micStream = await openMicrophone();
+    micSource = audioCtx.createMediaStreamSource(micStream);
+    micSource.connect(micGain);
+    await startMeterFromStream(mixDest.stream);
+}
+
+micGainInput?.addEventListener('input', () => {
+    const pct = micGainPercent();
+    if (micGainLabel) {
+        micGainLabel.textContent = `${pct}%`;
+    }
+    if (micGain) {
+        micGain.gain.value = pct / 100;
+    }
+    if (isLive && publishMode === 'direct' && pct !== 100) {
+        setStatus('Mic level changed — stop and Go live again to apply level in the mix (or leave at 100% for best quality).');
+    }
+});
+
 async function loadDevices() {
     if (!audioSelect) {
         return;
@@ -184,6 +386,253 @@ async function loadDevices() {
     }
 }
 
+audioSelect?.addEventListener('change', async () => {
+    if (!isLive || !pc) {
+        return;
+    }
+    try {
+        if (publishMode === 'direct') {
+            const stream = await openMicOnly();
+            const track = stream.getAudioTracks()[0];
+            const sender = pc.getSenders().find((s) => s.track?.kind === 'audio' || s.track == null);
+            if (sender && track) {
+                await sender.replaceTrack(track);
+                await applyMaxAudioBitrate(pc);
+            }
+            setStatus('Switched microphone — still on air (direct).');
+            return;
+        }
+        await attachMicrophoneToMixer();
+        setStatus('Switched microphone — still on air (mixer).');
+    } catch (e) {
+        setStatus(friendlyError(e));
+    }
+});
+
+function wireFileChannelAudio(channel) {
+    if (!audioCtx || !mixDest || channel.source) {
+        return;
+    }
+    channel.source = audioCtx.createMediaElementSource(channel.audio);
+    channel.gain = audioCtx.createGain();
+    const gainInput = channel.card.querySelector('[data-gain]');
+    channel.gain.gain.value = Number(gainInput?.value ?? 100) / 100;
+    channel.source.connect(channel.gain);
+    channel.gain.connect(mixDest);
+}
+
+function removeFileChannel(id) {
+    const channel = fileChannels.get(id);
+    if (!channel) {
+        return;
+    }
+    channel.audio.pause();
+    try {
+        channel.source?.disconnect();
+        channel.gain?.disconnect();
+    } catch {
+        /* ignore */
+    }
+    URL.revokeObjectURL(channel.objectUrl);
+    channel.card.remove();
+    fileChannels.delete(id);
+}
+
+function addFileChannel(file) {
+    const id = `file-${++fileChannelSeq}`;
+    const objectUrl = URL.createObjectURL(file);
+    const audio = new Audio(objectUrl);
+    audio.loop = false;
+    audio.preload = 'auto';
+
+    const card = document.createElement('div');
+    card.className = 'stage-channel-card';
+    card.dataset.channel = 'file';
+    card.dataset.id = id;
+    card.innerHTML = `
+        <div class="stage-channel-head">
+            <span class="stage-channel-badge">File</span>
+            <span class="stage-channel-name" title=""></span>
+            <button type="button" class="stage-channel-remove" data-remove>Remove</button>
+        </div>
+        <div class="stage-channel-gain">
+            <label>Level</label>
+            <input data-gain type="range" min="0" max="150" value="100" step="1">
+            <span class="stage-channel-gain-value" data-gain-label>100%</span>
+        </div>
+        <div class="stage-channel-file-controls">
+            <button type="button" data-play>Play</button>
+            <button type="button" data-pause>Pause</button>
+            <button type="button" data-restart>Restart</button>
+        </div>
+    `;
+    const nameEl = card.querySelector('.stage-channel-name');
+    if (nameEl) {
+        nameEl.textContent = file.name;
+        nameEl.title = file.name;
+    }
+
+    channelsEl?.appendChild(card);
+
+    const channel = {
+        id,
+        name: file.name,
+        objectUrl,
+        audio,
+        source: null,
+        gain: null,
+        card,
+    };
+    fileChannels.set(id, channel);
+
+    if (audioCtx && mixDest) {
+        wireFileChannelAudio(channel);
+    }
+
+    card.querySelector('[data-remove]')?.addEventListener('click', () => {
+        removeFileChannel(id);
+    });
+
+    const gainInput = card.querySelector('[data-gain]');
+    const gainLabel = card.querySelector('[data-gain-label]');
+    gainInput?.addEventListener('input', () => {
+        const pct = Number(gainInput.value);
+        if (gainLabel) {
+            gainLabel.textContent = `${pct}%`;
+        }
+        if (channel.gain) {
+            channel.gain.gain.value = pct / 100;
+        }
+    });
+
+    card.querySelector('[data-play]')?.addEventListener('click', async () => {
+        try {
+            await ensureMixer();
+            wireFileChannelAudio(channel);
+            await channel.audio.play();
+        } catch (e) {
+            setStatus(e instanceof Error ? e.message : 'Could not play file.');
+        }
+    });
+
+    card.querySelector('[data-pause]')?.addEventListener('click', () => {
+        channel.audio.pause();
+    });
+
+    card.querySelector('[data-restart]')?.addEventListener('click', async () => {
+        try {
+            await ensureMixer();
+            wireFileChannelAudio(channel);
+            channel.audio.currentTime = 0;
+            await channel.audio.play();
+        } catch (e) {
+            setStatus(e instanceof Error ? e.message : 'Could not restart file.');
+        }
+    });
+}
+
+btnAddFile?.addEventListener('click', () => {
+    fileInput?.click();
+});
+
+fileInput?.addEventListener('change', () => {
+    const files = Array.from(fileInput.files || []);
+    for (const file of files) {
+        if (!file.type.startsWith('audio/') && !/\.(mp3|wav|m4a|aac|ogg|flac|webm)$/i.test(file.name)) {
+            setStatus(`Skipped non-audio file: ${file.name}`);
+            continue;
+        }
+        addFileChannel(file);
+    }
+    fileInput.value = '';
+    if (files.length) {
+        setStatus(
+            isLive && publishMode === 'direct'
+                ? 'File added — stop and Go live again so the mixer can include it.'
+                : isLive
+                    ? 'File channel added. Press Play to include it in the live mix.'
+                    : 'File channel ready. Press Play when you want it in the mix, then Go live.',
+        );
+    }
+});
+
+/**
+ * @param {MediaStream} stream
+ */
+async function publishWhip(stream) {
+    const track = stream.getAudioTracks()[0];
+    if (!track) {
+        throw new Error('No audio track. Check the microphone.');
+    }
+
+    pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    });
+
+    try {
+        await track.applyConstraints({
+            channelCount: 2,
+            sampleRate: 48000,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+        });
+    } catch {
+        /* optional */
+    }
+
+    const transceiver = pc.addTransceiver(track, {
+        direction: 'sendonly',
+        streams: [stream],
+        sendEncodings: [{ maxBitrate: OPUS_MAX_BITRATE, priority: 'high', networkPriority: 'high' }],
+    });
+
+    // Fallback if sendEncodings unsupported at construction time.
+    if (!transceiver.sender) {
+        pc.addTrack(track, stream);
+    }
+
+    await applyMaxAudioBitrate(pc);
+
+    const offer = await pc.createOffer();
+    const highQualitySdp = preferHighQualityOpus(offer.sdp || '');
+    await pc.setLocalDescription({ type: 'offer', sdp: highQualitySdp });
+    await applyMaxAudioBitrate(pc);
+
+    await new Promise((resolve) => {
+        if (!pc || pc.iceGatheringState === 'complete') {
+            resolve();
+            return;
+        }
+        const done = () => {
+            if (pc?.iceGatheringState === 'complete') {
+                pc.removeEventListener('icegatheringstatechange', done);
+                resolve();
+            }
+        };
+        pc.addEventListener('icegatheringstatechange', done);
+        setTimeout(resolve, 2000);
+    });
+
+    const res = await fetch(whipUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription?.sdp ?? '',
+    });
+
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `WHIP failed (${res.status})`);
+    }
+
+    const loc = res.headers.get('Location');
+    whipResourceUrl = loc ? new URL(loc, whipUrl).href : null;
+
+    const answerSdp = await res.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    await applyMaxAudioBitrate(pc);
+}
+
 async function primeMicrophone() {
     if (!window.isSecureContext) {
         setStatus(`Studio needs HTTPS for the microphone. Open ${httpsStudioUrl()}`);
@@ -197,12 +646,16 @@ async function primeMicrophone() {
         return;
     }
     try {
-        const priming = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        // Request with HQ constraints so device labels + permission match Go live.
+        const priming = await navigator.mediaDevices.getUserMedia({
+            audio: HIGH_QUALITY_AUDIO,
+            video: false,
+        });
         for (const t of priming.getTracks()) {
             t.stop();
         }
         await loadDevices();
-        setStatus('Microphone ready. Choose an input and press Go live.');
+        setStatus('Microphone ready. Leave mic level at 100% for best quality. Add files only if you need them in the mix.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -227,58 +680,29 @@ btnStart?.addEventListener('click', async () => {
     setStatus('Starting…');
 
     try {
-        mediaStream = await openMicrophone();
-        startMeter(mediaStream);
-
-        pc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-        });
-
-        for (const track of mediaStream.getTracks()) {
-            pc.addTrack(track, mediaStream);
-        }
-
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        await new Promise((resolve) => {
-            if (pc.iceGatheringState === 'complete') {
-                resolve();
-                return;
+        let stream;
+        if (needsMixer()) {
+            publishMode = 'mixer';
+            setStatus('Starting mix (files / mic level)…');
+            await attachMicrophoneToMixer();
+            for (const channel of fileChannels.values()) {
+                wireFileChannelAudio(channel);
             }
-            const done = () => {
-                if (pc.iceGatheringState === 'complete') {
-                    pc.removeEventListener('icegatheringstatechange', done);
-                    resolve();
-                }
-            };
-            pc.addEventListener('icegatheringstatechange', done);
-            setTimeout(resolve, 2000);
-        });
-
-        const res = await fetch(whipUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/sdp',
-            },
-            body: pc.localDescription?.sdp ?? '',
-        });
-
-        if (!res.ok) {
-            const text = await res.text();
-            throw new Error(text || `WHIP failed (${res.status})`);
+            stream = mixDest.stream;
+        } else {
+            // Highest quality: mic track → WebRTC with no Web Audio remux.
+            publishMode = 'direct';
+            setStatus('Starting direct mic (highest quality)…');
+            stream = await openMicOnly();
         }
 
-        const loc = res.headers.get('Location');
-        whipResourceUrl = loc ? new URL(loc, whipUrl).href : null;
+        await publishWhip(stream);
 
-        const answerSdp = await res.text();
-        await pc.setRemoteDescription({
-            type: 'answer',
-            sdp: answerSdp,
-        });
-
-        setStatus('You’re on air — keep this tab open.');
+        setStatus(
+            publishMode === 'direct'
+                ? 'You’re on air — direct mic path (best quality). Keep this tab open.'
+                : 'You’re on air — mixer path (files/level). Keep this tab open.',
+        );
         setOnAir(true);
         btnStop.disabled = false;
     } catch (e) {
@@ -286,21 +710,24 @@ btnStart?.addEventListener('click', async () => {
         setStatus(friendlyError(e));
         btnStart.disabled = false;
         setOnAir(false);
-        await teardown();
+        publishMode = null;
+        await teardownLive();
     }
 });
 
 btnStop?.addEventListener('click', async () => {
     btnStop.disabled = true;
     setStatus('Stopping…');
-    await teardown();
+    await teardownLive();
     setStatus('Stopped. Ready when you are.');
     btnStart.disabled = false;
 });
 
-async function teardown() {
-    stopMeter();
+async function teardownLive() {
     setOnAir(false);
+    publishMode = null;
+    stopMeter();
+
     if (whipResourceUrl) {
         try {
             await fetch(whipResourceUrl, { method: 'DELETE' });
@@ -313,10 +740,24 @@ async function teardown() {
         pc.close();
         pc = null;
     }
-    if (mediaStream) {
-        for (const t of mediaStream.getTracks()) {
-            t.stop();
-        }
-        mediaStream = null;
+
+    disconnectMicGraph();
+    stopMicTracks();
+
+    for (const channel of fileChannels.values()) {
+        channel.audio.pause();
     }
 }
+
+window.addEventListener('pagehide', () => {
+    for (const id of [...fileChannels.keys()]) {
+        removeFileChannel(id);
+    }
+    stopMeter();
+    if (audioCtx) {
+        void audioCtx.close().catch(() => {});
+        audioCtx = null;
+        mixDest = null;
+        micGain = null;
+    }
+});

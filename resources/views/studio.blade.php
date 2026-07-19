@@ -38,14 +38,30 @@
             </p>
 
             <div class="stage-desk stage-rise-delay-2">
-                <div>
-                    <label for="audio-input">Microphone / interface</label>
-                    <select id="audio-input" class="mt-2"></select>
+                <div class="stage-channels" id="audio-channels">
+                    <div class="stage-channel-card" data-channel="mic" id="mic-channel">
+                        <div class="stage-channel-head">
+                            <span class="stage-channel-badge">Mic</span>
+                            <span class="stage-channel-name">Microphone / interface</span>
+                        </div>
+                        <label class="sr-only" for="audio-input">Microphone / interface</label>
+                        <select id="audio-input" class="mt-2"></select>
+                        <div class="stage-channel-gain">
+                            <label for="mic-gain">Level</label>
+                            <input id="mic-gain" type="range" min="0" max="150" value="100" step="1">
+                            <span id="mic-gain-label" class="stage-channel-gain-value">100%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stage-channel-actions">
+                    <button type="button" id="btn-add-file" class="btn-channel-add">+ Add audio file</button>
+                    <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
                 </div>
 
                 <div>
                     <div class="mb-1 flex items-center justify-between text-xs" style="color: var(--stage-muted)">
-                        <span>Input level</span>
+                        <span>Mix level</span>
                         <span id="meter-label">—</span>
                     </div>
                     <div class="stage-meter-track">
@@ -59,7 +75,7 @@
                 </div>
 
                 <p id="studio-status" class="stage-status-line" style="text-align: left">
-                    Allow microphone access when prompted, then press Go live.
+                    Allow microphone access when prompted. Leave mic level at 100% for best quality (direct path). Only add audio files if you need them in the same broadcast.
                 </p>
 
                 <div class="stage-copy-row">

@@ -230,7 +230,21 @@ async function startWhep(whepUrl) {
     };
 
     const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+    // Prefer stereo Opus on the receive side when the browser offers it.
+    let sdp = offer.sdp || '';
+    sdp = sdp.replace(
+        /^a=fmtp:(\d+) (.*)$/gim,
+        (line, pt, params) => {
+            if (!new RegExp(`a=rtpmap:${pt} opus/48000`, 'i').test(sdp)) {
+                return line;
+            }
+            if (/stereo=1/i.test(params) && /maxaveragebitrate=/i.test(params)) {
+                return line;
+            }
+            return `a=fmtp:${pt} minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=510000;maxplaybackrate=48000`;
+        },
+    );
+    await pc.setLocalDescription({ type: 'offer', sdp });
     await waitForIce(pc);
 
     const res = await fetch(whepUrl, {
