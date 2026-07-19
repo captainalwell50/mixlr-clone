@@ -5,6 +5,8 @@ const root = document.getElementById('listen-root');
 const audio = document.getElementById('stream-audio');
 const statusEl = document.getElementById('stream-status');
 
+const STATUS_POLL_MS = 5000;
+
 /** @type {import('hls.js').default | null} */
 let hls = null;
 /** @type {RTCPeerConnection|null} */
@@ -12,6 +14,8 @@ let pc = null;
 /** @type {string|null} */
 let whepResourceUrl = null;
 let retryTimer = null;
+let statusPollTimer = null;
+let startingPlayback = false;
 /** @type {ReturnType<typeof bindStagePlayer> | null} */
 let stagePlayer = null;
 
@@ -25,14 +29,30 @@ function isMarkedLive() {
     return root?.dataset.streamStatus === 'live';
 }
 
+function hasStatusUrl() {
+    return Boolean(root?.dataset.statusUrl);
+}
+
 function waitingMessage() {
     return isMarkedLive()
         ? 'Stream interrupted — reconnecting…'
         : 'Waiting for the broadcast to start. This page will keep trying.';
 }
 
+function clearRetry() {
+    if (retryTimer) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+    }
+}
+
 function scheduleRetry(reason) {
     if (retryTimer) {
+        return;
+    }
+    // When we can poll server status, stay idle while offline — poll resumes playback.
+    if (hasStatusUrl() && !isMarkedLive()) {
+        setStatus(reason);
         return;
     }
     setStatus(reason);
@@ -40,6 +60,92 @@ function scheduleRetry(reason) {
         retryTimer = null;
         void startPlayback();
     }, 4000);
+}
+
+function updateBroadcastBadge(live) {
+    const badge =
+        document.getElementById('broadcast-badge') ||
+        document.querySelector('.embed-badge');
+    if (!badge) {
+        return;
+    }
+
+    badge.classList.toggle('is-idle', !live);
+    badge.classList.toggle('is-live', live);
+
+    if (live) {
+        badge.innerHTML =
+            '<span class="live-dot inline-block h-1.5 w-1.5 rounded-full bg-current"></span> Live';
+    } else {
+        badge.textContent = 'Offline';
+    }
+}
+
+async function applyOffline() {
+    clearRetry();
+    if (root) {
+        root.dataset.streamStatus = 'offline';
+    }
+    updateBroadcastBadge(false);
+    await teardown();
+    stagePlayer?.disable();
+    stagePlayer?.setPlayingVisual(false);
+    setStatus('Offline');
+}
+
+async function applyLive() {
+    if (root) {
+        root.dataset.streamStatus = 'live';
+    }
+    updateBroadcastBadge(true);
+    void startPlayback();
+}
+
+async function refreshStreamStatus() {
+    const url = root?.dataset.statusUrl;
+    if (!url) {
+        return isMarkedLive();
+    }
+
+    try {
+        const res = await fetch(url, {
+            headers: { Accept: 'application/json' },
+            credentials: 'same-origin',
+            cache: 'no-store',
+        });
+        if (!res.ok) {
+            return isMarkedLive();
+        }
+
+        const data = await res.json();
+        const live = data.status === 'live';
+        const wasLive = isMarkedLive();
+
+        if (wasLive && !live) {
+            await applyOffline();
+        } else if (!wasLive && live) {
+            await applyLive();
+        } else if (root) {
+            root.dataset.streamStatus = live ? 'live' : 'offline';
+        }
+
+        return live;
+    } catch {
+        return isMarkedLive();
+    }
+}
+
+function startStatusPolling() {
+    if (!hasStatusUrl() || statusPollTimer) {
+        return;
+    }
+
+    const tick = async () => {
+        await refreshStreamStatus();
+        statusPollTimer = window.setTimeout(tick, STATUS_POLL_MS);
+    };
+
+    statusPollTimer = window.setTimeout(tick, STATUS_POLL_MS);
 }
 
 async function waitForIce(peer) {
@@ -220,12 +326,18 @@ async function startHls(hlsUrl) {
 }
 
 async function startPlayback() {
-    if (!root || !audio) {
+    if (!root || !audio || startingPlayback) {
         return;
     }
 
     if (!stagePlayer) {
         stagePlayer = bindStagePlayer(audio);
+    }
+
+    if (hasStatusUrl() && !isMarkedLive()) {
+        stagePlayer.disable();
+        setStatus('Waiting for the broadcast to start. This page will keep trying.');
+        return;
     }
 
     const whepUrl = root.dataset.whepUrl || '';
@@ -237,34 +349,46 @@ async function startPlayback() {
         return;
     }
 
+    startingPlayback = true;
+    clearRetry();
     stagePlayer.enable();
     setStatus(isMarkedLive() ? 'Connecting…' : 'Waiting for the broadcast to start. This page will keep trying.');
 
-    await teardown();
-
-    if (whepUrl) {
-        try {
-            await startWhep(whepUrl);
-            return;
-        } catch {
-            // Fall back to HLS (e.g. AAC from OBS/RTMP).
-        }
-    }
-
-    if (!hlsUrl) {
-        scheduleRetry(waitingMessage());
-        return;
-    }
-
     try {
-        await startHls(hlsUrl);
-    } catch {
-        scheduleRetry(waitingMessage());
+        await teardown();
+
+        if (whepUrl) {
+            try {
+                await startWhep(whepUrl);
+                return;
+            } catch {
+                // Fall back to HLS (e.g. AAC from OBS/RTMP).
+            }
+        }
+
+        if (!hlsUrl) {
+            scheduleRetry(waitingMessage());
+            return;
+        }
+
+        try {
+            await startHls(hlsUrl);
+        } catch {
+            scheduleRetry(waitingMessage());
+        }
+    } finally {
+        startingPlayback = false;
     }
 }
 
 window.addEventListener('beforeunload', () => {
+    clearRetry();
+    if (statusPollTimer) {
+        window.clearTimeout(statusPollTimer);
+        statusPollTimer = null;
+    }
     void teardown();
 });
 
+startStatusPolling();
 void startPlayback();

@@ -25,7 +25,7 @@
                     <h1 class="embed-title">{{ $event->title }}</h1>
                     <p class="embed-channel">{{ $event->organization->name }}</p>
                 </div>
-                <span class="embed-badge {{ $isLive ? 'is-live' : '' }}">
+                <span id="broadcast-badge" class="embed-badge {{ $isLive ? 'is-live' : '' }}">
                     @if ($isLive)
                         <span class="live-dot inline-block h-1.5 w-1.5 rounded-full bg-current"></span>
                     @endif
@@ -40,6 +40,7 @@
                     data-hls-url="{{ $hlsUrl }}"
                     data-whep-url="{{ $whepUrl }}"
                     data-stream-status="live"
+                    data-status-url="{{ route('events.status', $event) }}"
                     class="hidden"
                 ></div>
             @else

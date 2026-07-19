@@ -54,7 +54,55 @@ class ListenPageTest extends TestCase
             ->assertSee('Sunday Service', false)
             ->assertSee('listen-root', false)
             ->assertSee('stream-audio', false)
-            ->assertSee('Live', false);
+            ->assertSee('Live', false)
+            ->assertSee('data-status-url', false)
+            ->assertSee(route('listen.status', $stream), false);
+    }
+
+    public function test_listen_status_endpoint_reflects_stream_status(): void
+    {
+        $org = Organization::query()->create(['name' => 'G', 'slug' => 'g-status', 'is_public' => true]);
+        $stream = Stream::query()->create([
+            'organization_id' => $org->id,
+            'uuid' => fake()->uuid(),
+            'title' => 'Status Check',
+            'status' => StreamStatus::Live,
+            'is_public' => true,
+        ]);
+
+        $this->getJson(route('listen.status', $stream))
+            ->assertOk()
+            ->assertJson(['status' => 'live']);
+
+        $stream->status = StreamStatus::Offline;
+        $stream->save();
+
+        $this->getJson(route('listen.status', $stream))
+            ->assertOk()
+            ->assertJson(['status' => 'offline']);
+    }
+
+    public function test_event_status_endpoint_reflects_live_state(): void
+    {
+        $org = Organization::query()->create(['name' => 'G', 'slug' => 'g-ev-status', 'is_public' => true]);
+        $event = Event::query()->create([
+            'organization_id' => $org->id,
+            'title' => 'Status Event',
+            'status' => EventStatus::Live,
+            'access' => EventAccess::Public,
+            'started_at' => now(),
+        ]);
+
+        $this->getJson(route('events.status', $event))
+            ->assertOk()
+            ->assertJson(['status' => 'live']);
+
+        $event->status = EventStatus::Ended;
+        $event->save();
+
+        $this->getJson(route('events.status', $event))
+            ->assertOk()
+            ->assertJson(['status' => 'offline']);
     }
 
     public function test_event_page_shows_live_badge(): void

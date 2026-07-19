@@ -5,12 +5,26 @@ namespace App\Http\Controllers;
 use App\Enums\EventAccess;
 use App\Enums\EventStatus;
 use App\Models\Event;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class EventController extends Controller
 {
+    public function status(Request $request, Event $event): JsonResponse
+    {
+        if ($event->access === EventAccess::Private) {
+            $unlocked = $request->session()->get($this->unlockKey($event));
+            $canManage = $request->user()?->canManageOrganization($event->organization);
+            abort_unless($unlocked || $canManage, 403);
+        }
+
+        return response()->json([
+            'status' => $event->isLive() ? 'live' : 'offline',
+        ]);
+    }
+
     public function show(Request $request, Event $event): View|RedirectResponse
     {
         $event->load(['organization', 'stream']);

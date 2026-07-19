@@ -38,6 +38,9 @@ Route::delete('/c/{organization}/follow', [ChannelFollowController::class, 'dest
     ->name('channels.unfollow');
 
 Route::get('/e/{event}', [EventController::class, 'show'])->name('events.show');
+Route::get('/e/{event}/status', [EventController::class, 'status'])
+    ->middleware('throttle:120,1')
+    ->name('events.status');
 Route::post('/e/{event}/unlock', [EventController::class, 'unlock'])->name('events.unlock');
 Route::get('/embed/e/{event}', [EventController::class, 'embed'])->name('events.embed');
 
@@ -60,6 +63,9 @@ Route::get('/archive/{recording}/play', [RecordingPlayController::class, 'show']
 Route::get('/archive/{recording}/file', [RecordingPlayController::class, 'file'])->name('archive.file');
 
 Route::get('/listen/{stream}', [ListenController::class, 'show'])->name('listen.stream');
+Route::get('/listen/{stream}/status', [ListenController::class, 'status'])
+    ->middleware('throttle:120,1')
+    ->name('listen.status');
 Route::get('/embed/{stream}', [ListenController::class, 'embed'])->name('embed.stream');
 
 Route::get('/listen/{stream}/chat', [ChatController::class, 'index'])

@@ -4,12 +4,22 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Models\Stream;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ListenController extends Controller
 {
+    public function status(Request $request, Stream $stream): JsonResponse
+    {
+        $this->authorizeListen($request, $stream);
+
+        return response()->json([
+            'status' => $stream->status->value,
+        ]);
+    }
+
     public function show(Request $request, Stream $stream): View|RedirectResponse
     {
         $stream->loadMissing('organization');
