@@ -46,28 +46,15 @@
                         </div>
                         <label class="sr-only" for="audio-input">Microphone / interface</label>
                         <select id="audio-input" class="mt-2"></select>
-                        <div class="stage-channel-gain">
-                            <label for="mic-gain">Level</label>
-                            <input id="mic-gain" type="range" min="0" max="150" value="100" step="1">
-                            <span id="mic-gain-label" class="stage-channel-gain-value">100%</span>
-                        </div>
+                        <p class="mt-2 text-xs" style="color: var(--stage-muted)">
+                            Clean Scarlett feed only — no browser processing. Set gain on the 2i2, pick <strong>Focusrite</strong> / Scarlett above, and leave AIR off if you want a flat sound.
+                        </p>
                     </div>
                 </div>
 
                 <div class="stage-channel-actions">
                     <button type="button" id="btn-add-file" class="btn-channel-add">+ Add audio file</button>
                     <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
-                </div>
-
-                <div>
-                    <label for="audio-layout">Output</label>
-                    <select id="audio-layout" class="mt-2">
-                        <option value="mono" selected>Mono — both ears (recommended for one mic)</option>
-                        <option value="stereo">Stereo — left / right</option>
-                    </select>
-                    <p class="mt-1 text-xs" style="color: var(--stage-muted)">
-                        Use Mono if you only hear one side. Stereo keeps left/right from a stereo interface or files.
-                    </p>
                 </div>
 
                 <div>

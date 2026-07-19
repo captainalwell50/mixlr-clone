@@ -15,22 +15,24 @@ const stageEl = document.getElementById('studio-stage');
 const modeEl = document.getElementById('studio-mode');
 const copyBtn = document.getElementById('btn-copy-listen');
 const listenUrlEl = document.getElementById('listen-url');
-const micGainInput = document.getElementById('mic-gain');
-const micGainLabel = document.getElementById('mic-gain-label');
-const audioLayoutSelect = document.getElementById('audio-layout');
 
-/** Opus fullband max (bits/sec). */
+/** Opus fullband stereo max (bits/sec). */
 const OPUS_MAX_BITRATE = 510_000;
-const LAYOUT_STORAGE_KEY = 'studio-audio-layout';
 
-const HIGH_QUALITY_AUDIO = {
+/** Raw interface capture — no browser AGC / NS / EC. */
+const CLEAN_AUDIO = {
+    channelCount: { ideal: 2 },
     sampleRate: { ideal: 48000 },
     sampleSize: { ideal: 16 },
     echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false,
-    // Chromium / Safari extras that soften desk mixes when left on.
-    voiceIsolation: false,
+    // Chromium legacy keys (ignored when unsupported).
+    googEchoCancellation: false,
+    googNoiseSuppression: false,
+    googAutoGainControl: false,
+    googHighpassFilter: false,
+    googTypingNoiseDetection: false,
 };
 
 let pc = null;
@@ -44,10 +46,6 @@ let mixDest = null;
 let micGain = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
-/** @type {ChannelSplitterNode|null} */
-let micSplitter = null;
-/** @type {GainNode|null} */
-let micMonoSum = null;
 /** @type {MediaStream|null} */
 let micStream = null;
 /** @type {AnalyserNode|null} */
@@ -122,40 +120,16 @@ function friendlyError(err) {
     return msg || 'Could not go live.';
 }
 
-function micGainPercent() {
-    return Number(micGainInput?.value ?? 100);
-}
-
-/** @returns {'mono' | 'stereo'} */
-function audioLayout() {
-    const v = audioLayoutSelect?.value;
-    return v === 'stereo' ? 'stereo' : 'mono';
-}
-
-function isMono() {
-    return audioLayout() === 'mono';
-}
-
-function captureChannelCount() {
-    return isMono() ? 1 : 2;
-}
-
-/** Mixer when mono (downmix), files, or mic level is not unity. Stereo mic-only stays direct. */
+/** Mixer only when audio files are added (Web Audio remux). Scarlett-only stays direct. */
 function needsMixer() {
-    return isMono() || fileChannels.size > 0 || micGainPercent() !== 100;
+    return fileChannels.size > 0;
 }
 
-if (audioLayoutSelect) {
-    const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
-    if (saved === 'mono' || saved === 'stereo') {
-        audioLayoutSelect.value = saved;
-    }
-    audioLayoutSelect.addEventListener('change', () => {
-        localStorage.setItem(LAYOUT_STORAGE_KEY, audioLayout());
-        if (isLive) {
-            setStatus('Output layout changed — stop and Go live again to apply.');
-        }
-    });
+try {
+    localStorage.removeItem('studio-audio-layout');
+    localStorage.removeItem('studio-audio-fx');
+} catch {
+    /* ignore */
 }
 
 copyBtn?.addEventListener('click', async () => {
@@ -255,8 +229,7 @@ function preferHighQualityOpus(sdp) {
         return sdp;
     }
 
-    const stereoFlag = isMono() ? '0' : '1';
-    const fmtpValue = `minptime=10;useinbandfec=1;stereo=${stereoFlag};sprop-stereo=${stereoFlag};maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
+    const fmtpValue = `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
     let out = sdp;
 
     for (const pt of opusPts) {
@@ -302,38 +275,29 @@ async function ensureMixer() {
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
-        try {
-            mixDest.channelCount = captureChannelCount();
-        } catch {
-            /* optional */
-        }
         return;
     }
     if (!audioCtx) {
-        audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
+        audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
     } else if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
     }
     mixDest = audioCtx.createMediaStreamDestination();
     try {
-        mixDest.channelCount = captureChannelCount();
+        mixDest.channelCount = 2;
         mixDest.channelCountMode = 'explicit';
         mixDest.channelInterpretation = 'speakers';
     } catch {
         /* optional */
     }
     micGain = audioCtx.createGain();
-    micGain.gain.value = micGainPercent() / 100;
+    micGain.gain.value = 1;
     micGain.connect(mixDest);
 }
 
 async function openMicrophone() {
     const preferredId = audioSelect?.value || '';
-    // Capture stereo from interfaces so mono mode can downmix L+R (avoids one-ear if signal is only on left).
-    const base = {
-        ...HIGH_QUALITY_AUDIO,
-        channelCount: { ideal: 2 },
-    };
+    const base = { ...CLEAN_AUDIO };
     if (preferredId) {
         try {
             return await navigator.mediaDevices.getUserMedia({
@@ -357,14 +321,10 @@ async function openMicrophone() {
 function disconnectMicGraph() {
     try {
         micSource?.disconnect();
-        micSplitter?.disconnect();
-        micMonoSum?.disconnect();
     } catch {
         /* ignore */
     }
     micSource = null;
-    micSplitter = null;
-    micMonoSum = null;
 }
 
 function stopMicTracks() {
@@ -386,43 +346,13 @@ async function openMicOnly() {
 
 async function attachMicrophoneToMixer() {
     await ensureMixer();
-    try {
-        mixDest.channelCount = captureChannelCount();
-    } catch {
-        /* optional */
-    }
     disconnectMicGraph();
     stopMicTracks();
     micStream = await openMicrophone();
     micSource = audioCtx.createMediaStreamSource(micStream);
-
-    if (isMono()) {
-        // Sum left + right so a left-only interface still plays in both ears.
-        micSplitter = audioCtx.createChannelSplitter(2);
-        micMonoSum = audioCtx.createGain();
-        micMonoSum.gain.value = 0.707;
-        micSource.connect(micSplitter);
-        micSplitter.connect(micMonoSum, 0);
-        micSplitter.connect(micMonoSum, 1);
-        micMonoSum.connect(micGain);
-    } else {
-        micSource.connect(micGain);
-    }
+    micSource.connect(micGain);
     await startMeterFromStream(mixDest.stream);
 }
-
-micGainInput?.addEventListener('input', () => {
-    const pct = micGainPercent();
-    if (micGainLabel) {
-        micGainLabel.textContent = `${pct}%`;
-    }
-    if (micGain) {
-        micGain.gain.value = pct / 100;
-    }
-    if (isLive && publishMode === 'direct' && pct !== 100) {
-        setStatus('Mic level changed — stop and Go live again to apply level in the mix (or leave at 100% for best quality).');
-    }
-});
 
 async function loadDevices() {
     if (!audioSelect) {
@@ -631,13 +561,7 @@ async function publishWhip(stream) {
     });
 
     try {
-        await track.applyConstraints({
-            channelCount: captureChannelCount(),
-            sampleRate: 48000,
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-        });
+        await track.applyConstraints(CLEAN_AUDIO);
     } catch {
         /* optional */
     }
@@ -707,16 +631,15 @@ async function primeMicrophone() {
         return;
     }
     try {
-        // Request with HQ constraints so device labels + permission match Go live.
         const priming = await navigator.mediaDevices.getUserMedia({
-            audio: { ...HIGH_QUALITY_AUDIO, channelCount: { ideal: 2 } },
+            audio: CLEAN_AUDIO,
             video: false,
         });
         for (const t of priming.getTracks()) {
             t.stop();
         }
         await loadDevices();
-        setStatus('Microphone ready. Mono is selected by default (both ears). Switch to Stereo only for true left/right mixes.');
+        setStatus('Microphone ready. Pick your Scarlett, set gain on the interface, then Go live (clean direct path).');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -744,26 +667,25 @@ btnStart?.addEventListener('click', async () => {
         let stream;
         if (needsMixer()) {
             publishMode = 'mixer';
-            setStatus('Starting mix (files / mic level)…');
+            setStatus('Starting file mix…');
             await attachMicrophoneToMixer();
             for (const channel of fileChannels.values()) {
                 wireFileChannelAudio(channel);
             }
             stream = mixDest.stream;
         } else {
-            // Highest quality: mic track → WebRTC with no Web Audio remux.
+            // Scarlett track → WebRTC with no Web Audio remux / no browser enhance.
             publishMode = 'direct';
-            setStatus('Starting direct mic (highest quality)…');
+            setStatus('Starting clean Scarlett path…');
             stream = await openMicOnly();
         }
 
         await publishWhip(stream);
 
-        const layoutLabel = isMono() ? 'mono (both ears)' : 'stereo';
         setStatus(
             publishMode === 'direct'
-                ? `You’re on air — direct ${layoutLabel}. Keep this tab open.`
-                : `You’re on air — ${layoutLabel} mix. Keep this tab open.`,
+                ? 'You’re on air — clean direct Scarlett. Keep this tab open.'
+                : 'You’re on air — file mix. Keep this tab open.',
         );
         setOnAir(true);
         btnStop.disabled = false;
