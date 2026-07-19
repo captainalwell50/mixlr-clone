@@ -66,7 +66,7 @@
                         <option value="stereo">Stereo — left / right</option>
                     </select>
                     <p class="mt-1 text-xs" style="color: var(--stage-muted)">
-                        Mic is captured clean (no browser processing). Mono encodes for both ears; stereo keeps left/right. Leave Level at 100% for highest quality.
+                        Use Mono if you only hear one side. Stereo keeps left/right from a stereo interface or files.
                     </p>
                 </div>
 
