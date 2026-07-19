@@ -29,6 +29,7 @@ class ListenController extends Controller
             'stream' => $stream,
             'organization' => $stream->organization,
             'hlsUrl' => $stream->hlsPlaylistUrl(),
+            'whepUrl' => $stream->whepUrl(),
         ]);
     }
 
@@ -50,6 +51,7 @@ class ListenController extends Controller
         return view('embed-listen', [
             'stream' => $stream,
             'hlsUrl' => $stream->hlsPlaylistUrl(),
+            'whepUrl' => $stream->whepUrl(),
         ]);
     }
 

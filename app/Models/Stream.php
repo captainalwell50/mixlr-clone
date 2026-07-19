@@ -100,6 +100,14 @@ class Stream extends Model
         ]);
     }
 
+    /**
+     * Browser listen path for Opus WHIP publishes (HLS/Opus is not playable in Chrome).
+     */
+    public function whepUrl(): string
+    {
+        return rtrim((string) config('streaming.mediamtx.webrtc_public_base'), '/').'/'.$this->mediaPath().'/whep';
+    }
+
     public function hlsPlaylistUrl(): string
     {
         $cdn = config('streaming.mediamtx.hls_cdn_base');

@@ -43,6 +43,7 @@
             <div
                 id="listen-root"
                 data-hls-url="{{ $hlsUrl }}"
+                data-whep-url="{{ $whepUrl }}"
                 data-stream-status="{{ $stream->status->value }}"
                 class="hidden"
             ></div>

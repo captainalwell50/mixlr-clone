@@ -33,9 +33,15 @@
                 </span>
             </div>
 
-            @if ($isLive && $hlsUrl)
+            @if ($isLive && ($whepUrl || $hlsUrl))
                 @include('partials.stage-player', ['status' => 'Connecting…'])
-                <div id="listen-root" data-hls-url="{{ $hlsUrl }}" data-stream-status="live" class="hidden"></div>
+                <div
+                    id="listen-root"
+                    data-hls-url="{{ $hlsUrl }}"
+                    data-whep-url="{{ $whepUrl }}"
+                    data-stream-status="live"
+                    class="hidden"
+                ></div>
             @else
                 <p class="embed-offline">Broadcast not live.</p>
             @endif

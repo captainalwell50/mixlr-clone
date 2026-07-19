@@ -7,6 +7,10 @@ const statusEl = document.getElementById('stream-status');
 
 /** @type {import('hls.js').default | null} */
 let hls = null;
+/** @type {RTCPeerConnection|null} */
+let pc = null;
+/** @type {string|null} */
+let whepResourceUrl = null;
 let retryTimer = null;
 /** @type {ReturnType<typeof bindStagePlayer> | null} */
 let stagePlayer = null;
@@ -21,6 +25,12 @@ function isMarkedLive() {
     return root?.dataset.streamStatus === 'live';
 }
 
+function waitingMessage() {
+    return isMarkedLive()
+        ? 'Stream interrupted — reconnecting…'
+        : 'Waiting for the broadcast to start. This page will keep trying.';
+}
+
 function scheduleRetry(reason) {
     if (retryTimer) {
         return;
@@ -32,28 +42,117 @@ function scheduleRetry(reason) {
     }, 4000);
 }
 
-async function startPlayback() {
-    if (!root || !audio) {
+async function waitForIce(peer) {
+    if (peer.iceGatheringState === 'complete') {
         return;
     }
+    await new Promise((resolve) => {
+        const done = () => {
+            if (peer.iceGatheringState === 'complete') {
+                peer.removeEventListener('icegatheringstatechange', done);
+                resolve();
+            }
+        };
+        peer.addEventListener('icegatheringstatechange', done);
+        window.setTimeout(resolve, 2000);
+    });
+}
 
-    if (!stagePlayer) {
-        stagePlayer = bindStagePlayer(audio);
+async function teardown() {
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+    if (whepResourceUrl) {
+        try {
+            await fetch(whepResourceUrl, { method: 'DELETE' });
+        } catch {
+            /* ignore */
+        }
+        whepResourceUrl = null;
+    }
+    if (pc) {
+        pc.ontrack = null;
+        pc.onconnectionstatechange = null;
+        pc.close();
+        pc = null;
+    }
+    if (audio) {
+        audio.srcObject = null;
+        audio.removeAttribute('src');
+        try {
+            audio.load();
+        } catch {
+            /* ignore */
+        }
+    }
+}
+
+/**
+ * Opus from Studio WHIP is not reliably playable via HLS in Chrome — use WHEP.
+ * @param {string} whepUrl
+ */
+async function startWhep(whepUrl) {
+    pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    });
+
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+
+    pc.ontrack = (event) => {
+        if (!audio) {
+            return;
+        }
+        const stream = event.streams[0] ?? new MediaStream([event.track]);
+        audio.srcObject = stream;
+        audio.play().catch(() => {
+            setStatus('Press play when you are ready.');
+        });
+    };
+
+    pc.onconnectionstatechange = () => {
+        if (!pc) {
+            return;
+        }
+        if (pc.connectionState === 'connected') {
+            setStatus(isMarkedLive() ? 'On air' : 'Playing');
+            return;
+        }
+        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+            scheduleRetry(waitingMessage());
+        }
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitForIce(pc);
+
+    const res = await fetch(whepUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/sdp',
+            Accept: 'application/sdp',
+        },
+        body: pc.localDescription?.sdp ?? '',
+    });
+
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `WHEP failed (${res.status})`);
     }
 
-    const hlsUrl = root.dataset.hlsUrl;
-    if (!hlsUrl) {
-        setStatus('Playback URL missing.');
-        stagePlayer.disable();
+    const location = res.headers.get('Location');
+    if (location) {
+        whepResourceUrl = new URL(location, whepUrl).toString();
+    }
+
+    const answer = await res.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answer });
+}
+
+async function startHls(hlsUrl) {
+    if (!audio) {
         return;
-    }
-
-    stagePlayer.enable();
-
-    if (!isMarkedLive()) {
-        setStatus('Waiting for the broadcast to start. This page will keep trying.');
-    } else {
-        setStatus('Connecting…');
     }
 
     if (audio.canPlayType('application/vnd.apple.mpegurl')) {
@@ -61,11 +160,7 @@ async function startPlayback() {
         audio.addEventListener(
             'error',
             () => {
-                scheduleRetry(
-                    isMarkedLive()
-                        ? 'Stream interrupted — reconnecting…'
-                        : 'Waiting for the broadcast to start. This page will keep trying.',
-                );
+                scheduleRetry(waitingMessage());
             },
             { once: true },
         );
@@ -87,14 +182,9 @@ async function startPlayback() {
     const { default: Hls } = await import('hls.js');
 
     if (!Hls.isSupported()) {
-        setStatus('This browser cannot play HLS.');
-        stagePlayer.disable();
+        setStatus('This browser cannot play the stream.');
+        stagePlayer?.disable();
         return;
-    }
-
-    if (hls) {
-        hls.destroy();
-        hls = null;
     }
 
     hls = new Hls({
@@ -114,17 +204,11 @@ async function startPlayback() {
         }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             hls?.startLoad();
-            scheduleRetry(
-                isMarkedLive()
-                    ? 'Stream interrupted — reconnecting…'
-                    : 'Waiting for the broadcast to start. This page will keep trying.',
-            );
+            scheduleRetry(waitingMessage());
             return;
         }
         setStatus('Playback error.');
-        hls?.destroy();
-        hls = null;
-        scheduleRetry('Trying again…');
+        void teardown().then(() => scheduleRetry('Trying again…'));
     });
     audio.addEventListener(
         'playing',
@@ -134,5 +218,53 @@ async function startPlayback() {
         { once: true },
     );
 }
+
+async function startPlayback() {
+    if (!root || !audio) {
+        return;
+    }
+
+    if (!stagePlayer) {
+        stagePlayer = bindStagePlayer(audio);
+    }
+
+    const whepUrl = root.dataset.whepUrl || '';
+    const hlsUrl = root.dataset.hlsUrl || '';
+
+    if (!whepUrl && !hlsUrl) {
+        setStatus('Playback URL missing.');
+        stagePlayer.disable();
+        return;
+    }
+
+    stagePlayer.enable();
+    setStatus(isMarkedLive() ? 'Connecting…' : 'Waiting for the broadcast to start. This page will keep trying.');
+
+    await teardown();
+
+    if (whepUrl) {
+        try {
+            await startWhep(whepUrl);
+            return;
+        } catch {
+            // Fall back to HLS (e.g. AAC from OBS/RTMP).
+        }
+    }
+
+    if (!hlsUrl) {
+        scheduleRetry(waitingMessage());
+        return;
+    }
+
+    try {
+        await startHls(hlsUrl);
+    } catch {
+        scheduleRetry(waitingMessage());
+    }
+}
+
+window.addEventListener('beforeunload', () => {
+    void teardown();
+});
 
 void startPlayback();

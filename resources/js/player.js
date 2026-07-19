@@ -9,8 +9,10 @@ const BAR_COUNT = 24;
 let audioCtx = null;
 /** @type {AnalyserNode|null} */
 let analyser = null;
-/** @type {MediaElementAudioSourceNode|null} */
+/** @type {MediaElementAudioSourceNode|MediaStreamAudioSourceNode|null} */
 let sourceNode = null;
+/** @type {string|null} */
+let sourceMode = null;
 let raf = 0;
 let wired = false;
 
@@ -60,16 +62,26 @@ function tick(wave) {
 }
 
 function connectAnalyser(audio) {
-    if (sourceNode) {
+    const stream = audio.srcObject instanceof MediaStream ? audio.srcObject : null;
+    const mode = stream ? 'stream' : 'element';
+    if (sourceNode && sourceMode === mode) {
         return;
     }
     try {
         audioCtx = audioCtx || new AudioContext();
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 128;
-        sourceNode = audioCtx.createMediaElementSource(audio);
-        sourceNode.connect(analyser);
-        analyser.connect(audioCtx.destination);
+        if (stream) {
+            // WebRTC/WHEP: MediaElementSource is flaky with srcObject — tap the stream instead.
+            sourceNode = audioCtx.createMediaStreamSource(stream);
+            sourceNode.connect(analyser);
+            // Keep element output for audible playback; analyser is meter-only.
+        } else {
+            sourceNode = audioCtx.createMediaElementSource(audio);
+            sourceNode.connect(analyser);
+            analyser.connect(audioCtx.destination);
+        }
+        sourceMode = mode;
     } catch {
         /* autoplay / already connected */
     }

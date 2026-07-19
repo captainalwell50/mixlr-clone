@@ -49,9 +49,15 @@
                 <p class="stage-meta">{{ $event->scheduled_at->timezone(config('app.timezone'))->format('D, M j · g:i A T') }}</p>
             @endif
 
-            @if ($isLive && $hlsUrl)
+            @if ($isLive && ($whepUrl || $hlsUrl))
                 @include('partials.stage-player', ['status' => 'Connecting…'])
-                <div id="listen-root" data-hls-url="{{ $hlsUrl }}" data-stream-status="live" class="hidden"></div>
+                <div
+                    id="listen-root"
+                    data-hls-url="{{ $hlsUrl }}"
+                    data-whep-url="{{ $whepUrl }}"
+                    data-stream-status="live"
+                    class="hidden"
+                ></div>
             @elseif ($event->status->value === 'ended')
                 <p class="stage-waiting stage-rise-delay-2">
                     This event has ended.

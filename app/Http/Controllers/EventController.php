@@ -28,6 +28,7 @@ class EventController extends Controller
             : false;
         $listenerCount = $event->show_listener_count ? $event->activeListenerCount() : null;
         $hlsUrl = $event->stream?->hlsPlaylistUrl();
+        $whepUrl = $event->stream?->whepUrl();
 
         return view('events.show', compact(
             'event',
@@ -35,6 +36,7 @@ class EventController extends Controller
             'userHearted',
             'listenerCount',
             'hlsUrl',
+            'whepUrl',
         ));
     }
 
@@ -64,6 +66,7 @@ class EventController extends Controller
         return view('events.embed', [
             'event' => $event,
             'hlsUrl' => $event->stream?->hlsPlaylistUrl(),
+            'whepUrl' => $event->stream?->whepUrl(),
             'isLive' => $event->status === EventStatus::Live,
         ]);
     }
