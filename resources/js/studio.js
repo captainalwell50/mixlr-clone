@@ -250,9 +250,30 @@ async function startMeterFromStream(stream) {
 }
 
 /**
+ * Force Opus only — G722/PCMU sound like phone audio and break HLS.
+ * @param {RTCRtpTransceiver} transceiver
+ */
+function forceOpusCodec(transceiver) {
+    const caps = RTCRtpSender.getCapabilities?.('audio');
+    if (!caps?.codecs?.length || !transceiver?.setCodecPreferences) {
+        return;
+    }
+    const opus = caps.codecs.filter((c) => c.mimeType.toLowerCase() === 'audio/opus');
+    if (opus.length === 0) {
+        return;
+    }
+    try {
+        transceiver.setCodecPreferences(opus);
+    } catch (e) {
+        console.warn('Could not set Opus codec preferences', e);
+    }
+}
+
+/**
+ * Drop telephony codecs from the audio m-line so negotiation cannot pick G722.
  * @param {string} sdp
  */
-function preferHighQualityOpus(sdp) {
+function stripNonOpusAudioCodecs(sdp) {
     const opusPts = new Set();
     for (const match of sdp.matchAll(/^a=rtpmap:(\d+) opus\/48000(?:\/\d+)?/gim)) {
         opusPts.add(match[1]);
@@ -261,9 +282,47 @@ function preferHighQualityOpus(sdp) {
         return sdp;
     }
 
+    const lines = sdp.split(/\r?\n/);
+    /** @type {string[]} */
+    const out = [];
+    let inAudio = false;
+    for (const line of lines) {
+        if (line.startsWith('m=audio ')) {
+            inAudio = true;
+            const parts = line.split(' ');
+            const kept = parts.slice(0, 3).concat(parts.slice(3).filter((pt) => opusPts.has(pt)));
+            out.push(kept.join(' '));
+            continue;
+        }
+        if (line.startsWith('m=')) {
+            inAudio = false;
+        }
+        if (inAudio) {
+            const ptMatch = line.match(/^a=(?:rtpmap|fmtp|rtcp-fb):(\d+)\b/);
+            if (ptMatch && !opusPts.has(ptMatch[1])) {
+                continue;
+            }
+        }
+        out.push(line);
+    }
+    return out.join('\r\n');
+}
+
+/**
+ * @param {string} sdp
+ */
+function preferHighQualityOpus(sdp) {
+    let out = stripNonOpusAudioCodecs(sdp);
+    const opusPts = new Set();
+    for (const match of out.matchAll(/^a=rtpmap:(\d+) opus\/48000(?:\/\d+)?/gim)) {
+        opusPts.add(match[1]);
+    }
+    if (opusPts.size === 0) {
+        return out;
+    }
+
     const stereoFlag = isMono() ? '0' : '1';
     const fmtpValue = `minptime=10;useinbandfec=1;stereo=${stereoFlag};sprop-stereo=${stereoFlag};maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
-    let out = sdp;
 
     for (const pt of opusPts) {
         const fmtpRe = new RegExp(`^a=fmtp:${pt} .*`, 'im');
@@ -636,10 +695,14 @@ async function publishWhip(stream) {
         pc.addTrack(track, stream);
     }
 
+    forceOpusCodec(transceiver);
     await applyMaxAudioBitrate(pc);
 
     const offer = await pc.createOffer();
     const highQualitySdp = preferHighQualityOpus(offer.sdp || '');
+    if (!/opus\/48000/i.test(highQualitySdp)) {
+        throw new Error('Browser did not offer Opus. Try Chrome/Edge, or reload Studio.');
+    }
     await pc.setLocalDescription({ type: 'offer', sdp: highQualitySdp });
     await applyMaxAudioBitrate(pc);
 
@@ -673,8 +736,18 @@ async function publishWhip(stream) {
     whipResourceUrl = loc ? new URL(loc, whipUrl).href : null;
 
     const answerSdp = await res.text();
+    if (/G722|PCMU|PCMA/i.test(answerSdp) && !/opus\/48000/i.test(answerSdp)) {
+        throw new Error('Server answered without Opus (phone codec). Stop and Go live again after refresh.');
+    }
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     await applyMaxAudioBitrate(pc);
+
+    const sender = transceiver.sender || pc.getSenders().find((s) => s.track?.kind === 'audio');
+    const params = sender?.getParameters?.();
+    const codec = params?.codecs?.[0]?.mimeType || '';
+    if (codec && !/opus/i.test(codec)) {
+        console.warn('Unexpected audio codec after negotiate:', codec);
+    }
 }
 
 async function primeMicrophone() {
