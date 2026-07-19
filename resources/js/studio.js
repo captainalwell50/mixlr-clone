@@ -17,12 +17,13 @@ const copyBtn = document.getElementById('btn-copy-listen');
 const listenUrlEl = document.getElementById('listen-url');
 const micGainInput = document.getElementById('mic-gain');
 const micGainLabel = document.getElementById('mic-gain-label');
+const audioLayoutSelect = document.getElementById('audio-layout');
 
-/** Opus fullband stereo max (bits/sec). */
+/** Opus fullband max (bits/sec). */
 const OPUS_MAX_BITRATE = 510_000;
+const LAYOUT_STORAGE_KEY = 'studio-audio-layout';
 
 const HIGH_QUALITY_AUDIO = {
-    channelCount: { ideal: 2 },
     sampleRate: { ideal: 48000 },
     sampleSize: { ideal: 16 },
     echoCancellation: false,
@@ -43,6 +44,10 @@ let mixDest = null;
 let micGain = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
+/** @type {ChannelSplitterNode|null} */
+let micSplitter = null;
+/** @type {GainNode|null} */
+let micMonoSum = null;
 /** @type {MediaStream|null} */
 let micStream = null;
 /** @type {AnalyserNode|null} */
@@ -121,9 +126,36 @@ function micGainPercent() {
     return Number(micGainInput?.value ?? 100);
 }
 
-/** Mixer only when files are in use or mic level is not unity (Web Audio remux hurts quality). */
+/** @returns {'mono' | 'stereo'} */
+function audioLayout() {
+    const v = audioLayoutSelect?.value;
+    return v === 'stereo' ? 'stereo' : 'mono';
+}
+
+function isMono() {
+    return audioLayout() === 'mono';
+}
+
+function captureChannelCount() {
+    return isMono() ? 1 : 2;
+}
+
+/** Mixer when mono (downmix), files, or mic level is not unity. Stereo mic-only stays direct. */
 function needsMixer() {
-    return fileChannels.size > 0 || micGainPercent() !== 100;
+    return isMono() || fileChannels.size > 0 || micGainPercent() !== 100;
+}
+
+if (audioLayoutSelect) {
+    const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (saved === 'mono' || saved === 'stereo') {
+        audioLayoutSelect.value = saved;
+    }
+    audioLayoutSelect.addEventListener('change', () => {
+        localStorage.setItem(LAYOUT_STORAGE_KEY, audioLayout());
+        if (isLive) {
+            setStatus('Output layout changed — stop and Go live again to apply.');
+        }
+    });
 }
 
 copyBtn?.addEventListener('click', async () => {
@@ -223,7 +255,8 @@ function preferHighQualityOpus(sdp) {
         return sdp;
     }
 
-    const fmtpValue = `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
+    const stereoFlag = isMono() ? '0' : '1';
+    const fmtpValue = `minptime=10;useinbandfec=1;stereo=${stereoFlag};sprop-stereo=${stereoFlag};maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
     let out = sdp;
 
     for (const pt of opusPts) {
@@ -269,6 +302,11 @@ async function ensureMixer() {
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
+        try {
+            mixDest.channelCount = captureChannelCount();
+        } catch {
+            /* optional */
+        }
         return;
     }
     if (!audioCtx) {
@@ -278,7 +316,7 @@ async function ensureMixer() {
     }
     mixDest = audioCtx.createMediaStreamDestination();
     try {
-        mixDest.channelCount = 2;
+        mixDest.channelCount = captureChannelCount();
         mixDest.channelCountMode = 'explicit';
         mixDest.channelInterpretation = 'speakers';
     } catch {
@@ -291,7 +329,11 @@ async function ensureMixer() {
 
 async function openMicrophone() {
     const preferredId = audioSelect?.value || '';
-    const base = { ...HIGH_QUALITY_AUDIO };
+    // Capture stereo from interfaces so mono mode can downmix L+R (avoids one-ear if signal is only on left).
+    const base = {
+        ...HIGH_QUALITY_AUDIO,
+        channelCount: { ideal: 2 },
+    };
     if (preferredId) {
         try {
             return await navigator.mediaDevices.getUserMedia({
@@ -313,14 +355,16 @@ async function openMicrophone() {
 }
 
 function disconnectMicGraph() {
-    if (micSource) {
-        try {
-            micSource.disconnect();
-        } catch {
-            /* ignore */
-        }
-        micSource = null;
+    try {
+        micSource?.disconnect();
+        micSplitter?.disconnect();
+        micMonoSum?.disconnect();
+    } catch {
+        /* ignore */
     }
+    micSource = null;
+    micSplitter = null;
+    micMonoSum = null;
 }
 
 function stopMicTracks() {
@@ -342,11 +386,28 @@ async function openMicOnly() {
 
 async function attachMicrophoneToMixer() {
     await ensureMixer();
+    try {
+        mixDest.channelCount = captureChannelCount();
+    } catch {
+        /* optional */
+    }
     disconnectMicGraph();
     stopMicTracks();
     micStream = await openMicrophone();
     micSource = audioCtx.createMediaStreamSource(micStream);
-    micSource.connect(micGain);
+
+    if (isMono()) {
+        // Sum left + right so a left-only interface still plays in both ears.
+        micSplitter = audioCtx.createChannelSplitter(2);
+        micMonoSum = audioCtx.createGain();
+        micMonoSum.gain.value = 0.707;
+        micSource.connect(micSplitter);
+        micSplitter.connect(micMonoSum, 0);
+        micSplitter.connect(micMonoSum, 1);
+        micMonoSum.connect(micGain);
+    } else {
+        micSource.connect(micGain);
+    }
     await startMeterFromStream(mixDest.stream);
 }
 
@@ -571,7 +632,7 @@ async function publishWhip(stream) {
 
     try {
         await track.applyConstraints({
-            channelCount: 2,
+            channelCount: captureChannelCount(),
             sampleRate: 48000,
             echoCancellation: false,
             noiseSuppression: false,
@@ -648,14 +709,14 @@ async function primeMicrophone() {
     try {
         // Request with HQ constraints so device labels + permission match Go live.
         const priming = await navigator.mediaDevices.getUserMedia({
-            audio: HIGH_QUALITY_AUDIO,
+            audio: { ...HIGH_QUALITY_AUDIO, channelCount: { ideal: 2 } },
             video: false,
         });
         for (const t of priming.getTracks()) {
             t.stop();
         }
         await loadDevices();
-        setStatus('Microphone ready. Leave mic level at 100% for best quality. Add files only if you need them in the mix.');
+        setStatus('Microphone ready. Mono is selected by default (both ears). Switch to Stereo only for true left/right mixes.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -698,10 +759,11 @@ btnStart?.addEventListener('click', async () => {
 
         await publishWhip(stream);
 
+        const layoutLabel = isMono() ? 'mono (both ears)' : 'stereo';
         setStatus(
             publishMode === 'direct'
-                ? 'You’re on air — direct mic path (best quality). Keep this tab open.'
-                : 'You’re on air — mixer path (files/level). Keep this tab open.',
+                ? `You’re on air — direct ${layoutLabel}. Keep this tab open.`
+                : `You’re on air — ${layoutLabel} mix. Keep this tab open.`,
         );
         setOnAir(true);
         btnStop.disabled = false;
