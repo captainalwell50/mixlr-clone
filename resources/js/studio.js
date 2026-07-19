@@ -3,6 +3,8 @@ import './bootstrap';
 const root = document.getElementById('studio-root');
 const whipUrl = root?.dataset.whipUrl;
 const audioSelect = document.getElementById('audio-input');
+const auxSelect = document.getElementById('aux-input');
+const outputSelect = document.getElementById('audio-output');
 const btnStart = document.getElementById('btn-start');
 const btnStop = document.getElementById('btn-stop');
 const btnAddFile = document.getElementById('btn-add-file');
@@ -11,11 +13,29 @@ const channelsEl = document.getElementById('audio-channels');
 const statusEl = document.getElementById('studio-status');
 const meterEl = document.getElementById('level-meter');
 const meterLabel = document.getElementById('meter-label');
+const micMeterEl = document.getElementById('mic-meter');
+const auxMeterEl = document.getElementById('aux-meter');
+const playlistMeterEl = document.getElementById('playlist-meter');
 const stageEl = document.getElementById('studio-stage');
 const modeEl = document.getElementById('studio-mode');
+const airLabel = document.getElementById('studio-air-label');
+const heroHint = document.getElementById('studio-hero-hint');
+const timerEl = document.getElementById('studio-timer');
 const copyBtn = document.getElementById('btn-copy-listen');
 const listenUrlEl = document.getElementById('listen-url');
 const audioLayoutSelect = document.getElementById('audio-layout');
+const cueAudio = document.getElementById('cue-audio');
+const playlistCountEl = document.getElementById('playlist-count');
+
+const micFaderEl = document.getElementById('mic-fader');
+const auxFaderEl = document.getElementById('aux-fader');
+const playlistFaderEl = document.getElementById('playlist-fader');
+const micCueBtn = document.getElementById('mic-cue');
+const auxCueBtn = document.getElementById('aux-cue');
+const playlistCueBtn = document.getElementById('playlist-cue');
+const micMuteBtn = document.getElementById('mic-mute');
+const auxMuteBtn = document.getElementById('aux-mute');
+const playlistMuteBtn = document.getElementById('playlist-mute');
 
 /** Opus fullband max (bits/sec). */
 const OPUS_MAX_BITRATE = 510_000;
@@ -29,7 +49,6 @@ const CLEAN_AUDIO = {
     echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false,
-    // Chromium legacy keys (ignored when unsupported).
     googEchoCancellation: false,
     googNoiseSuppression: false,
     googAutoGainControl: false,
@@ -42,13 +61,15 @@ let pc = null;
 let whipResourceUrl = null;
 /** @type {AudioContext|null} */
 let audioCtx = null;
-/** Separate silent context for direct-mic metering only (never the publish mix graph). */
-/** @type {AudioContext|null} */
-let meterCtx = null;
 /** @type {MediaStreamAudioDestinationNode|null} */
 let mixDest = null;
+/** Local cue bus — played only via #cue-audio when a cue button is on. */
+/** @type {MediaStreamAudioDestinationNode|null} */
+let cueDest = null;
 /** @type {GainNode|null} */
 let micGain = null;
+/** @type {GainNode|null} */
+let micCueGain = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
 /** @type {ChannelSplitterNode|null} */
@@ -59,15 +80,46 @@ let micMonoSum = null;
 let micMerger = null;
 /** @type {MediaStream|null} */
 let micStream = null;
-/** @type {AnalyserNode|null} */
-let analyser = null;
+/** @type {GainNode|null} */
+let auxGain = null;
+/** @type {GainNode|null} */
+let auxCueGain = null;
 /** @type {MediaStreamAudioSourceNode|null} */
-let meterSource = null;
+let auxSource = null;
+/** @type {ChannelSplitterNode|null} */
+let auxSplitter = null;
+/** @type {GainNode|null} */
+let auxMonoSum = null;
+/** @type {ChannelMergerNode|null} */
+let auxMerger = null;
+/** @type {MediaStream|null} */
+let auxStream = null;
+/** @type {GainNode|null} */
+let playlistGain = null;
+/** @type {GainNode|null} */
+let playlistCueGain = null;
+/** @type {AnalyserNode|null} */
+let masterAnalyser = null;
+/** @type {AnalyserNode|null} */
+let micAnalyser = null;
+/** @type {AnalyserNode|null} */
+let auxAnalyser = null;
+/** @type {AnalyserNode|null} */
+let playlistAnalyser = null;
 let meterRaf = 0;
 let fileChannelSeq = 0;
 let isLive = false;
-/** @type {'direct' | 'mixer' | null} */
+let liveStartedAt = 0;
+let timerInterval = 0;
+/** @type {'mixer' | null} */
 let publishMode = null;
+
+let micMuted = false;
+let auxMuted = true;
+let playlistMuted = false;
+let micCueOn = false;
+let auxCueOn = false;
+let playlistCueOn = false;
 
 /** @type {Map<string, {
  *   id: string,
@@ -77,6 +129,7 @@ let publishMode = null;
  *   source: MediaElementAudioSourceNode|null,
  *   gain: GainNode|null,
  *   card: HTMLElement,
+ *   duration: number,
  * }>} */
 const fileChannels = new Map();
 
@@ -86,15 +139,52 @@ function setStatus(message) {
     }
 }
 
+function formatTimer(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const h = String(Math.floor(total / 3600)).padStart(2, '0');
+    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+}
+
+function updateTimer() {
+    if (!timerEl) {
+        return;
+    }
+    timerEl.textContent = isLive ? formatTimer(Date.now() - liveStartedAt) : '00:00:00';
+}
+
 function setOnAir(live) {
     isLive = live;
     stageEl?.classList.toggle('is-on-air', live);
     if (modeEl) {
-        modeEl.textContent = live ? 'On air' : 'Broadcaster';
-        modeEl.classList.toggle('stage-broadcaster', !live);
+        modeEl.textContent = live ? 'Live now' : 'Off air';
+    }
+    if (airLabel) {
+        airLabel.textContent = live ? 'LIVE NOW' : 'OFF AIR';
+    }
+    if (heroHint) {
+        heroHint.textContent = live
+            ? 'You’re on air — cue stays off unless you enable headphones'
+            : 'Click Start to go live';
     }
     if (btnStart) {
-        btnStart.textContent = live ? 'On air' : 'Go live';
+        btnStart.textContent = live ? 'On air' : 'Start';
+        btnStart.disabled = live;
+    }
+    if (live) {
+        liveStartedAt = Date.now();
+        updateTimer();
+        if (timerInterval) {
+            clearInterval(timerInterval);
+        }
+        timerInterval = window.setInterval(updateTimer, 1000);
+    } else {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = 0;
+        }
+        updateTimer();
     }
 }
 
@@ -141,9 +231,93 @@ function isMono() {
     return audioLayout() === 'mono';
 }
 
-/** Mixer / dual-mono graph when Mono (both ears) or audio files are used. */
-function needsMixer() {
-    return isMono() || fileChannels.size > 0;
+function faderGain(el) {
+    return Number(el?.value ?? 100) / 100;
+}
+
+function applyMicGain() {
+    if (micGain) {
+        micGain.gain.value = micMuted ? 0 : faderGain(micFaderEl);
+    }
+}
+
+function applyAuxGain() {
+    if (auxGain) {
+        auxGain.gain.value = auxMuted || !auxSelect?.value ? 0 : faderGain(auxFaderEl);
+    }
+}
+
+function applyPlaylistGain() {
+    if (playlistGain) {
+        playlistGain.gain.value = playlistMuted ? 0 : faderGain(playlistFaderEl);
+    }
+}
+
+function anyCueOn() {
+    return micCueOn || auxCueOn || playlistCueOn;
+}
+
+async function syncCuePlayback() {
+    if (!cueAudio || !cueDest) {
+        return;
+    }
+    if (micCueGain) {
+        micCueGain.gain.value = micCueOn ? 1 : 0;
+    }
+    if (auxCueGain) {
+        auxCueGain.gain.value = auxCueOn ? 1 : 0;
+    }
+    if (playlistCueGain) {
+        playlistCueGain.gain.value = playlistCueOn ? 1 : 0;
+    }
+
+    if (!anyCueOn()) {
+        cueAudio.pause();
+        cueAudio.srcObject = null;
+        return;
+    }
+
+    if (cueAudio.srcObject !== cueDest.stream) {
+        cueAudio.srcObject = cueDest.stream;
+    }
+
+    const sinkId = outputSelect?.value || '';
+    if (sinkId && typeof cueAudio.setSinkId === 'function') {
+        try {
+            await cueAudio.setSinkId(sinkId);
+        } catch {
+            /* output routing optional */
+        }
+    }
+
+    try {
+        await cueAudio.play();
+    } catch {
+        setStatus('Could not start cue monitor — click Start/cue again after interacting with the page.');
+    }
+}
+
+function setToggle(btn, on) {
+    if (!btn) {
+        return;
+    }
+    btn.classList.toggle('is-active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function updatePlaylistMeta() {
+    const n = fileChannels.size;
+    if (playlistCountEl) {
+        playlistCountEl.textContent = n === 0 ? 'No sounds' : `${n} sound${n === 1 ? '' : 's'}`;
+    }
+    let total = 0;
+    for (const ch of fileChannels.values()) {
+        total += Number.isFinite(ch.duration) ? ch.duration : 0;
+    }
+    const durationEl = document.getElementById('playlist-duration');
+    if (durationEl) {
+        durationEl.textContent = formatTimer(total * 1000);
+    }
 }
 
 try {
@@ -160,7 +334,7 @@ if (audioLayoutSelect) {
     audioLayoutSelect.addEventListener('change', () => {
         localStorage.setItem(LAYOUT_STORAGE_KEY, audioLayout());
         if (isLive) {
-            setStatus('Output layout changed — stop and Go live again to apply.');
+            setStatus('Output layout changed — Stop and Start again to apply.');
         }
     });
 }
@@ -172,13 +346,59 @@ copyBtn?.addEventListener('click', async () => {
     }
     try {
         await navigator.clipboard.writeText(text);
-        copyBtn.textContent = 'Copied';
-        window.setTimeout(() => {
-            copyBtn.textContent = 'Copy link';
-        }, 1600);
+        setStatus('Listen link copied.');
     } catch {
-        copyBtn.textContent = 'Copy failed';
+        setStatus('Could not copy listen link.');
     }
+});
+
+micFaderEl?.addEventListener('input', applyMicGain);
+auxFaderEl?.addEventListener('input', applyAuxGain);
+playlistFaderEl?.addEventListener('input', applyPlaylistGain);
+
+micMuteBtn?.addEventListener('click', () => {
+    micMuted = !micMuted;
+    setToggle(micMuteBtn, micMuted);
+    applyMicGain();
+});
+auxMuteBtn?.addEventListener('click', () => {
+    auxMuted = !auxMuted;
+    setToggle(auxMuteBtn, auxMuted);
+    applyAuxGain();
+});
+playlistMuteBtn?.addEventListener('click', () => {
+    playlistMuted = !playlistMuted;
+    setToggle(playlistMuteBtn, playlistMuted);
+    applyPlaylistGain();
+});
+
+micCueBtn?.addEventListener('click', async () => {
+    micCueOn = !micCueOn;
+    setToggle(micCueBtn, micCueOn);
+    if (micCueOn) {
+        setStatus('Mic cue on — use headphones or you will get feedback.');
+    }
+    await syncCuePlayback();
+});
+auxCueBtn?.addEventListener('click', async () => {
+    auxCueOn = !auxCueOn;
+    setToggle(auxCueBtn, auxCueOn);
+    if (auxCueOn) {
+        setStatus('Input cue on — use headphones or you will get feedback.');
+    }
+    await syncCuePlayback();
+});
+playlistCueBtn?.addEventListener('click', async () => {
+    playlistCueOn = !playlistCueOn;
+    setToggle(playlistCueBtn, playlistCueOn);
+    if (playlistCueOn) {
+        setStatus('Playlist cue on — use headphones or you will get feedback.');
+    }
+    await syncCuePlayback();
+});
+
+outputSelect?.addEventListener('change', () => {
+    void syncCuePlayback();
 });
 
 function stopMeter() {
@@ -186,20 +406,10 @@ function stopMeter() {
         cancelAnimationFrame(meterRaf);
         meterRaf = 0;
     }
-    try {
-        meterSource?.disconnect();
-        analyser?.disconnect();
-    } catch {
-        /* ignore */
-    }
-    meterSource = null;
-    analyser = null;
-    if (meterCtx) {
-        void meterCtx.close().catch(() => {});
-        meterCtx = null;
-    }
-    if (meterEl) {
-        meterEl.style.width = '0%';
+    for (const el of [meterEl, micMeterEl, auxMeterEl, playlistMeterEl]) {
+        if (el) {
+            el.style.height = '0%';
+        }
     }
     if (meterLabel) {
         meterLabel.textContent = '—';
@@ -218,82 +428,48 @@ function createSilentAudioContext(options = {}) {
     }
 }
 
-function updateMeterFromRms(rms) {
-    const pct = Math.min(100, Math.round(rms * 220));
-    if (meterEl) {
-        meterEl.style.width = `${pct}%`;
-        meterEl.style.background = pct > 75
-            ? '#d4a24c'
-            : 'var(--stage-accent, #3d9b7a)';
-    }
-    if (meterLabel) {
-        meterLabel.textContent = pct > 2 ? 'Signal' : 'Silence';
-    }
-}
-
-/**
- * Visual meter from an AnalyserNode already tapped in the graph.
- * Never createMediaStreamSource(mixDest.stream) on the publish AudioContext —
- * that feedback loop is what sent mic audio to the Studio speakers.
- */
-function startMeterFromAnalyser(node) {
-    stopMeter();
-    if (!node) {
+function fillMeter(el, rms) {
+    if (!el) {
         return;
     }
-    analyser = node;
-    const data = new Uint8Array(analyser.frequencyBinCount);
+    const pct = Math.min(100, Math.round(rms * 220));
+    el.style.height = `${pct}%`;
+}
+
+function rmsFromAnalyser(node) {
+    if (!node) {
+        return 0;
+    }
+    const data = new Uint8Array(node.frequencyBinCount);
+    node.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+    }
+    return Math.sqrt(sum / data.length);
+}
+
+function startMeters() {
+    stopMeter();
     const tick = () => {
-        if (!analyser) {
-            return;
+        const micRms = rmsFromAnalyser(micAnalyser);
+        const auxRms = rmsFromAnalyser(auxAnalyser);
+        const plRms = rmsFromAnalyser(playlistAnalyser);
+        const masterRms = rmsFromAnalyser(masterAnalyser);
+        fillMeter(micMeterEl, micRms);
+        fillMeter(auxMeterEl, auxRms);
+        fillMeter(playlistMeterEl, plRms);
+        fillMeter(meterEl, masterRms);
+        if (meterLabel) {
+            meterLabel.textContent = masterRms > 0.02 ? 'SIGNAL' : '—';
         }
-        analyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) {
-            const v = (data[i] - 128) / 128;
-            sum += v * v;
-        }
-        updateMeterFromRms(Math.sqrt(sum / data.length));
         meterRaf = requestAnimationFrame(tick);
     };
     meterRaf = requestAnimationFrame(tick);
 }
 
 /**
- * Direct-mic meter only — separate silent AudioContext, never the publish mix graph.
- * @param {MediaStream} stream
- */
-async function startMeterFromStream(stream) {
-    stopMeter();
-    try {
-        if (meterCtx) {
-            try {
-                meterSource?.disconnect();
-            } catch {
-                /* ignore */
-            }
-            if (meterCtx.state !== 'closed') {
-                void meterCtx.close().catch(() => {});
-            }
-            meterCtx = null;
-            meterSource = null;
-        }
-        meterCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
-        if (meterCtx.state === 'suspended') {
-            await meterCtx.resume();
-        }
-        meterSource = meterCtx.createMediaStreamSource(stream);
-        const meterAnalyser = meterCtx.createAnalyser();
-        meterAnalyser.fftSize = 256;
-        meterSource.connect(meterAnalyser);
-        startMeterFromAnalyser(meterAnalyser);
-    } catch {
-        /* meter is optional */
-    }
-}
-
-/**
- * Force Opus only — G722/PCMU sound like phone audio and break HLS.
  * @param {RTCRtpTransceiver} transceiver
  */
 function forceOpusCodec(transceiver) {
@@ -313,7 +489,6 @@ function forceOpusCodec(transceiver) {
 }
 
 /**
- * Drop telephony codecs from the audio m-line so negotiation cannot pick G722.
  * @param {string} sdp
  */
 function stripNonOpusAudioCodecs(sdp) {
@@ -364,7 +539,6 @@ function preferHighQualityOpus(sdp) {
         return out;
     }
 
-    // Always stereo Opus (510 kb/s). "Mono" layout duplicates content to both ears in the graph.
     const fmtpValue = `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
 
     for (const pt of opusPts) {
@@ -406,14 +580,12 @@ async function applyMaxAudioBitrate(peer) {
 }
 
 async function ensureMixer() {
-    if (audioCtx && mixDest && micGain) {
+    if (audioCtx && mixDest && micGain && playlistGain && cueDest) {
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
-        try {
-            mixDest.channelCount = 2;
-        } catch {
-            /* optional */
+        if (!meterRaf) {
+            startMeters();
         }
         return;
     }
@@ -422,33 +594,78 @@ async function ensureMixer() {
     } else if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
     }
+
     mixDest = audioCtx.createMediaStreamDestination();
+    cueDest = audioCtx.createMediaStreamDestination();
     try {
         mixDest.channelCount = 2;
         mixDest.channelCountMode = 'explicit';
         mixDest.channelInterpretation = 'discrete';
+        cueDest.channelCount = 2;
     } catch {
         /* optional */
     }
+
     micGain = audioCtx.createGain();
-    micGain.gain.value = 1;
-    // Publish only — never connect micGain (or anything) to audioCtx.destination.
+    auxGain = audioCtx.createGain();
+    playlistGain = audioCtx.createGain();
+    micCueGain = audioCtx.createGain();
+    auxCueGain = audioCtx.createGain();
+    playlistCueGain = audioCtx.createGain();
+    micCueGain.gain.value = 0;
+    auxCueGain.gain.value = 0;
+    playlistCueGain.gain.value = 0;
+
+    masterAnalyser = audioCtx.createAnalyser();
+    masterAnalyser.fftSize = 256;
+    micAnalyser = audioCtx.createAnalyser();
+    micAnalyser.fftSize = 256;
+    auxAnalyser = audioCtx.createAnalyser();
+    auxAnalyser.fftSize = 256;
+    playlistAnalyser = audioCtx.createAnalyser();
+    playlistAnalyser.fftSize = 256;
+
+    // Publish path only — never audioCtx.destination.
     micGain.connect(mixDest);
+    auxGain.connect(mixDest);
+    playlistGain.connect(mixDest);
+    micGain.connect(masterAnalyser);
+    auxGain.connect(masterAnalyser);
+    playlistGain.connect(masterAnalyser);
+
+    // Cue taps (gain 0 until headphones buttons are enabled).
+    micGain.connect(micCueGain);
+    auxGain.connect(auxCueGain);
+    playlistGain.connect(playlistCueGain);
+    micCueGain.connect(cueDest);
+    auxCueGain.connect(cueDest);
+    playlistCueGain.connect(cueDest);
+
+    micGain.connect(micAnalyser);
+    auxGain.connect(auxAnalyser);
+    playlistGain.connect(playlistAnalyser);
+
+    applyMicGain();
+    applyAuxGain();
+    applyPlaylistGain();
+    startMeters();
 }
 
-async function openMicrophone() {
-    const preferredId = audioSelect?.value || '';
+/**
+ * @param {string} [deviceId]
+ */
+async function openDevice(deviceId = '') {
     const base = { ...CLEAN_AUDIO };
-    if (preferredId) {
+    if (deviceId) {
         try {
             return await navigator.mediaDevices.getUserMedia({
-                audio: { ...base, deviceId: { exact: preferredId } },
+                audio: { ...base, deviceId: { exact: deviceId } },
                 video: false,
             });
         } catch {
             try {
                 return await navigator.mediaDevices.getUserMedia({
-                    audio: { ...base, deviceId: { ideal: preferredId } },
+                    audio: { ...base, deviceId: { ideal: deviceId } },
                     video: false,
                 });
             } catch {
@@ -474,6 +691,21 @@ function disconnectMicGraph() {
     micMerger = null;
 }
 
+function disconnectAuxGraph() {
+    try {
+        auxSource?.disconnect();
+        auxSplitter?.disconnect();
+        auxMonoSum?.disconnect();
+        auxMerger?.disconnect();
+    } catch {
+        /* ignore */
+    }
+    auxSource = null;
+    auxSplitter = null;
+    auxMonoSum = null;
+    auxMerger = null;
+}
+
 function stopMicTracks() {
     if (micStream) {
         for (const t of micStream.getTracks()) {
@@ -483,46 +715,69 @@ function stopMicTracks() {
     }
 }
 
+function stopAuxTracks() {
+    if (auxStream) {
+        for (const t of auxStream.getTracks()) {
+            t.stop();
+        }
+        auxStream = null;
+    }
+}
+
 /**
- * Both-ears mono on a silent AudioContext (publish via MediaStreamDestination only).
+ * @param {MediaStreamAudioSourceNode} source
+ * @param {GainNode} destGain
+ * @param {'mic' | 'aux'} which
  */
+function routeInputToGain(source, destGain, which) {
+    if (!isMono()) {
+        source.connect(destGain);
+        return;
+    }
+    const splitter = audioCtx.createChannelSplitter(2);
+    const monoSum = audioCtx.createGain();
+    monoSum.gain.value = 0.707;
+    const merger = audioCtx.createChannelMerger(2);
+    source.connect(splitter);
+    splitter.connect(monoSum, 0);
+    splitter.connect(monoSum, 1);
+    monoSum.connect(merger, 0, 0);
+    monoSum.connect(merger, 0, 1);
+    merger.connect(destGain);
+    if (which === 'mic') {
+        micSplitter = splitter;
+        micMonoSum = monoSum;
+        micMerger = merger;
+    } else {
+        auxSplitter = splitter;
+        auxMonoSum = monoSum;
+        auxMerger = merger;
+    }
+}
+
 async function attachMicrophoneToMixer() {
     await ensureMixer();
     disconnectMicGraph();
     stopMicTracks();
-    stopMeter();
-    micStream = await openMicrophone();
+    micStream = await openDevice(audioSelect?.value || '');
     micSource = audioCtx.createMediaStreamSource(micStream);
-
-    if (isMono()) {
-        micSplitter = audioCtx.createChannelSplitter(2);
-        micMonoSum = audioCtx.createGain();
-        micMonoSum.gain.value = 0.707;
-        micMerger = audioCtx.createChannelMerger(2);
-        micSource.connect(micSplitter);
-        micSplitter.connect(micMonoSum, 0);
-        micSplitter.connect(micMonoSum, 1);
-        micMonoSum.connect(micMerger, 0, 0);
-        micMonoSum.connect(micMerger, 0, 1);
-        micMerger.connect(micGain);
-    } else {
-        micSource.connect(micGain);
-    }
-
-    // Tap micGain → Analyser for the level meter. Do NOT meter mixDest.stream
-    // (re-entering the same AudioContext causes speaker feedback).
-    const mixAnalyser = audioCtx.createAnalyser();
-    mixAnalyser.fftSize = 256;
-    micGain.connect(mixAnalyser);
-    startMeterFromAnalyser(mixAnalyser);
+    routeInputToGain(micSource, micGain, 'mic');
+    applyMicGain();
 }
 
-async function openMicOnly() {
-    disconnectMicGraph();
-    stopMicTracks();
-    micStream = await openMicrophone();
-    await startMeterFromStream(micStream);
-    return micStream;
+async function attachAuxToMixer() {
+    await ensureMixer();
+    disconnectAuxGraph();
+    stopAuxTracks();
+    const id = auxSelect?.value || '';
+    if (!id) {
+        applyAuxGain();
+        return;
+    }
+    auxStream = await openDevice(id);
+    auxSource = audioCtx.createMediaStreamSource(auxStream);
+    routeInputToGain(auxSource, auxGain, 'aux');
+    applyAuxGain();
 }
 
 /** Drop any remote audio — Studio must never play the live stream locally. */
@@ -558,22 +813,59 @@ function silenceRemoteAudio(peer) {
 }
 
 async function loadDevices() {
-    if (!audioSelect) {
-        return;
-    }
     try {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const inputs = devices.filter((d) => d.kind === 'audioinput');
-        const previous = audioSelect.value;
-        audioSelect.innerHTML = '';
-        for (const d of inputs) {
-            const opt = document.createElement('option');
-            opt.value = d.deviceId;
-            opt.textContent = d.label || `Input ${audioSelect.length + 1}`;
-            audioSelect.appendChild(opt);
+        const outputs = devices.filter((d) => d.kind === 'audiooutput');
+
+        if (audioSelect) {
+            const previous = audioSelect.value;
+            audioSelect.innerHTML = '';
+            for (const d of inputs) {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.textContent = d.label || `Input ${audioSelect.length + 1}`;
+                audioSelect.appendChild(opt);
+            }
+            if (previous) {
+                audioSelect.value = previous;
+            }
         }
-        if (previous) {
-            audioSelect.value = previous;
+
+        if (auxSelect) {
+            const previous = auxSelect.value;
+            auxSelect.innerHTML = '';
+            const none = document.createElement('option');
+            none.value = '';
+            none.textContent = 'Select source';
+            auxSelect.appendChild(none);
+            for (const d of inputs) {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.textContent = d.label || `Input ${auxSelect.length}`;
+                auxSelect.appendChild(opt);
+            }
+            if (previous) {
+                auxSelect.value = previous;
+            }
+        }
+
+        if (outputSelect) {
+            const previous = outputSelect.value;
+            outputSelect.innerHTML = '';
+            const def = document.createElement('option');
+            def.value = '';
+            def.textContent = 'Default output';
+            outputSelect.appendChild(def);
+            for (const d of outputs) {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.textContent = d.label || `Output ${outputSelect.length}`;
+                outputSelect.appendChild(opt);
+            }
+            if (previous) {
+                outputSelect.value = previous;
+            }
         }
     } catch {
         setStatus('Could not list audio devices.');
@@ -585,34 +877,34 @@ audioSelect?.addEventListener('change', async () => {
         return;
     }
     try {
-        if (publishMode === 'direct') {
-            const stream = await openMicOnly();
-            const track = stream.getAudioTracks()[0];
-            const sender = pc.getSenders().find((s) => s.track?.kind === 'audio' || s.track == null);
-            if (sender && track) {
-                await sender.replaceTrack(track);
-                await applyMaxAudioBitrate(pc);
-            }
-            setStatus('Switched microphone — still on air (direct).');
-            return;
-        }
         await attachMicrophoneToMixer();
-        setStatus('Switched microphone — still on air (mixer).');
+        setStatus('Switched microphone — still on air.');
+    } catch (e) {
+        setStatus(friendlyError(e));
+    }
+});
+
+auxSelect?.addEventListener('change', async () => {
+    if (!isLive) {
+        return;
+    }
+    try {
+        await attachAuxToMixer();
+        setStatus(auxSelect.value ? 'Any Input armed — still on air.' : 'Any Input cleared.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
 });
 
 function wireFileChannelAudio(channel) {
-    if (!audioCtx || !mixDest || channel.source) {
+    if (!audioCtx || !playlistGain || channel.source) {
         return;
     }
     channel.source = audioCtx.createMediaElementSource(channel.audio);
     channel.gain = audioCtx.createGain();
-    const gainInput = channel.card.querySelector('[data-gain]');
-    channel.gain.gain.value = Number(gainInput?.value ?? 100) / 100;
+    channel.gain.gain.value = 1;
     channel.source.connect(channel.gain);
-    channel.gain.connect(mixDest);
+    channel.gain.connect(playlistGain);
 }
 
 function removeFileChannel(id) {
@@ -630,6 +922,7 @@ function removeFileChannel(id) {
     URL.revokeObjectURL(channel.objectUrl);
     channel.card.remove();
     fileChannels.delete(id);
+    updatePlaylistMeta();
 }
 
 function addFileChannel(file) {
@@ -638,32 +931,24 @@ function addFileChannel(file) {
     const audio = new Audio(objectUrl);
     audio.loop = false;
     audio.preload = 'auto';
-    // Files are heard only via the WebRTC mix, never through the Studio tab speakers.
     audio.muted = true;
     audio.volume = 0;
 
     const card = document.createElement('div');
-    card.className = 'stage-channel-card';
-    card.dataset.channel = 'file';
+    card.className = 'mixer-track';
     card.dataset.id = id;
     card.innerHTML = `
-        <div class="stage-channel-head">
-            <span class="stage-channel-badge">File</span>
-            <span class="stage-channel-name" title=""></span>
-            <button type="button" class="stage-channel-remove" data-remove>Remove</button>
+        <div class="mixer-track-head">
+            <span class="mixer-track-name" title=""></span>
+            <button type="button" class="mixer-track-remove" data-remove>Remove</button>
         </div>
-        <div class="stage-channel-gain">
-            <label>Level</label>
-            <input data-gain type="range" min="0" max="150" value="100" step="1">
-            <span class="stage-channel-gain-value" data-gain-label>100%</span>
-        </div>
-        <div class="stage-channel-file-controls">
+        <div class="mixer-track-controls">
             <button type="button" data-play>Play</button>
             <button type="button" data-pause>Pause</button>
             <button type="button" data-restart>Restart</button>
         </div>
     `;
-    const nameEl = card.querySelector('.stage-channel-name');
+    const nameEl = card.querySelector('.mixer-track-name');
     if (nameEl) {
         nameEl.textContent = file.name;
         nameEl.title = file.name;
@@ -679,27 +964,22 @@ function addFileChannel(file) {
         source: null,
         gain: null,
         card,
+        duration: 0,
     };
     fileChannels.set(id, channel);
+    updatePlaylistMeta();
 
-    if (audioCtx && mixDest) {
+    audio.addEventListener('loadedmetadata', () => {
+        channel.duration = audio.duration || 0;
+        updatePlaylistMeta();
+    });
+
+    if (audioCtx && playlistGain) {
         wireFileChannelAudio(channel);
     }
 
     card.querySelector('[data-remove]')?.addEventListener('click', () => {
         removeFileChannel(id);
-    });
-
-    const gainInput = card.querySelector('[data-gain]');
-    const gainLabel = card.querySelector('[data-gain-label]');
-    gainInput?.addEventListener('input', () => {
-        const pct = Number(gainInput.value);
-        if (gainLabel) {
-            gainLabel.textContent = `${pct}%`;
-        }
-        if (channel.gain) {
-            channel.gain.gain.value = pct / 100;
-        }
     });
 
     card.querySelector('[data-play]')?.addEventListener('click', async () => {
@@ -744,11 +1024,9 @@ fileInput?.addEventListener('change', () => {
     fileInput.value = '';
     if (files.length) {
         setStatus(
-            isLive && publishMode === 'direct'
-                ? 'File added — stop and Go live again so the mixer can include it.'
-                : isLive
-                    ? 'File channel added. Press Play to include it in the live mix.'
-                    : 'File channel ready. Press Play when you want it in the mix, then Go live.',
+            isLive
+                ? 'Sound added. Press Play to include it in the live mix.'
+                : 'Sound ready. Press Play when you want it in the mix, then Start.',
         );
     }
 });
@@ -779,7 +1057,6 @@ async function publishWhip(stream) {
         sendEncodings: [{ maxBitrate: OPUS_MAX_BITRATE, priority: 'high', networkPriority: 'high' }],
     });
 
-    // Fallback if sendEncodings unsupported at construction time.
     if (!transceiver.sender) {
         pc.addTrack(track, stream);
     }
@@ -826,18 +1103,11 @@ async function publishWhip(stream) {
 
     const answerSdp = await res.text();
     if (/G722|PCMU|PCMA/i.test(answerSdp) && !/opus\/48000/i.test(answerSdp)) {
-        throw new Error('Server answered without Opus (phone codec). Stop and Go live again after refresh.');
+        throw new Error('Server answered without Opus (phone codec). Stop and Start again after refresh.');
     }
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     silenceRemoteAudio(pc);
     await applyMaxAudioBitrate(pc);
-
-    const sender = transceiver.sender || pc.getSenders().find((s) => s.track?.kind === 'audio');
-    const params = sender?.getParameters?.();
-    const codec = params?.codecs?.[0]?.mimeType || '';
-    if (codec && !/opus/i.test(codec)) {
-        console.warn('Unexpected audio codec after negotiate:', codec);
-    }
 }
 
 async function primeMicrophone() {
@@ -861,7 +1131,8 @@ async function primeMicrophone() {
             t.stop();
         }
         await loadDevices();
-        setStatus('Microphone ready. Mono = both ears. Stereo = true L/R. Studio stays silent — use the listen link to hear the stream.');
+        setToggle(auxMuteBtn, auxMuted);
+        setStatus('Ready. Cue is off — Studio stays silent. Start to go live; use the listen link (or cue + headphones) to monitor.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -886,29 +1157,20 @@ btnStart?.addEventListener('click', async () => {
     setStatus('Starting…');
 
     try {
-        let stream;
-        if (needsMixer()) {
-            publishMode = 'mixer';
-            setStatus(isMono() ? 'Starting both-ears publish (Studio muted)…' : 'Starting file mix…');
-            await attachMicrophoneToMixer();
-            for (const channel of fileChannels.values()) {
-                wireFileChannelAudio(channel);
-            }
-            stream = mixDest.stream;
-        } else {
-            publishMode = 'direct';
-            setStatus('Starting clean Scarlett → Opus stereo…');
-            stream = await openMicOnly();
+        publishMode = 'mixer';
+        await ensureMixer();
+        await attachMicrophoneToMixer();
+        await attachAuxToMixer();
+        for (const channel of fileChannels.values()) {
+            wireFileChannelAudio(channel);
         }
-
-        await publishWhip(stream);
+        await syncCuePlayback();
+        await publishWhip(mixDest.stream);
 
         setStatus(
-            isMono()
-                ? 'You’re on air — both ears. This tab is silent; use the listen link to monitor.'
-                : publishMode === 'direct'
-                    ? 'You’re on air — direct Opus stereo. This tab is silent; use the listen link to monitor.'
-                    : 'You’re on air — file mix. This tab is silent; use the listen link to monitor.',
+            anyCueOn()
+                ? 'You’re on air. Cue is on — use headphones to avoid feedback.'
+                : 'You’re on air. Studio is silent (cue off). Monitor on the listen link or enable cue with headphones.',
         );
         setOnAir(true);
         btnStop.disabled = false;
@@ -935,6 +1197,14 @@ async function teardownLive() {
     publishMode = null;
     stopMeter();
 
+    micCueOn = false;
+    auxCueOn = false;
+    playlistCueOn = false;
+    setToggle(micCueBtn, false);
+    setToggle(auxCueBtn, false);
+    setToggle(playlistCueBtn, false);
+    await syncCuePlayback();
+
     if (whipResourceUrl) {
         try {
             await fetch(whipResourceUrl, { method: 'DELETE' });
@@ -949,7 +1219,9 @@ async function teardownLive() {
     }
 
     disconnectMicGraph();
+    disconnectAuxGraph();
     stopMicTracks();
+    stopAuxTracks();
 
     for (const channel of fileChannels.values()) {
         channel.audio.pause();
@@ -961,10 +1233,20 @@ window.addEventListener('pagehide', () => {
         removeFileChannel(id);
     }
     stopMeter();
+    micCueOn = false;
+    auxCueOn = false;
+    playlistCueOn = false;
+    if (cueAudio) {
+        cueAudio.pause();
+        cueAudio.srcObject = null;
+    }
     if (audioCtx) {
         void audioCtx.close().catch(() => {});
         audioCtx = null;
         mixDest = null;
+        cueDest = null;
         micGain = null;
+        auxGain = null;
+        playlistGain = null;
     }
 });
