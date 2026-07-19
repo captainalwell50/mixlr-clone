@@ -215,14 +215,40 @@ function stopMeter() {
 }
 
 /**
- * Meter-only tap (never used as the published track).
+ * AudioContext that never plays to speakers (meter / mix graph only).
+ * @param {AudioContextOptions} [options]
+ */
+function createSilentAudioContext(options = {}) {
+    try {
+        // Chrome 110+: explicit no-output sink so metering cannot leak to headphones.
+        return new AudioContext({ ...options, sinkId: { type: 'none' } });
+    } catch {
+        return new AudioContext(options);
+    }
+}
+
+function updateMeterFromRms(rms) {
+    const pct = Math.min(100, Math.round(rms * 220));
+    if (meterEl) {
+        meterEl.style.width = `${pct}%`;
+        meterEl.style.background = pct > 75
+            ? '#d4a24c'
+            : 'var(--stage-accent, #3d9b7a)';
+    }
+    if (meterLabel) {
+        meterLabel.textContent = pct > 2 ? 'Signal' : 'Silence';
+    }
+}
+
+/**
+ * Meter-only tap (never used as the published track, never routed to speakers).
  * @param {MediaStream} stream
  */
 async function startMeterFromStream(stream) {
     stopMeter();
     try {
         if (!audioCtx) {
-            audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
+            audioCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
         }
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
@@ -230,6 +256,7 @@ async function startMeterFromStream(stream) {
         meterSource = audioCtx.createMediaStreamSource(stream);
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
+        // Analyser only — do not connect to audioCtx.destination (that plays locally).
         meterSource.connect(analyser);
         const data = new Uint8Array(analyser.frequencyBinCount);
 
@@ -243,17 +270,7 @@ async function startMeterFromStream(stream) {
                 const v = (data[i] - 128) / 128;
                 sum += v * v;
             }
-            const rms = Math.sqrt(sum / data.length);
-            const pct = Math.min(100, Math.round(rms * 220));
-            if (meterEl) {
-                meterEl.style.width = `${pct}%`;
-                meterEl.style.background = pct > 75
-                    ? '#d4a24c'
-                    : 'var(--stage-accent, #3d9b7a)';
-            }
-            if (meterLabel) {
-                meterLabel.textContent = pct > 2 ? 'Signal' : 'Silence';
-            }
+            updateMeterFromRms(Math.sqrt(sum / data.length));
             meterRaf = requestAnimationFrame(tick);
         };
         meterRaf = requestAnimationFrame(tick);
@@ -388,7 +405,7 @@ async function ensureMixer() {
         return;
     }
     if (!audioCtx) {
-        audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+        audioCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
     } else if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
     }
@@ -459,6 +476,7 @@ async function toDualMonoStream(input) {
     }
 
     stopDualMono();
+    stopMeter();
     const processor = new MediaStreamTrackProcessor({ track });
     const generator = new MediaStreamTrackGenerator({ kind: 'audio' });
     dualMonoGenerator = generator;
@@ -466,6 +484,7 @@ async function toDualMonoStream(input) {
     const { signal } = dualMonoAbort;
     const reader = processor.readable.getReader();
     const writer = generator.writable.getWriter();
+    let meterTick = 0;
 
     void (async () => {
         try {
@@ -489,6 +508,16 @@ async function toDualMonoStream(input) {
                     for (let i = 0; i < frames; i += 1) {
                         mono[i] = 0.707 * (left[i] + right[i]);
                     }
+                }
+                // Meter from PCM here — do not attach the generator to an AudioContext
+                // (that was playing the mic locally in the Studio tab).
+                meterTick += 1;
+                if (meterTick % 4 === 0) {
+                    let sum = 0;
+                    for (let i = 0; i < mono.length; i += 1) {
+                        sum += mono[i] * mono[i];
+                    }
+                    updateMeterFromRms(Math.sqrt(sum / mono.length));
                 }
                 const planar = new Float32Array(frames * 2);
                 planar.set(mono, 0);
@@ -530,12 +559,12 @@ async function openMicOnly() {
     disconnectMicGraph();
     stopMicTracks();
     micStream = await openMicrophone();
-    let publish = micStream;
-    if (isMono()) {
-        publish = await toDualMonoStream(micStream);
+    if (isMono() && canDualMonoTransform()) {
+        // Publish dual-mono; meter runs inside the transform (no local AudioContext tap).
+        return toDualMonoStream(micStream);
     }
-    await startMeterFromStream(publish);
-    return publish;
+    await startMeterFromStream(micStream);
+    return micStream;
 }
 
 async function attachMicrophoneToMixer() {
@@ -633,6 +662,9 @@ function addFileChannel(file) {
     const audio = new Audio(objectUrl);
     audio.loop = false;
     audio.preload = 'auto';
+    // Files are heard only via the WebRTC mix, never through the Studio tab speakers.
+    audio.muted = true;
+    audio.volume = 0;
 
     const card = document.createElement('div');
     card.className = 'stage-channel-card';
