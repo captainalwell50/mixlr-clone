@@ -127,8 +127,25 @@ touch database/database.sqlite
 php artisan migrate --force
 php artisan db:seed --force
 
-sudo chown -R www-data:www-data storage bootstrap/cache database
-sudo chmod -R ug+rwx storage bootstrap/cache database
+# PHP-FPM (www-data) must own the SQLite file; group-read-only leaves inserts failing with
+# "attempt to write a readonly database". Directory needs group-write for WAL/SHM.
+sudo chown -R www-data:www-data storage bootstrap/cache
+sudo chmod -R ug+rwx storage bootstrap/cache
+sudo chown "$USER":www-data database
+sudo chmod 775 database
+if [[ -f database/database.sqlite ]]; then
+  sudo chown www-data:www-data database/database.sqlite
+  sudo chmod 660 database/database.sqlite
+  for side in database/database.sqlite-wal database/database.sqlite-shm; do
+    [[ -f "$side" ]] && sudo chown www-data:www-data "$side" && sudo chmod 660 "$side"
+  done
+fi
+sudo -u www-data php -r '
+$pdo = new PDO("sqlite:" . getcwd() . "/database/database.sqlite");
+$pdo->exec("PRAGMA journal_mode=WAL");
+$pdo->exec("PRAGMA busy_timeout=5000");
+echo "sqlite_writable_ok\n";
+'
 
 # MediaMTX ICE hosts + auth callback for production
 APP_HOST="$APP_HOST" APP_URL="$APP_URL" python3 <<'PY'

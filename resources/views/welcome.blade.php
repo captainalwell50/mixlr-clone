@@ -127,29 +127,14 @@
         </div>
     </section>
 
-    <section class="mkt-demo" aria-label="Live stage demonstration">
-        <div class="mkt-demo-scene" aria-hidden="true">
-            <div class="mkt-demo-haze"></div>
-            <div class="mkt-demo-beam mkt-demo-beam-a"></div>
-            <div class="mkt-demo-beam mkt-demo-beam-b"></div>
-            <div class="mkt-demo-beam mkt-demo-beam-c"></div>
-            <div class="mkt-demo-stage-floor"></div>
-            <div class="mkt-demo-silhouettes">
-                <span class="mkt-demo-person mkt-demo-p1"></span>
-                <span class="mkt-demo-person mkt-demo-p2"></span>
-                <span class="mkt-demo-person mkt-demo-p3"></span>
-                <span class="mkt-demo-person mkt-demo-p4"></span>
-                <span class="mkt-demo-person mkt-demo-p5"></span>
-                <span class="mkt-demo-person mkt-demo-p6"></span>
-                <span class="mkt-demo-person mkt-demo-p7"></span>
-                <span class="mkt-demo-person mkt-demo-p8"></span>
-            </div>
-            <div class="mkt-demo-pulpit"></div>
-            <div class="mkt-demo-glow-ring"></div>
-        </div>
+    <section class="mkt-demo" aria-label="Live stage">
+        <div
+            class="mkt-demo-photo"
+            style="background-image: url('{{ asset('images/church-stage-bg.jpg') }}')"
+            role="img"
+            aria-label="Church sanctuary with stage lighting during a live gathering"
+        ></div>
         <div class="mkt-demo-copy">
-            <h2 class="mkt-demo-title">When the room gathers, the stage goes live.</h2>
-            <p class="mkt-demo-lede">One event link becomes the shared listen experience — for the hall and everyone joining from home.</p>
             <div class="mkt-cta">
                 <a href="{{ route('discover') }}" class="site-btn site-btn-primary">Discover live</a>
                 <a href="{{ route('how-it-works') }}" class="site-btn site-btn-ghost">How it works</a>

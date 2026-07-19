@@ -85,6 +85,10 @@ DB_CONNECTION=sqlite
 php artisan migrate --force --seed
 sudo chown -R www-data:www-data storage bootstrap/cache
 sudo chmod -R ug+rwx storage bootstrap/cache
+# SQLite must be writable by www-data (not merely group-readable):
+sudo chown www-data:www-data database/database.sqlite
+sudo chmod 660 database/database.sqlite
+sudo chown "$USER":www-data database && sudo chmod 775 database
 ```
 
 Point PHP-FPM + Caddy at `/var/www/app/public` using [`../Caddyfile.example`](../Caddyfile.example) (replace hostname and PHP socket).
