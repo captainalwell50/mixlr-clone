@@ -42,6 +42,9 @@ let pc = null;
 let whipResourceUrl = null;
 /** @type {AudioContext|null} */
 let audioCtx = null;
+/** Separate silent context for direct-mic metering only (never the publish mix graph). */
+/** @type {AudioContext|null} */
+let meterCtx = null;
 /** @type {MediaStreamAudioDestinationNode|null} */
 let mixDest = null;
 /** @type {GainNode|null} */
@@ -191,6 +194,10 @@ function stopMeter() {
     }
     meterSource = null;
     analyser = null;
+    if (meterCtx) {
+        void meterCtx.close().catch(() => {});
+        meterCtx = null;
+    }
     if (meterEl) {
         meterEl.style.width = '0%';
     }
@@ -200,12 +207,11 @@ function stopMeter() {
 }
 
 /**
- * AudioContext that never plays to speakers (meter / mix graph only).
+ * Publish/mix graph must never use the default speaker sink.
  * @param {AudioContextOptions} [options]
  */
 function createSilentAudioContext(options = {}) {
     try {
-        // Chrome 110+: explicit no-output sink so metering cannot leak to headphones.
         return new AudioContext({ ...options, sinkId: { type: 'none' } });
     } catch {
         return new AudioContext(options);
@@ -226,39 +232,61 @@ function updateMeterFromRms(rms) {
 }
 
 /**
- * Meter-only tap (never used as the published track, never routed to speakers).
+ * Visual meter from an AnalyserNode already tapped in the graph.
+ * Never createMediaStreamSource(mixDest.stream) on the publish AudioContext —
+ * that feedback loop is what sent mic audio to the Studio speakers.
+ */
+function startMeterFromAnalyser(node) {
+    stopMeter();
+    if (!node) {
+        return;
+    }
+    analyser = node;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+        if (!analyser) {
+            return;
+        }
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+            const v = (data[i] - 128) / 128;
+            sum += v * v;
+        }
+        updateMeterFromRms(Math.sqrt(sum / data.length));
+        meterRaf = requestAnimationFrame(tick);
+    };
+    meterRaf = requestAnimationFrame(tick);
+}
+
+/**
+ * Direct-mic meter only — separate silent AudioContext, never the publish mix graph.
  * @param {MediaStream} stream
  */
 async function startMeterFromStream(stream) {
     stopMeter();
     try {
-        if (!audioCtx) {
-            audioCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
-        }
-        if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
-        }
-        meterSource = audioCtx.createMediaStreamSource(stream);
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        // Analyser only — do not connect to audioCtx.destination (that plays locally).
-        meterSource.connect(analyser);
-        const data = new Uint8Array(analyser.frequencyBinCount);
-
-        const tick = () => {
-            if (!analyser) {
-                return;
+        if (meterCtx) {
+            try {
+                meterSource?.disconnect();
+            } catch {
+                /* ignore */
             }
-            analyser.getByteTimeDomainData(data);
-            let sum = 0;
-            for (let i = 0; i < data.length; i++) {
-                const v = (data[i] - 128) / 128;
-                sum += v * v;
+            if (meterCtx.state !== 'closed') {
+                void meterCtx.close().catch(() => {});
             }
-            updateMeterFromRms(Math.sqrt(sum / data.length));
-            meterRaf = requestAnimationFrame(tick);
-        };
-        meterRaf = requestAnimationFrame(tick);
+            meterCtx = null;
+            meterSource = null;
+        }
+        meterCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+        if (meterCtx.state === 'suspended') {
+            await meterCtx.resume();
+        }
+        meterSource = meterCtx.createMediaStreamSource(stream);
+        const meterAnalyser = meterCtx.createAnalyser();
+        meterAnalyser.fftSize = 256;
+        meterSource.connect(meterAnalyser);
+        startMeterFromAnalyser(meterAnalyser);
     } catch {
         /* meter is optional */
     }
@@ -398,12 +426,13 @@ async function ensureMixer() {
     try {
         mixDest.channelCount = 2;
         mixDest.channelCountMode = 'explicit';
-        mixDest.channelInterpretation = 'speakers';
+        mixDest.channelInterpretation = 'discrete';
     } catch {
         /* optional */
     }
     micGain = audioCtx.createGain();
     micGain.gain.value = 1;
+    // Publish only — never connect micGain (or anything) to audioCtx.destination.
     micGain.connect(mixDest);
 }
 
@@ -455,13 +484,13 @@ function stopMicTracks() {
 }
 
 /**
- * Both-ears mono on a silent AudioContext (no speakers).
- * Avoid MediaStreamTrackGenerator — Chrome was playing that track in the Studio tab.
+ * Both-ears mono on a silent AudioContext (publish via MediaStreamDestination only).
  */
 async function attachMicrophoneToMixer() {
     await ensureMixer();
     disconnectMicGraph();
     stopMicTracks();
+    stopMeter();
     micStream = await openMicrophone();
     micSource = audioCtx.createMediaStreamSource(micStream);
 
@@ -479,7 +508,13 @@ async function attachMicrophoneToMixer() {
     } else {
         micSource.connect(micGain);
     }
-    await startMeterFromStream(mixDest.stream);
+
+    // Tap micGain → Analyser for the level meter. Do NOT meter mixDest.stream
+    // (re-entering the same AudioContext causes speaker feedback).
+    const mixAnalyser = audioCtx.createAnalyser();
+    mixAnalyser.fftSize = 256;
+    micGain.connect(mixAnalyser);
+    startMeterFromAnalyser(mixAnalyser);
 }
 
 async function openMicOnly() {
