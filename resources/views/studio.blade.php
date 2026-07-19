@@ -47,7 +47,7 @@
                         <label class="sr-only" for="audio-input">Microphone / interface</label>
                         <select id="audio-input" class="mt-2"></select>
                         <p class="mt-2 text-xs" style="color: var(--stage-muted)">
-                            Clean Scarlett feed only — no browser processing. Set gain on the 2i2, pick <strong>Focusrite</strong> / Scarlett above, and leave AIR off if you want a flat sound.
+                            Clean Scarlett feed — no browser noise/AGC. Set gain on the 2i2 and pick <strong>Focusrite</strong> / Scarlett above.
                         </p>
                     </div>
                 </div>
@@ -55,6 +55,17 @@
                 <div class="stage-channel-actions">
                     <button type="button" id="btn-add-file" class="btn-channel-add">+ Add audio file</button>
                     <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
+                </div>
+
+                <div>
+                    <label for="audio-layout">Output</label>
+                    <select id="audio-layout" class="mt-2">
+                        <option value="mono" selected>Mono — both ears (recommended for one mic)</option>
+                        <option value="stereo">Stereo — left / right</option>
+                    </select>
+                    <p class="mt-1 text-xs" style="color: var(--stage-muted)">
+                        Mono sums left+right so a Scarlett Input 1 mic plays in both ears. Stereo keeps true left/right.
+                    </p>
                 </div>
 
                 <div>
@@ -73,7 +84,7 @@
                 </div>
 
                 <p id="studio-status" class="stage-status-line" style="text-align: left">
-                    Allow microphone access when prompted. Leave mic level at 100% for best quality (direct path). Only add audio files if you need them in the same broadcast.
+                    Allow microphone access when prompted. Mono is on by default (both ears). Use Stereo only for true left/right. Only add audio files if you need them in the same broadcast.
                 </p>
 
                 <div class="stage-copy-row">
