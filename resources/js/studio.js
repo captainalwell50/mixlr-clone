@@ -48,6 +48,12 @@ let mixDest = null;
 let micGain = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
+/** @type {ChannelSplitterNode|null} */
+let micSplitter = null;
+/** @type {GainNode|null} */
+let micMonoSum = null;
+/** @type {ChannelMergerNode|null} */
+let micMerger = null;
 /** @type {MediaStream|null} */
 let micStream = null;
 /** @type {AnalyserNode|null} */
@@ -133,12 +139,11 @@ function isMono() {
 }
 
 /**
- * Mixer only when audio files are added.
- * Mono no longer remuxes through Web Audio (that muffled the Scarlett) —
- * both-ears mono is Opus stereo=0 on the direct mic track.
+ * Mixer when Mono (duplicate summed mic to L+R) or when files are added.
+ * Always publish Opus stereo @ full bitrate — Opus mono was capping ~260 kb/s.
  */
 function needsMixer() {
-    return fileChannels.size > 0;
+    return isMono() || fileChannels.size > 0;
 }
 
 try {
@@ -317,8 +322,8 @@ function preferHighQualityOpus(sdp) {
         return out;
     }
 
-    const stereoFlag = isMono() ? '0' : '1';
-    const fmtpValue = `minptime=10;useinbandfec=1;stereo=${stereoFlag};sprop-stereo=${stereoFlag};maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
+    // Always stereo Opus (510 kb/s). "Mono" layout duplicates content to both ears in the graph.
+    const fmtpValue = `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
 
     for (const pt of opusPts) {
         const fmtpRe = new RegExp(`^a=fmtp:${pt} .*`, 'im');
@@ -414,10 +419,16 @@ async function openMicrophone() {
 function disconnectMicGraph() {
     try {
         micSource?.disconnect();
+        micSplitter?.disconnect();
+        micMonoSum?.disconnect();
+        micMerger?.disconnect();
     } catch {
         /* ignore */
     }
     micSource = null;
+    micSplitter = null;
+    micMonoSum = null;
+    micMerger = null;
 }
 
 function stopMicTracks() {
@@ -443,8 +454,23 @@ async function attachMicrophoneToMixer() {
     stopMicTracks();
     micStream = await openMicrophone();
     micSource = audioCtx.createMediaStreamSource(micStream);
-    // File mix keeps a clean stereo graph; Opus mono flag still handles both-ears encode.
-    micSource.connect(micGain);
+
+    if (isMono()) {
+        // Sum L+R (Scarlett often only has Input 1 or 2 live), then feed both ears.
+        // Keep a stereo MediaStream so Opus stays at full ~510 kb/s (not Opus-mono ~260).
+        micSplitter = audioCtx.createChannelSplitter(2);
+        micMonoSum = audioCtx.createGain();
+        micMonoSum.gain.value = 0.707;
+        micMerger = audioCtx.createChannelMerger(2);
+        micSource.connect(micSplitter);
+        micSplitter.connect(micMonoSum, 0);
+        micSplitter.connect(micMonoSum, 1);
+        micMonoSum.connect(micMerger, 0, 0);
+        micMonoSum.connect(micMerger, 0, 1);
+        micMerger.connect(micGain);
+    } else {
+        micSource.connect(micGain);
+    }
     await startMeterFromStream(mixDest.stream);
 }
 
@@ -775,30 +801,27 @@ btnStart?.addEventListener('click', async () => {
         let stream;
         if (needsMixer()) {
             publishMode = 'mixer';
-            setStatus('Starting file mix…');
+            setStatus(isMono() ? 'Starting both-ears mix (full-rate Opus stereo)…' : 'Starting file mix…');
             await attachMicrophoneToMixer();
             for (const channel of fileChannels.values()) {
                 wireFileChannelAudio(channel);
             }
             stream = mixDest.stream;
         } else {
-            // Scarlett track → WebRTC Opus (no Web Audio remux).
+            // True stereo Scarlett → WebRTC Opus, no remux.
             publishMode = 'direct';
-            setStatus(
-                isMono()
-                    ? 'Starting clean Scarlett → Opus mono (both ears)…'
-                    : 'Starting clean Scarlett → Opus stereo…',
-            );
+            setStatus('Starting clean Scarlett → Opus stereo…');
             stream = await openMicOnly();
         }
 
         await publishWhip(stream);
 
-        const layoutLabel = isMono() ? 'Opus mono (both ears)' : 'Opus stereo';
         setStatus(
-            publishMode === 'direct'
-                ? `You’re on air — direct ${layoutLabel}. Keep this tab open.`
-                : `You’re on air — file mix / ${layoutLabel}. Keep this tab open.`,
+            isMono()
+                ? 'You’re on air — both ears, Opus stereo ~510 kb/s. Keep this tab open.'
+                : publishMode === 'direct'
+                    ? 'You’re on air — direct Opus stereo. Keep this tab open.'
+                    : 'You’re on air — file mix / Opus stereo. Keep this tab open.',
         );
         setOnAir(true);
         btnStop.disabled = false;

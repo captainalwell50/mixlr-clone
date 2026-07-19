@@ -64,7 +64,7 @@
                         <option value="stereo">Stereo — left / right</option>
                     </select>
                     <p class="mt-1 text-xs" style="color: var(--stage-muted)">
-                        Mono encodes Opus for both ears without remuxing the Scarlett. Stereo keeps true left/right. Push gain on the 2i2 until the meter moves strongly (not clipping).
+                        Mono = same sound in both ears at full Opus stereo rate (use this for one Scarlett input). Stereo = true left/right. Turn 2i2 gain up until the meter moves strongly.
                     </p>
                 </div>
 
