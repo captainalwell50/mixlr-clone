@@ -18,18 +18,10 @@ const listenUrlEl = document.getElementById('listen-url');
 const micGainInput = document.getElementById('mic-gain');
 const micGainLabel = document.getElementById('mic-gain-label');
 const audioLayoutSelect = document.getElementById('audio-layout');
-const fxNoise = document.getElementById('fx-noise');
-const fxEcho = document.getElementById('fx-echo');
-const fxAgc = document.getElementById('fx-agc');
-const fxVoice = document.getElementById('fx-voice');
-const fxHighpass = document.getElementById('fx-highpass');
-const fxCompress = document.getElementById('fx-compress');
-const fxLimit = document.getElementById('fx-limit');
 
 /** Opus fullband max (bits/sec). */
 const OPUS_MAX_BITRATE = 510_000;
 const LAYOUT_STORAGE_KEY = 'studio-audio-layout';
-const FX_STORAGE_KEY = 'studio-audio-fx';
 
 let pc = null;
 /** @type {string|null} */
@@ -40,18 +32,8 @@ let audioCtx = null;
 let mixDest = null;
 /** @type {GainNode|null} */
 let micGain = null;
-/** @type {BiquadFilterNode|null} */
-let fxHighpassNode = null;
-/** @type {DynamicsCompressorNode|null} */
-let fxCompressNode = null;
-/** @type {DynamicsCompressorNode|null} */
-let fxLimitNode = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
-/** @type {ChannelSplitterNode|null} */
-let micSplitter = null;
-/** @type {GainNode|null} */
-let micMonoSum = null;
 /** @type {MediaStream|null} */
 let micStream = null;
 /** @type {AnalyserNode|null} */
@@ -140,82 +122,31 @@ function isMono() {
     return audioLayout() === 'mono';
 }
 
-function captureChannelCount() {
-    return isMono() ? 1 : 2;
-}
-
-function fxChecked(el) {
-    return Boolean(el?.checked);
-}
-
-function needsGraphFx() {
-    return fxChecked(fxHighpass) || fxChecked(fxCompress) || fxChecked(fxLimit);
-}
-
 /**
  * Mixer remuxes through Web Audio and costs quality — only when needed.
- * Mono alone stays on the direct mic path (native channelCount + Opus mono).
+ * Layout (mono/stereo) is handled in Opus SDP, not by remuxing the mic.
  */
 function needsMixer() {
-    return fileChannels.size > 0 || micGainPercent() !== 100 || needsGraphFx();
+    return fileChannels.size > 0 || micGainPercent() !== 100;
 }
 
+/** Always capture a clean stereo interface feed — no browser enhance/AGC. */
 function captureConstraints() {
-    const constraints = {
+    return {
         sampleRate: { ideal: 48000 },
         sampleSize: { ideal: 16 },
-        channelCount: { ideal: captureChannelCount() },
-        echoCancellation: fxChecked(fxEcho),
-        noiseSuppression: fxChecked(fxNoise),
-        autoGainControl: fxChecked(fxAgc),
+        channelCount: { ideal: 2 },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
     };
-    // Chromium-only; omit when off so it cannot force processing.
-    if (fxChecked(fxVoice)) {
-        constraints.voiceIsolation = true;
-    }
-    return constraints;
 }
 
-function loadFxPrefs() {
-    try {
-        const raw = localStorage.getItem(FX_STORAGE_KEY);
-        if (!raw) {
-            return;
-        }
-        const prefs = JSON.parse(raw);
-        const map = [
-            [fxNoise, 'noise'],
-            [fxEcho, 'echo'],
-            [fxAgc, 'agc'],
-            [fxVoice, 'voice'],
-            [fxHighpass, 'highpass'],
-            [fxCompress, 'compress'],
-            [fxLimit, 'limit'],
-        ];
-        for (const [el, key] of map) {
-            if (el && typeof prefs[key] === 'boolean') {
-                el.checked = prefs[key];
-            }
-        }
-    } catch {
-        /* ignore */
-    }
+try {
+    localStorage.removeItem('studio-audio-fx');
+} catch {
+    /* ignore */
 }
-
-function saveFxPrefs() {
-    const prefs = {
-        noise: fxChecked(fxNoise),
-        echo: fxChecked(fxEcho),
-        agc: fxChecked(fxAgc),
-        voice: fxChecked(fxVoice),
-        highpass: fxChecked(fxHighpass),
-        compress: fxChecked(fxCompress),
-        limit: fxChecked(fxLimit),
-    };
-    localStorage.setItem(FX_STORAGE_KEY, JSON.stringify(prefs));
-}
-
-loadFxPrefs();
 
 if (audioLayoutSelect) {
     const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -226,17 +157,6 @@ if (audioLayoutSelect) {
         localStorage.setItem(LAYOUT_STORAGE_KEY, audioLayout());
         if (isLive) {
             setStatus('Output layout changed — stop and Go live again to apply.');
-        }
-    });
-}
-
-for (const el of [fxNoise, fxEcho, fxAgc, fxVoice, fxHighpass, fxCompress, fxLimit]) {
-    el?.addEventListener('change', () => {
-        saveFxPrefs();
-        if (isLive) {
-            setStatus('Advanced audio changed — stop and Go live again to apply.');
-        } else {
-            rebuildFxChain();
         }
     });
 }
@@ -380,64 +300,16 @@ async function applyMaxAudioBitrate(peer) {
     }
 }
 
-function ensureFxNodes() {
-    if (!audioCtx) {
-        return;
-    }
-    if (!fxHighpassNode) {
-        fxHighpassNode = audioCtx.createBiquadFilter();
-        fxHighpassNode.type = 'highpass';
-        fxHighpassNode.frequency.value = 80;
-        fxHighpassNode.Q.value = 0.7;
-    }
-    if (!fxCompressNode) {
-        fxCompressNode = audioCtx.createDynamicsCompressor();
-        fxCompressNode.threshold.value = -24;
-        fxCompressNode.knee.value = 18;
-        fxCompressNode.ratio.value = 3;
-        fxCompressNode.attack.value = 0.01;
-        fxCompressNode.release.value = 0.25;
-    }
-    if (!fxLimitNode) {
-        fxLimitNode = audioCtx.createDynamicsCompressor();
-        fxLimitNode.threshold.value = -3;
-        fxLimitNode.knee.value = 2;
-        fxLimitNode.ratio.value = 20;
-        fxLimitNode.attack.value = 0.002;
-        fxLimitNode.release.value = 0.12;
-    }
-}
-
-/** Wire micGain → optional FX → mixDest. */
-function rebuildFxChain() {
+function wireMicGainToMix() {
     if (!micGain || !mixDest) {
         return;
     }
-    ensureFxNodes();
     try {
         micGain.disconnect();
-        fxHighpassNode?.disconnect();
-        fxCompressNode?.disconnect();
-        fxLimitNode?.disconnect();
     } catch {
         /* ignore */
     }
-
-    /** @type {AudioNode} */
-    let node = micGain;
-    if (fxChecked(fxHighpass) && fxHighpassNode) {
-        node.connect(fxHighpassNode);
-        node = fxHighpassNode;
-    }
-    if (fxChecked(fxCompress) && fxCompressNode) {
-        node.connect(fxCompressNode);
-        node = fxCompressNode;
-    }
-    if (fxChecked(fxLimit) && fxLimitNode) {
-        node.connect(fxLimitNode);
-        node = fxLimitNode;
-    }
-    node.connect(mixDest);
+    micGain.connect(mixDest);
 }
 
 async function ensureMixer() {
@@ -446,11 +318,11 @@ async function ensureMixer() {
             await audioCtx.resume();
         }
         try {
-            mixDest.channelCount = captureChannelCount();
+            mixDest.channelCount = 2;
         } catch {
             /* optional */
         }
-        rebuildFxChain();
+        wireMicGainToMix();
         return;
     }
     if (!audioCtx) {
@@ -460,7 +332,7 @@ async function ensureMixer() {
     }
     mixDest = audioCtx.createMediaStreamDestination();
     try {
-        mixDest.channelCount = captureChannelCount();
+        mixDest.channelCount = 2;
         mixDest.channelCountMode = 'explicit';
         mixDest.channelInterpretation = 'speakers';
     } catch {
@@ -468,8 +340,7 @@ async function ensureMixer() {
     }
     micGain = audioCtx.createGain();
     micGain.gain.value = micGainPercent() / 100;
-    ensureFxNodes();
-    rebuildFxChain();
+    wireMicGainToMix();
 }
 
 async function openMicrophone() {
@@ -498,14 +369,10 @@ async function openMicrophone() {
 function disconnectMicGraph() {
     try {
         micSource?.disconnect();
-        micSplitter?.disconnect();
-        micMonoSum?.disconnect();
     } catch {
         /* ignore */
     }
     micSource = null;
-    micSplitter = null;
-    micMonoSum = null;
 }
 
 function stopMicTracks() {
@@ -528,7 +395,7 @@ async function openMicOnly() {
 async function attachMicrophoneToMixer() {
     await ensureMixer();
     try {
-        mixDest.channelCount = captureChannelCount();
+        mixDest.channelCount = 2;
     } catch {
         /* optional */
     }
@@ -536,20 +403,8 @@ async function attachMicrophoneToMixer() {
     stopMicTracks();
     micStream = await openMicrophone();
     micSource = audioCtx.createMediaStreamSource(micStream);
-
-    if (isMono()) {
-        // Sum left + right so a left-only interface still plays in both ears.
-        micSplitter = audioCtx.createChannelSplitter(2);
-        micMonoSum = audioCtx.createGain();
-        micMonoSum.gain.value = 0.707;
-        micSource.connect(micSplitter);
-        micSplitter.connect(micMonoSum, 0);
-        micSplitter.connect(micMonoSum, 1);
-        micMonoSum.connect(micGain);
-    } else {
-        micSource.connect(micGain);
-    }
-    rebuildFxChain();
+    micSource.connect(micGain);
+    wireMicGainToMix();
     await startMeterFromStream(mixDest.stream);
 }
 
@@ -773,10 +628,7 @@ async function publishWhip(stream) {
     });
 
     try {
-        await track.applyConstraints({
-            ...captureConstraints(),
-            sampleRate: 48000,
-        });
+        await track.applyConstraints(captureConstraints());
     } catch {
         /* optional */
     }
@@ -855,7 +707,7 @@ async function primeMicrophone() {
             t.stop();
         }
         await loadDevices();
-        setStatus('Microphone ready. Mono + direct publish by default (best quality). Use Advanced only for laptop mics.');
+        setStatus('Microphone ready. Clean direct capture — leave Level at 100% for best quality.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -883,7 +735,7 @@ btnStart?.addEventListener('click', async () => {
         let stream;
         if (needsMixer()) {
             publishMode = 'mixer';
-            setStatus('Starting mix (files / level / Advanced FX)…');
+            setStatus('Starting mix (files / level)…');
             await attachMicrophoneToMixer();
             for (const channel of fileChannels.values()) {
                 wireFileChannelAudio(channel);
@@ -892,11 +744,7 @@ btnStart?.addEventListener('click', async () => {
         } else {
             // Highest quality: mic track → WebRTC with no Web Audio remux.
             publishMode = 'direct';
-            setStatus(
-                isMono()
-                    ? 'Starting direct mono mic (highest quality)…'
-                    : 'Starting direct stereo mic (highest quality)…',
-            );
+            setStatus('Starting direct mic (highest quality)…');
             stream = await openMicOnly();
         }
 
@@ -966,8 +814,5 @@ window.addEventListener('pagehide', () => {
         audioCtx = null;
         mixDest = null;
         micGain = null;
-        fxHighpassNode = null;
-        fxCompressNode = null;
-        fxLimitNode = null;
     }
 });
