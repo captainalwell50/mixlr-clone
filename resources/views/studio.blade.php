@@ -70,6 +70,41 @@
                     </p>
                 </div>
 
+                <details class="stage-advanced" id="advanced-audio">
+                    <summary>Advanced audio</summary>
+                    <p class="stage-advanced-note">Leave these off for a Scarlett / mixer feed. Turn on for laptop mics in noisy rooms.</p>
+                    <div class="stage-advanced-grid">
+                        <label class="stage-advanced-toggle">
+                            <input type="checkbox" id="fx-noise" data-fx="constraint">
+                            <span>Noise suppression</span>
+                        </label>
+                        <label class="stage-advanced-toggle">
+                            <input type="checkbox" id="fx-echo" data-fx="constraint">
+                            <span>Echo cancellation</span>
+                        </label>
+                        <label class="stage-advanced-toggle">
+                            <input type="checkbox" id="fx-agc" data-fx="constraint">
+                            <span>Auto level (AGC)</span>
+                        </label>
+                        <label class="stage-advanced-toggle">
+                            <input type="checkbox" id="fx-voice" data-fx="constraint">
+                            <span>Voice isolation</span>
+                        </label>
+                        <label class="stage-advanced-toggle">
+                            <input type="checkbox" id="fx-highpass" data-fx="graph">
+                            <span>High-pass (cut rumble)</span>
+                        </label>
+                        <label class="stage-advanced-toggle">
+                            <input type="checkbox" id="fx-compress" data-fx="graph">
+                            <span>Gentle compressor</span>
+                        </label>
+                        <label class="stage-advanced-toggle">
+                            <input type="checkbox" id="fx-limit" data-fx="graph">
+                            <span>Soft limiter</span>
+                        </label>
+                    </div>
+                </details>
+
                 <div>
                     <div class="mb-1 flex items-center justify-between text-xs" style="color: var(--stage-muted)">
                         <span>Mix level</span>

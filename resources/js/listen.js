@@ -6,6 +6,8 @@ const audio = document.getElementById('stream-audio');
 const statusEl = document.getElementById('stream-status');
 
 const STATUS_POLL_MS = 5000;
+/** Wait before tearing down on brief WebRTC blips (avoids buffer loops). */
+const WHEP_RETRY_MS = 8000;
 
 /** @type {import('hls.js').default | null} */
 let hls = null;
@@ -16,8 +18,19 @@ let whepResourceUrl = null;
 let retryTimer = null;
 let statusPollTimer = null;
 let startingPlayback = false;
+let whepRetryArmed = false;
 /** @type {ReturnType<typeof bindStagePlayer> | null} */
 let stagePlayer = null;
+
+function isPlaybackHealthy() {
+    if (pc && (pc.connectionState === 'connected' || pc.connectionState === 'connecting')) {
+        return true;
+    }
+    if (hls && audio && !audio.paused && !audio.ended) {
+        return true;
+    }
+    return false;
+}
 
 function setStatus(message) {
     if (statusEl) {
@@ -98,7 +111,9 @@ async function applyLive() {
         root.dataset.streamStatus = 'live';
     }
     updateBroadcastBadge(true);
-    void startPlayback();
+    if (!isPlaybackHealthy()) {
+        void startPlayback();
+    }
 }
 
 async function refreshStreamStatus() {
@@ -221,11 +236,23 @@ async function startWhep(whepUrl) {
             return;
         }
         if (pc.connectionState === 'connected') {
+            whepRetryArmed = false;
             setStatus(isMarkedLive() ? 'On air' : 'Playing');
             return;
         }
-        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        if (pc.connectionState === 'failed') {
             scheduleRetry(waitingMessage());
+            return;
+        }
+        // Brief ICE blips show as "disconnected" — don't tear down immediately.
+        if (pc.connectionState === 'disconnected' && !whepRetryArmed) {
+            whepRetryArmed = true;
+            window.setTimeout(() => {
+                if (pc && pc.connectionState === 'disconnected') {
+                    scheduleRetry(waitingMessage());
+                }
+                whepRetryArmed = false;
+            }, WHEP_RETRY_MS);
         }
     };
 
@@ -307,9 +334,16 @@ async function startHls(hlsUrl) {
         return;
     }
 
+    // Prefer stable live edge over ultra-low-latency (LL-HLS causes stutter on Opus remux).
     hls = new Hls({
-        lowLatencyMode: true,
+        lowLatencyMode: false,
         backBufferLength: 30,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 6,
+        maxLiveSyncPlaybackRate: 1,
+        enableWorker: true,
     });
     hls.loadSource(hlsUrl);
     hls.attachMedia(audio);
@@ -324,7 +358,15 @@ async function startHls(hlsUrl) {
         }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             hls?.startLoad();
-            scheduleRetry(waitingMessage());
+            return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            try {
+                hls?.recoverMediaError();
+            } catch {
+                setStatus('Playback error.');
+                void teardown().then(() => scheduleRetry('Trying again…'));
+            }
             return;
         }
         setStatus('Playback error.');
@@ -351,6 +393,11 @@ async function startPlayback() {
     if (hasStatusUrl() && !isMarkedLive()) {
         stagePlayer.disable();
         setStatus('Waiting for the broadcast to start. This page will keep trying.');
+        return;
+    }
+
+    // Already playing — status polls must not tear down a healthy session.
+    if (isPlaybackHealthy()) {
         return;
     }
 

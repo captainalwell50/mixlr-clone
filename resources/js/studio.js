@@ -18,20 +18,18 @@ const listenUrlEl = document.getElementById('listen-url');
 const micGainInput = document.getElementById('mic-gain');
 const micGainLabel = document.getElementById('mic-gain-label');
 const audioLayoutSelect = document.getElementById('audio-layout');
+const fxNoise = document.getElementById('fx-noise');
+const fxEcho = document.getElementById('fx-echo');
+const fxAgc = document.getElementById('fx-agc');
+const fxVoice = document.getElementById('fx-voice');
+const fxHighpass = document.getElementById('fx-highpass');
+const fxCompress = document.getElementById('fx-compress');
+const fxLimit = document.getElementById('fx-limit');
 
 /** Opus fullband max (bits/sec). */
 const OPUS_MAX_BITRATE = 510_000;
 const LAYOUT_STORAGE_KEY = 'studio-audio-layout';
-
-const HIGH_QUALITY_AUDIO = {
-    sampleRate: { ideal: 48000 },
-    sampleSize: { ideal: 16 },
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false,
-    // Chromium / Safari extras that soften desk mixes when left on.
-    voiceIsolation: false,
-};
+const FX_STORAGE_KEY = 'studio-audio-fx';
 
 let pc = null;
 /** @type {string|null} */
@@ -42,6 +40,12 @@ let audioCtx = null;
 let mixDest = null;
 /** @type {GainNode|null} */
 let micGain = null;
+/** @type {BiquadFilterNode|null} */
+let fxHighpassNode = null;
+/** @type {DynamicsCompressorNode|null} */
+let fxCompressNode = null;
+/** @type {DynamicsCompressorNode|null} */
+let fxLimitNode = null;
 /** @type {MediaStreamAudioSourceNode|null} */
 let micSource = null;
 /** @type {ChannelSplitterNode|null} */
@@ -140,10 +144,71 @@ function captureChannelCount() {
     return isMono() ? 1 : 2;
 }
 
-/** Mixer when mono (downmix), files, or mic level is not unity. Stereo mic-only stays direct. */
-function needsMixer() {
-    return isMono() || fileChannels.size > 0 || micGainPercent() !== 100;
+function fxChecked(el) {
+    return Boolean(el?.checked);
 }
+
+function needsGraphFx() {
+    return fxChecked(fxHighpass) || fxChecked(fxCompress) || fxChecked(fxLimit);
+}
+
+/** Mixer when mono, files, level ≠ 100%, or Web Audio enhance FX. */
+function needsMixer() {
+    return isMono() || fileChannels.size > 0 || micGainPercent() !== 100 || needsGraphFx();
+}
+
+function captureConstraints() {
+    return {
+        sampleRate: { ideal: 48000 },
+        sampleSize: { ideal: 16 },
+        channelCount: { ideal: 2 },
+        echoCancellation: fxChecked(fxEcho),
+        noiseSuppression: fxChecked(fxNoise),
+        autoGainControl: fxChecked(fxAgc),
+        voiceIsolation: fxChecked(fxVoice),
+    };
+}
+
+function loadFxPrefs() {
+    try {
+        const raw = localStorage.getItem(FX_STORAGE_KEY);
+        if (!raw) {
+            return;
+        }
+        const prefs = JSON.parse(raw);
+        const map = [
+            [fxNoise, 'noise'],
+            [fxEcho, 'echo'],
+            [fxAgc, 'agc'],
+            [fxVoice, 'voice'],
+            [fxHighpass, 'highpass'],
+            [fxCompress, 'compress'],
+            [fxLimit, 'limit'],
+        ];
+        for (const [el, key] of map) {
+            if (el && typeof prefs[key] === 'boolean') {
+                el.checked = prefs[key];
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+function saveFxPrefs() {
+    const prefs = {
+        noise: fxChecked(fxNoise),
+        echo: fxChecked(fxEcho),
+        agc: fxChecked(fxAgc),
+        voice: fxChecked(fxVoice),
+        highpass: fxChecked(fxHighpass),
+        compress: fxChecked(fxCompress),
+        limit: fxChecked(fxLimit),
+    };
+    localStorage.setItem(FX_STORAGE_KEY, JSON.stringify(prefs));
+}
+
+loadFxPrefs();
 
 if (audioLayoutSelect) {
     const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -154,6 +219,17 @@ if (audioLayoutSelect) {
         localStorage.setItem(LAYOUT_STORAGE_KEY, audioLayout());
         if (isLive) {
             setStatus('Output layout changed — stop and Go live again to apply.');
+        }
+    });
+}
+
+for (const el of [fxNoise, fxEcho, fxAgc, fxVoice, fxHighpass, fxCompress, fxLimit]) {
+    el?.addEventListener('change', () => {
+        saveFxPrefs();
+        if (isLive) {
+            setStatus('Advanced audio changed — stop and Go live again to apply.');
+        } else {
+            rebuildFxChain();
         }
     });
 }
@@ -297,6 +373,66 @@ async function applyMaxAudioBitrate(peer) {
     }
 }
 
+function ensureFxNodes() {
+    if (!audioCtx) {
+        return;
+    }
+    if (!fxHighpassNode) {
+        fxHighpassNode = audioCtx.createBiquadFilter();
+        fxHighpassNode.type = 'highpass';
+        fxHighpassNode.frequency.value = 80;
+        fxHighpassNode.Q.value = 0.7;
+    }
+    if (!fxCompressNode) {
+        fxCompressNode = audioCtx.createDynamicsCompressor();
+        fxCompressNode.threshold.value = -24;
+        fxCompressNode.knee.value = 18;
+        fxCompressNode.ratio.value = 3;
+        fxCompressNode.attack.value = 0.01;
+        fxCompressNode.release.value = 0.25;
+    }
+    if (!fxLimitNode) {
+        fxLimitNode = audioCtx.createDynamicsCompressor();
+        fxLimitNode.threshold.value = -3;
+        fxLimitNode.knee.value = 2;
+        fxLimitNode.ratio.value = 20;
+        fxLimitNode.attack.value = 0.002;
+        fxLimitNode.release.value = 0.12;
+    }
+}
+
+/** Wire micGain → optional FX → mixDest. */
+function rebuildFxChain() {
+    if (!micGain || !mixDest) {
+        return;
+    }
+    ensureFxNodes();
+    try {
+        micGain.disconnect();
+        fxHighpassNode?.disconnect();
+        fxCompressNode?.disconnect();
+        fxLimitNode?.disconnect();
+    } catch {
+        /* ignore */
+    }
+
+    /** @type {AudioNode} */
+    let node = micGain;
+    if (fxChecked(fxHighpass) && fxHighpassNode) {
+        node.connect(fxHighpassNode);
+        node = fxHighpassNode;
+    }
+    if (fxChecked(fxCompress) && fxCompressNode) {
+        node.connect(fxCompressNode);
+        node = fxCompressNode;
+    }
+    if (fxChecked(fxLimit) && fxLimitNode) {
+        node.connect(fxLimitNode);
+        node = fxLimitNode;
+    }
+    node.connect(mixDest);
+}
+
 async function ensureMixer() {
     if (audioCtx && mixDest && micGain) {
         if (audioCtx.state === 'suspended') {
@@ -307,6 +443,7 @@ async function ensureMixer() {
         } catch {
             /* optional */
         }
+        rebuildFxChain();
         return;
     }
     if (!audioCtx) {
@@ -324,16 +461,13 @@ async function ensureMixer() {
     }
     micGain = audioCtx.createGain();
     micGain.gain.value = micGainPercent() / 100;
-    micGain.connect(mixDest);
+    ensureFxNodes();
+    rebuildFxChain();
 }
 
 async function openMicrophone() {
     const preferredId = audioSelect?.value || '';
-    // Capture stereo from interfaces so mono mode can downmix L+R (avoids one-ear if signal is only on left).
-    const base = {
-        ...HIGH_QUALITY_AUDIO,
-        channelCount: { ideal: 2 },
-    };
+    const base = captureConstraints();
     if (preferredId) {
         try {
             return await navigator.mediaDevices.getUserMedia({
@@ -408,6 +542,7 @@ async function attachMicrophoneToMixer() {
     } else {
         micSource.connect(micGain);
     }
+    rebuildFxChain();
     await startMeterFromStream(mixDest.stream);
 }
 
@@ -709,14 +844,14 @@ async function primeMicrophone() {
     try {
         // Request with HQ constraints so device labels + permission match Go live.
         const priming = await navigator.mediaDevices.getUserMedia({
-            audio: { ...HIGH_QUALITY_AUDIO, channelCount: { ideal: 2 } },
+            audio: captureConstraints(),
             video: false,
         });
         for (const t of priming.getTracks()) {
             t.stop();
         }
         await loadDevices();
-        setStatus('Microphone ready. Mono is selected by default (both ears). Switch to Stereo only for true left/right mixes.');
+        setStatus('Microphone ready. Mono by default. Open Advanced audio only if you need noise reduction (laptop mic).');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -816,10 +951,15 @@ window.addEventListener('pagehide', () => {
         removeFileChannel(id);
     }
     stopMeter();
+    disconnectMicGraph();
+    stopMicTracks();
     if (audioCtx) {
         void audioCtx.close().catch(() => {});
         audioCtx = null;
         mixDest = null;
         micGain = null;
+        fxHighpassNode = null;
+        fxCompressNode = null;
+        fxLimitNode = null;
     }
 });

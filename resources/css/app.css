@@ -733,6 +733,59 @@ a.stage-platform:hover {
     color: var(--stage-cream);
 }
 
+.stage-advanced {
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 12%, transparent);
+    background: color-mix(in srgb, var(--stage-ink) 45%, transparent);
+    padding: 0.65rem 0.9rem;
+}
+
+.stage-advanced summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: color-mix(in srgb, var(--stage-cream) 88%, transparent);
+    list-style: none;
+}
+.stage-advanced summary::-webkit-details-marker {
+    display: none;
+}
+.stage-advanced summary::after {
+    content: '+';
+    float: right;
+    color: color-mix(in srgb, var(--stage-cream) 45%, transparent);
+}
+.stage-advanced[open] summary::after {
+    content: '–';
+}
+
+.stage-advanced-note {
+    margin: 0.55rem 0 0.7rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: color-mix(in srgb, var(--stage-cream) 55%, transparent);
+}
+
+.stage-advanced-grid {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.stage-advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.8rem;
+    color: color-mix(in srgb, var(--stage-cream) 82%, transparent);
+    cursor: pointer;
+}
+
+.stage-advanced-toggle input {
+    accent-color: var(--stage-accent);
+    width: 1rem;
+    height: 1rem;
+}
+
 .stage-meter-track {
     height: 0.4rem;
     overflow: hidden;
