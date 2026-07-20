@@ -908,20 +908,29 @@ function silenceRemoteAudio(peer) {
 async function loadDevices() {
     try {
         const devices = await navigator.mediaDevices.enumerateDevices();
-        const inputs = devices.filter((d) => d.kind === 'audioinput');
-        const outputs = devices.filter((d) => d.kind === 'audiooutput');
+        // Browsers hide real deviceIds/labels until getUserMedia has been granted.
+        const inputs = devices.filter((d) => d.kind === 'audioinput' && d.deviceId);
+        const outputs = devices.filter((d) => d.kind === 'audiooutput' && d.deviceId);
+        const listed = inputs.length > 0;
 
         if (audioSelect) {
             const previous = audioSelect.value;
             audioSelect.innerHTML = '';
-            for (const d of inputs) {
-                const opt = document.createElement('option');
-                opt.value = d.deviceId;
-                opt.textContent = d.label || `Input ${audioSelect.length + 1}`;
-                audioSelect.appendChild(opt);
-            }
-            if (previous) {
-                audioSelect.value = previous;
+            if (!listed) {
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = micPrimed ? 'No microphone found' : 'Allow microphone to list mics';
+                audioSelect.appendChild(placeholder);
+            } else {
+                for (const [i, d] of inputs.entries()) {
+                    const opt = document.createElement('option');
+                    opt.value = d.deviceId;
+                    opt.textContent = d.label || `Microphone ${i + 1}`;
+                    audioSelect.appendChild(opt);
+                }
+                if (previous && [...audioSelect.options].some((o) => o.value === previous)) {
+                    audioSelect.value = previous;
+                }
             }
         }
 
@@ -930,15 +939,15 @@ async function loadDevices() {
             auxSelect.innerHTML = '';
             const none = document.createElement('option');
             none.value = '';
-            none.textContent = 'Select source';
+            none.textContent = listed ? 'Select source' : (micPrimed ? 'No microphone found' : 'Allow microphone to list mics');
             auxSelect.appendChild(none);
-            for (const d of inputs) {
+            for (const [i, d] of inputs.entries()) {
                 const opt = document.createElement('option');
                 opt.value = d.deviceId;
-                opt.textContent = d.label || `Input ${auxSelect.length}`;
+                opt.textContent = d.label || `Microphone ${i + 1}`;
                 auxSelect.appendChild(opt);
             }
-            if (previous) {
+            if (previous && [...auxSelect.options].some((o) => o.value === previous)) {
                 auxSelect.value = previous;
             }
         }
@@ -950,22 +959,47 @@ async function loadDevices() {
             def.value = '';
             def.textContent = 'Default output';
             outputSelect.appendChild(def);
-            for (const d of outputs) {
+            for (const [i, d] of outputs.entries()) {
                 const opt = document.createElement('option');
                 opt.value = d.deviceId;
-                opt.textContent = d.label || `Output ${outputSelect.length}`;
+                opt.textContent = d.label || `Output ${i + 1}`;
                 outputSelect.appendChild(opt);
             }
-            if (previous) {
+            if (previous && [...outputSelect.options].some((o) => o.value === previous)) {
                 outputSelect.value = previous;
             }
         }
+
+        setMicEnableVisible(!listed);
     } catch {
         setStatus('Could not list audio devices.');
+        setMicEnableVisible(true);
     }
 }
 
+async function ensureMicListed() {
+    if (micPrimed) {
+        await loadDevices();
+        return micPrimed;
+    }
+    return primeMicrophone({ interactive: true });
+}
+
+audioSelect?.addEventListener('pointerdown', () => {
+    if (!micPrimed) {
+        void ensureMicListed();
+    }
+});
+audioSelect?.addEventListener('focus', () => {
+    if (!micPrimed) {
+        void ensureMicListed();
+    }
+});
 audioSelect?.addEventListener('change', async () => {
+    if (!audioSelect.value && !micPrimed) {
+        await ensureMicListed();
+        return;
+    }
     if (!isLive || !pc) {
         return;
     }
@@ -977,13 +1011,27 @@ audioSelect?.addEventListener('change', async () => {
     }
 });
 
+auxSelect?.addEventListener('pointerdown', () => {
+    if (!micPrimed) {
+        void ensureMicListed();
+    }
+});
+auxSelect?.addEventListener('focus', () => {
+    if (!micPrimed) {
+        void ensureMicListed();
+    }
+});
 auxSelect?.addEventListener('change', async () => {
+    if (!auxSelect.value && !micPrimed) {
+        await ensureMicListed();
+        return;
+    }
     if (!isLive) {
         return;
     }
     try {
         await attachAuxToMixer();
-        setStatus(auxSelect.value ? 'Any Input armed — still on air.' : 'Any Input cleared.');
+        setStatus(auxSelect.value ? 'Input 2 armed — still on air.' : 'Input 2 cleared.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -1353,34 +1401,35 @@ async function primeMicrophone({ interactive = false } = {}) {
         return false;
     }
 
-    // Mobile browsers often cannot show the permission dialog on page load,
-    // and Android blocks it when WhatsApp/bubbles/overlays hold the mic.
+    // Mobile: wait for a tap (Allow microphone / source picker / Go on air).
+    // Auto getUserMedia on load is blocked by overlays and leaves empty device lists.
     if (isMobileUa() && !interactive && !micPrimed) {
+        await loadDevices();
         setMicEnableVisible(true);
-        setStatus(
-            'Tap Allow microphone to continue. If Android says it can’t ask for permission: close WhatsApp, dismiss chat bubbles/overlays, then try again.',
-        );
+        setStatus('Tap Allow microphone (on Mix) to list your mics. Close WhatsApp/bubbles if Android blocks the prompt.');
         return false;
     }
 
     try {
         setStatus('Requesting microphone…');
-        const priming = await openDevice(audioSelect?.value || '');
+        const priming = await openDevice('');
         for (const t of priming.getTracks()) {
             t.stop();
         }
         micPrimed = true;
-        setMicEnableVisible(false);
         await loadDevices();
+        setMicEnableVisible(false);
         setToggle(auxMuteBtn, auxMuted);
+        const micCount = audioSelect?.options?.length || 0;
         setStatus(
             isMobileUa()
-                ? 'Microphone ready. Close other apps using the mic, then tap Go on air.'
+                ? `Microphone ready (${micCount} input${micCount === 1 ? '' : 's'}). Pick Input 1, then Go on air.`
                 : 'Ready. Cue is off — Studio stays silent. Go on air when ready; use the listen link (or cue + headphones) to monitor.',
         );
         return true;
     } catch (e) {
         micPrimed = false;
+        await loadDevices();
         setMicEnableVisible(true);
         setStatus(friendlyError(e));
         return false;
