@@ -38,6 +38,12 @@
                 class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white" placeholder="https://…">
         </div>
         <div>
+            <label for="social_feed_url" class="block text-sm font-medium text-zinc-300">Social photo feed URL</label>
+            <input id="social_feed_url" type="url" name="social_feed_url" value="{{ old('social_feed_url', $organization->social_feed_url) }}"
+                class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white" placeholder="https://instagram.com/… or Facebook album">
+            <p class="mt-1 text-xs text-zinc-500">Shown on the listen page so people can open photos from this service.</p>
+        </div>
+        <div>
             <label for="logo_path" class="block text-sm font-medium text-zinc-300">Logo URL</label>
             <input id="logo_path" type="text" name="logo_path" value="{{ old('logo_path', $organization->logo_path) }}"
                 class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white">

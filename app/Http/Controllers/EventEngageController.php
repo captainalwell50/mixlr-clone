@@ -33,10 +33,13 @@ class EventEngageController extends Controller
         $session->user_id = $request->user()?->id ?? $session->user_id;
         $session->save();
 
+        $hearts = $event->hearts()->count();
+
         return response()->json([
             'session_key' => $session->session_key,
             'listeners' => $event->show_listener_count ? $event->activeListenerCount() : null,
-            'hearts' => $event->hearts()->count(),
+            'hearts' => $hearts,
+            'likes' => $hearts,
         ]);
     }
 
@@ -52,9 +55,13 @@ class EventEngageController extends Controller
             'user_id' => $user->id,
         ]);
 
+        $hearts = $event->hearts()->count();
+
         return response()->json([
             'hearted' => true,
-            'hearts' => $event->hearts()->count(),
+            'liked' => true,
+            'hearts' => $hearts,
+            'likes' => $hearts,
         ]);
     }
 }

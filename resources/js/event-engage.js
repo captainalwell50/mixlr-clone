@@ -3,11 +3,12 @@ import './bootstrap';
 const root = document.getElementById('engage-root');
 if (root) {
     const presenceUrl = root.dataset.presenceUrl;
-    const heartUrl = root.dataset.heartUrl;
+    const likeUrl = root.dataset.likeUrl || root.dataset.heartUrl;
     const csrf = root.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content;
     const listenerEl = document.getElementById('listener-count');
-    const heartCountEl = document.getElementById('heart-count');
-    const heartBtn = document.getElementById('btn-heart');
+    const likeCountEl = document.getElementById('like-count') || document.getElementById('heart-count');
+    const likeBtn = document.getElementById('btn-like') || document.getElementById('btn-heart');
+    const followBtn = document.getElementById('btn-follow');
     const shareBtn = document.getElementById('btn-share');
     const infoBtn = document.getElementById('btn-info');
     const infoPanel = document.getElementById('portal-info');
@@ -43,24 +44,25 @@ if (root) {
             if (listenerEl && data.listeners != null) {
                 listenerEl.textContent = String(data.listeners);
             }
-            if (heartCountEl && data.hearts != null) {
-                heartCountEl.textContent = String(data.hearts);
+            const likes = data.likes ?? data.hearts;
+            if (likeCountEl && likes != null) {
+                likeCountEl.textContent = String(likes);
             }
         } catch {
             /* ignore */
         }
     }
 
-    heartBtn?.addEventListener('click', async (ev) => {
-        if (heartBtn.tagName === 'A') {
+    likeBtn?.addEventListener('click', async (ev) => {
+        if (likeBtn.tagName === 'A') {
             return;
         }
         ev.preventDefault();
-        if (!heartUrl || heartBtn.dataset.hearted === '1') {
+        if (!likeUrl || likeBtn.dataset.liked === '1' || likeBtn.dataset.hearted === '1') {
             return;
         }
         try {
-            const res = await fetch(heartUrl, {
+            const res = await fetch(likeUrl, {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
@@ -76,11 +78,45 @@ if (root) {
                 return;
             }
             const data = await res.json();
-            heartBtn.dataset.hearted = '1';
-            heartBtn.classList.add('is-on');
-            if (heartCountEl && data.hearts != null) {
-                heartCountEl.textContent = String(data.hearts);
+            likeBtn.dataset.liked = '1';
+            likeBtn.dataset.hearted = '1';
+            likeBtn.classList.add('is-on');
+            const likes = data.likes ?? data.hearts;
+            if (likeCountEl && likes != null) {
+                likeCountEl.textContent = String(likes);
             }
+        } catch {
+            /* ignore */
+        }
+    });
+
+    followBtn?.addEventListener('click', async () => {
+        const following = followBtn.dataset.following === '1';
+        const url = following ? followBtn.dataset.unfollowUrl : followBtn.dataset.followUrl;
+        if (!url) {
+            return;
+        }
+        try {
+            const res = await fetch(url, {
+                method: following ? 'DELETE' : 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrf || '',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            if (res.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            if (!res.ok) {
+                return;
+            }
+            const data = await res.json();
+            const nowFollowing = Boolean(data.following);
+            followBtn.dataset.following = nowFollowing ? '1' : '0';
+            followBtn.classList.toggle('is-following', nowFollowing);
+            followBtn.textContent = nowFollowing ? 'Following' : '+ Follow';
         } catch {
             /* ignore */
         }
@@ -98,7 +134,7 @@ if (root) {
             shareBtn.classList.add('is-on');
             window.setTimeout(() => shareBtn.classList.remove('is-on'), 1600);
         } catch {
-            /* ignore cancel / clipboard errors */
+            /* ignore */
         }
     });
 

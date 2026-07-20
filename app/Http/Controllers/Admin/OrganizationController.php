@@ -81,6 +81,7 @@ class OrganizationController extends Controller
             'tagline' => ['nullable', 'string', 'max:255'],
             'theme_color' => ['nullable', 'string', 'max:32'],
             'support_url' => ['nullable', 'url', 'max:500'],
+            'social_feed_url' => ['nullable', 'url', 'max:500'],
             'logo_path' => ['nullable', 'string', 'max:500'],
             'artwork_path' => ['nullable', 'string', 'max:500'],
             'is_public' => ['sometimes', 'boolean'],

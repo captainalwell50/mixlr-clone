@@ -41,16 +41,22 @@ class EventController extends Controller
             ? $event->hearts()->where('user_id', $request->user()->id)->exists()
             : false;
         $listenerCount = $event->show_listener_count ? $event->activeListenerCount() : null;
+        $isFollowing = $request->user()?->followsChannel($event->organization) ?? false;
         $hlsUrl = $event->stream?->hlsPlaylistUrl();
         $whepUrl = $event->stream?->whepUrl();
+        $galleryImages = $event->stream
+            ? $event->stream->galleryImages()->limit(24)->get()
+            : collect();
 
         return view('events.show', compact(
             'event',
             'heartCount',
             'userHearted',
             'listenerCount',
+            'isFollowing',
             'hlsUrl',
             'whepUrl',
+            'galleryImages',
         ));
     }
 

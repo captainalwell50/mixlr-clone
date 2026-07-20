@@ -68,6 +68,28 @@ class Stream extends Model
         return $this->hasMany(ChatMessage::class)->latest('id');
     }
 
+    public function likes(): HasMany
+    {
+        return $this->hasMany(StreamLike::class);
+    }
+
+    public function listenerSessions(): HasMany
+    {
+        return $this->hasMany(StreamListenerSession::class);
+    }
+
+    public function galleryImages(): HasMany
+    {
+        return $this->hasMany(GalleryImage::class)->latest('id');
+    }
+
+    public function activeListenerCount(int $withinSeconds = 45): int
+    {
+        return $this->listenerSessions()
+            ->where('last_seen_at', '>=', now()->subSeconds($withinSeconds))
+            ->count();
+    }
+
     public function getRouteKeyName(): string
     {
         return 'uuid';

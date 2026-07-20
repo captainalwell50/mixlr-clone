@@ -14,7 +14,9 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscoverController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventEngageController;
+use App\Http\Controllers\GalleryController;
 use App\Http\Controllers\ListenController;
+use App\Http\Controllers\StreamEngageController;
 use App\Http\Controllers\RecordingPlayController;
 use App\Http\Controllers\StudioController;
 use Illuminate\Support\Facades\Route;
@@ -67,6 +69,23 @@ Route::get('/listen/{stream}/status', [ListenController::class, 'status'])
     ->middleware('throttle:120,1')
     ->name('listen.status');
 Route::get('/embed/{stream}', [ListenController::class, 'embed'])->name('embed.stream');
+
+Route::post('/listen/{stream}/presence', [StreamEngageController::class, 'presence'])
+    ->middleware('throttle:120,1')
+    ->name('listen.presence');
+Route::post('/listen/{stream}/like', [StreamEngageController::class, 'like'])
+    ->middleware(['auth', 'throttle:60,1'])
+    ->name('listen.like');
+
+Route::get('/listen/{stream}/gallery', [GalleryController::class, 'index'])
+    ->middleware('throttle:120,1')
+    ->name('gallery.index');
+Route::post('/listen/{stream}/gallery', [GalleryController::class, 'store'])
+    ->middleware('throttle:30,1')
+    ->name('gallery.store');
+Route::delete('/listen/{stream}/gallery/{image}', [GalleryController::class, 'destroy'])
+    ->middleware(['auth', 'throttle:30,1'])
+    ->name('gallery.destroy');
 
 Route::get('/listen/{stream}/chat', [ChatController::class, 'index'])
     ->middleware('throttle:120,1')

@@ -1228,6 +1228,55 @@ async function teardownLive() {
     }
 }
 
+const btnAddGallery = document.getElementById('btn-add-gallery');
+const galleryInput = document.getElementById('gallery-input');
+const studioGalleryList = document.getElementById('studio-gallery-list');
+const galleryUploadUrl = root?.dataset.galleryUploadUrl;
+const galleryCsrf = root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content;
+
+btnAddGallery?.addEventListener('click', () => {
+    galleryInput?.click();
+});
+
+galleryInput?.addEventListener('change', async () => {
+    const files = Array.from(galleryInput.files || []);
+    if (!galleryUploadUrl || files.length === 0) {
+        return;
+    }
+    for (const file of files) {
+        const body = new FormData();
+        body.append('image', file);
+        try {
+            const res = await fetch(galleryUploadUrl, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': galleryCsrf || '',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body,
+            });
+            if (!res.ok) {
+                setStatus('Could not upload photo. Try again.');
+                continue;
+            }
+            const data = await res.json();
+            const image = data.image;
+            if (image && studioGalleryList) {
+                const figure = document.createElement('figure');
+                figure.className = 'mixer-gallery-thumb';
+                figure.dataset.id = String(image.id);
+                figure.innerHTML = `<img src="${image.url}" alt="${image.caption || 'Gallery photo'}">`;
+                studioGalleryList.prepend(figure);
+            }
+            setStatus('Photo posted to the listener gallery.');
+        } catch {
+            setStatus('Could not upload photo.');
+        }
+    }
+    galleryInput.value = '';
+});
+
 window.addEventListener('pagehide', () => {
     for (const id of [...fileChannels.keys()]) {
         removeFileChannel(id);

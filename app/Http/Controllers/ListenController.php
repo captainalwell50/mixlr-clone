@@ -35,11 +35,25 @@ class ListenController extends Controller
 
         $this->authorizeListen($request, $stream);
 
+        $organization = $stream->organization;
+        $likeCount = $stream->likes()->count();
+        $userLiked = $request->user()
+            ? $stream->likes()->where('user_id', $request->user()->id)->exists()
+            : false;
+        $listenerCount = $stream->activeListenerCount();
+        $isFollowing = $request->user()?->followsChannel($organization) ?? false;
+        $galleryImages = $stream->galleryImages()->limit(24)->get();
+
         return view('listen', [
             'stream' => $stream,
-            'organization' => $stream->organization,
+            'organization' => $organization,
             'hlsUrl' => $stream->hlsPlaylistUrl(),
             'whepUrl' => $stream->whepUrl(),
+            'likeCount' => $likeCount,
+            'userLiked' => $userLiked,
+            'listenerCount' => $listenerCount,
+            'isFollowing' => $isFollowing,
+            'galleryImages' => $galleryImages,
         ]);
     }
 

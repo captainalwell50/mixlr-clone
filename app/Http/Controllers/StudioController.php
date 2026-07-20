@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\EventStatus;
 use App\Models\Stream;
+use Illuminate\Support\Facades\URL;
 
 class StudioController extends Controller
 {
@@ -25,6 +26,13 @@ class StudioController extends Controller
             'whipUrl' => $stream->whipUrl(),
             'organization' => $stream->organization,
             'listenUrl' => $listenUrl,
+            'galleryUploadUrl' => URL::temporarySignedRoute(
+                'gallery.store',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'galleryListUrl' => route('gallery.index', $stream),
+            'galleryImages' => $stream->galleryImages()->limit(20)->get(),
         ]);
     }
 }

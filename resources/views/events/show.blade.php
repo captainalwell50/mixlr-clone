@@ -34,7 +34,20 @@
                         @endif
                         <span class="portal-channel-name">{{ $event->organization->name }}</span>
                     </a>
-                    <a href="{{ route('channels.show', $event->organization) }}" class="portal-follow">+ Follow</a>
+                    @auth
+                        <button
+                            type="button"
+                            id="btn-follow"
+                            class="portal-follow {{ $isFollowing ? 'is-following' : '' }}"
+                            data-follow-url="{{ route('channels.follow', $event->organization) }}"
+                            data-unfollow-url="{{ route('channels.unfollow', $event->organization) }}"
+                            data-following="{{ $isFollowing ? '1' : '0' }}"
+                        >
+                            {{ $isFollowing ? 'Following' : '+ Follow' }}
+                        </button>
+                    @else
+                        <a href="{{ route('login') }}" class="portal-follow">+ Follow</a>
+                    @endauth
                 </div>
                 <nav class="portal-bar-links">
                     <a href="{{ route('discover') }}" class="stage-top-link">Discover</a>
@@ -79,18 +92,18 @@
                         @auth
                             <button
                                 type="button"
-                                id="btn-heart"
-                                class="portal-heart {{ $userHearted ? 'is-on' : '' }}"
-                                data-hearted="{{ $userHearted ? '1' : '0' }}"
-                                aria-label="Send a heart"
+                                id="btn-like"
+                                class="portal-like {{ $userHearted ? 'is-on' : '' }}"
+                                data-liked="{{ $userHearted ? '1' : '0' }}"
+                                aria-label="Like"
                             >
                                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                                <span id="heart-count">{{ $heartCount }}</span>
+                                <span id="like-count">{{ $heartCount }}</span>
                             </button>
                         @else
-                            <a href="{{ route('login') }}" class="portal-heart" aria-label="Log in to heart">
+                            <a href="{{ route('login') }}" class="portal-like" aria-label="Log in to like">
                                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                                <span id="heart-count">{{ $heartCount }}</span>
+                                <span id="like-count">{{ $heartCount }}</span>
                             </a>
                         @endauth
 
@@ -125,6 +138,9 @@
                             data-whep-url="{{ $whepUrl }}"
                             data-stream-status="live"
                             data-status-url="{{ route('events.status', $event) }}"
+                            @if ($event->stream)
+                                data-gallery-url="{{ route('gallery.index', $event->stream) }}"
+                            @endif
                             class="hidden"
                         ></div>
                     @elseif ($event->status->value === 'ended')
@@ -138,6 +154,38 @@
                             Waiting for the broadcast to start.
                         </p>
                         <meta http-equiv="refresh" content="30">
+                    @endif
+
+                    <section class="portal-gallery stage-rise-delay-2" aria-label="Service gallery">
+                        <div class="portal-section-head">
+                            <h2>Gallery</h2>
+                            <p>Pictures from the desk while you listen</p>
+                        </div>
+                        <div class="portal-gallery-grid" id="gallery-grid">
+                            @forelse ($galleryImages as $image)
+                                <figure class="portal-gallery-item">
+                                    <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Service photo' }}" loading="lazy">
+                                    @if ($image->caption)
+                                        <figcaption>{{ $image->caption }}</figcaption>
+                                    @endif
+                                </figure>
+                            @empty
+                                <p class="portal-empty" id="gallery-empty">No photos yet — they’ll appear here when the studio posts them.</p>
+                            @endforelse
+                        </div>
+                    </section>
+
+                    @if ($event->organization->social_feed_url)
+                        <section class="portal-social stage-rise-delay-2">
+                            <div class="portal-section-head">
+                                <h2>Social photos</h2>
+                                <p>Posts from this service</p>
+                            </div>
+                            <a class="portal-social-card" href="{{ $event->organization->social_feed_url }}" target="_blank" rel="noopener noreferrer">
+                                <span>Open photo feed</span>
+                                <span class="portal-social-url">{{ $event->organization->social_feed_url }}</span>
+                            </a>
+                        </section>
                     @endif
                 </main>
 
@@ -165,7 +213,7 @@
 
             <div id="engage-root" class="hidden"
                 data-presence-url="{{ route('events.presence', $event) }}"
-                data-heart-url="{{ route('events.heart', $event) }}"
+                data-like-url="{{ route('events.heart', $event) }}"
                 data-csrf="{{ csrf_token() }}"></div>
         </div>
     </div>

@@ -163,6 +163,23 @@
                     <button type="button" id="btn-add-file" class="mixer-add-sounds">+ Add sounds</button>
                     <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
                 </div>
+                <div class="mixer-gallery">
+                    <div class="mixer-playlist-head">
+                        <h2>Service gallery</h2>
+                    </div>
+                    <p class="mixer-hint">Post photos for listeners while you’re on air.</p>
+                    <div class="mixer-gallery-actions">
+                        <button type="button" id="btn-add-gallery" class="mixer-add-sounds">+ Add photo</button>
+                        <input id="gallery-input" type="file" accept="image/*" class="hidden" multiple>
+                    </div>
+                    <div class="mixer-gallery-list" id="studio-gallery-list">
+                        @foreach ($galleryImages as $image)
+                            <figure class="mixer-gallery-thumb" data-id="{{ $image->id }}">
+                                <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Gallery photo' }}">
+                            </figure>
+                        @endforeach
+                    </div>
+                </div>
                 <p class="mixer-hint">
                     Cue (headphones) is off by default — Studio stays silent. Turn cue on only with headphones, or monitor on the listen link.
                 </p>
@@ -191,6 +208,9 @@
         <div
             id="studio-root"
             data-whip-url="{{ $whipUrl }}"
+            data-gallery-upload-url="{{ $galleryUploadUrl }}"
+            data-gallery-list-url="{{ $galleryListUrl }}"
+            data-csrf="{{ csrf_token() }}"
             class="hidden"
         ></div>
     </div>

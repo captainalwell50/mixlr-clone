@@ -658,7 +658,8 @@ a.stage-platform:hover {
     margin-top: 1rem;
 }
 
-.portal-heart {
+.portal-heart,
+.portal-like {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
@@ -676,12 +677,136 @@ a.stage-platform:hover {
 .portal-heart svg {
     color: #e2556e;
 }
-.portal-heart:hover {
+.portal-like svg {
+    color: #3b82f6;
+}
+.portal-heart:hover,
+.portal-like:hover {
     background: color-mix(in srgb, var(--stage-cream) 8%, transparent);
 }
 .portal-heart.is-on {
     border-color: color-mix(in srgb, #e2556e 45%, transparent);
     background: color-mix(in srgb, #e2556e 16%, transparent);
+}
+.portal-like.is-on {
+    border-color: color-mix(in srgb, #3b82f6 50%, transparent);
+    background: color-mix(in srgb, #3b82f6 18%, transparent);
+}
+
+.portal-follow.is-following {
+    background: color-mix(in srgb, var(--stage-cream) 12%, transparent);
+    border-color: color-mix(in srgb, var(--stage-cream) 30%, transparent);
+}
+
+.portal-section-head {
+    margin-top: 1.75rem;
+    margin-bottom: 0.75rem;
+    text-align: center;
+}
+.portal-section-head h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 650;
+}
+.portal-section-head p {
+    margin: 0.25rem 0 0;
+    font-size: 0.8rem;
+    color: var(--stage-muted);
+}
+
+.portal-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+    width: min(100%, 22rem);
+    margin: 0 auto;
+}
+
+@media (min-width: 640px) {
+    .portal-gallery-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+.portal-gallery-item {
+    margin: 0;
+    overflow: hidden;
+    border-radius: 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 12%, transparent);
+    background: #111;
+}
+.portal-gallery-item img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+}
+.portal-gallery-item figcaption {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.7rem;
+    color: var(--stage-muted);
+    text-align: left;
+}
+
+.portal-empty {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--stage-muted);
+}
+
+.portal-social {
+    width: min(100%, 22rem);
+    margin: 0 auto 0.5rem;
+}
+
+.portal-social-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.9rem 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 14%, transparent);
+    background: color-mix(in srgb, var(--stage-ink) 50%, transparent);
+    color: var(--stage-cream);
+    text-decoration: none;
+    text-align: left;
+}
+.portal-social-card:hover {
+    background: color-mix(in srgb, var(--stage-cream) 8%, transparent);
+}
+.portal-social-url {
+    font-size: 0.72rem;
+    color: var(--stage-muted);
+    word-break: break-all;
+}
+
+.mixer-gallery {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--mixer-line);
+}
+.mixer-gallery-actions {
+    margin: 0.5rem 0;
+}
+.mixer-gallery-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+    max-height: 8rem;
+    overflow: auto;
+}
+.mixer-gallery-thumb {
+    margin: 0;
+    border-radius: 0.35rem;
+    overflow: hidden;
+    border: 1px solid var(--mixer-line);
+}
+.mixer-gallery-thumb img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
 }
 
 .portal-icon-btn {

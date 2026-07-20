@@ -17,6 +17,7 @@ class Organization extends Model
         'artwork_path',
         'theme_color',
         'support_url',
+        'social_feed_url',
         'is_public',
         'branding_config',
     ];
