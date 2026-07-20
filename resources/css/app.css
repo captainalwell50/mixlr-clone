@@ -672,7 +672,7 @@ a.stage-platform:hover {
     margin: 0;
     max-width: 44rem;
     font-family: 'Open Sans', var(--font-sans);
-    font-size: clamp(1.85rem, 5.2vw, 2.85rem);
+    font-size: clamp(2.35rem, 6.5vw, 3.75rem);
     font-weight: 700;
     line-height: 1.15;
     letter-spacing: -0.02em;
