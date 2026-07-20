@@ -4590,6 +4590,91 @@ a.stage-platform:hover {
     overflow: auto;
 }
 
+.mixer-library-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.mixer-library-search {
+    flex: 1 1 10rem;
+    min-width: 0;
+    border-radius: 0.35rem;
+    border: 1px solid var(--mixer-line);
+    background: #0a0c10;
+    color: var(--mixer-text);
+    font-size: 0.8rem;
+    padding: 0.45rem 0.6rem;
+}
+
+.mixer-library-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-height: 3.5rem;
+    max-height: 12rem;
+    overflow: auto;
+    margin-top: 0.55rem;
+}
+
+.mixer-library-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.55rem;
+    border: 1px solid var(--mixer-line);
+    border-radius: 0.4rem;
+    background: #161920;
+}
+
+.mixer-library-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.mixer-library-title {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--mixer-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mixer-library-meta {
+    margin: 0.15rem 0 0;
+    font-size: 0.68rem;
+    color: var(--mixer-muted);
+}
+
+.mixer-library-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.3rem;
+}
+
+.mixer-library-actions button {
+    border-radius: 0.3rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #222733;
+    color: var(--mixer-text);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.3rem 0.45rem;
+    cursor: pointer;
+}
+
+.mixer-library-actions button[data-queue] {
+    border-color: color-mix(in srgb, var(--mixer-accent, #3d9b7a) 45%, transparent);
+    color: #d7f3e8;
+}
+
+.mixer-library-actions button[data-delete] {
+    color: #f0b4bc;
+}
+
 .mixer-track {
     border: 1px solid var(--mixer-line);
     border-radius: 0.45rem;

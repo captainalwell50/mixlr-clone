@@ -148,13 +148,25 @@
 
             <div class="mixer-playlist">
                 <div class="mixer-playlist-head">
-                    <h2>Add sounds to your playlist</h2>
+                    <h2>Audio library</h2>
+                </div>
+                <p class="mixer-hint">Saved on this stream — search and queue into the session playlist. Uploads survive refresh.</p>
+                <div class="mixer-library-toolbar">
+                    <label class="sr-only" for="library-search">Search library</label>
+                    <input id="library-search" class="mixer-library-search" type="search" placeholder="Search songs…" autocomplete="off">
+                    <button type="button" id="btn-upload-library" class="mixer-add-sounds">+ Upload</button>
+                    <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
+                </div>
+                <div class="mixer-library-list" id="library-list" role="list"></div>
+
+                <div class="mixer-playlist-head" style="margin-top: 0.75rem">
+                    <h2>Session playlist</h2>
                     <time id="playlist-duration" datetime="PT0S">00:00:00</time>
                 </div>
+                <p class="mixer-hint">Queued for this Studio session. Queue from the library above, then Play.</p>
                 <div class="mixer-playlist-list" id="audio-channels"></div>
                 <div class="mixer-playlist-actions">
-                    <button type="button" id="btn-add-file" class="mixer-add-sounds">+ Add sounds</button>
-                    <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
+                    <button type="button" id="btn-add-file" class="mixer-add-sounds">+ Upload &amp; queue</button>
                 </div>
                 <div class="mixer-gallery">
                     <div class="mixer-playlist-head">
@@ -267,6 +279,8 @@
             data-gallery-upload-url="{{ $galleryUploadUrl }}"
             data-background-upload-url="{{ $backgroundUploadUrl }}"
             data-gallery-list-url="{{ $galleryListUrl }}"
+            data-library-list-url="{{ $libraryListUrl }}"
+            data-library-upload-url="{{ $libraryUploadUrl }}"
             data-csrf="{{ csrf_token() }}"
             class="hidden"
         ></div>

@@ -39,6 +39,16 @@ class StudioController extends Controller
                 ['stream' => $stream],
             ),
             'galleryListUrl' => route('gallery.index', $stream),
+            'libraryListUrl' => URL::temporarySignedRoute(
+                'studio.library.index',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'libraryUploadUrl' => URL::temporarySignedRoute(
+                'studio.library.store',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
             'galleryImages' => $stream->galleryImages()->limit(20)->get(),
             'listenBackgroundUrl' => $stream->listenBackgroundUrl(),
             'recordings' => $stream->recordings()->latest('completed_at')->limit(30)->get(),

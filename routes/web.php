@@ -24,6 +24,7 @@ use App\Http\Controllers\PaystackWebhookController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlayController;
 use App\Http\Controllers\StreamEngageController;
+use App\Http\Controllers\StudioAudioLibraryController;
 use App\Http\Controllers\StudioController;
 use Illuminate\Support\Facades\Route;
 
@@ -110,6 +111,16 @@ Route::delete('/listen/{stream}/recordings/{recording}', [RecordingController::c
 Route::get('/studio/{stream}', [StudioController::class, 'show'])
     ->middleware('signed')
     ->name('studio.stream');
+
+Route::get('/studio/{stream}/library', [StudioAudioLibraryController::class, 'index'])
+    ->middleware('throttle:120,1')
+    ->name('studio.library.index');
+Route::post('/studio/{stream}/library', [StudioAudioLibraryController::class, 'store'])
+    ->middleware('throttle:30,1')
+    ->name('studio.library.store');
+Route::delete('/studio/{stream}/library/{asset}', [StudioAudioLibraryController::class, 'destroy'])
+    ->middleware('throttle:30,1')
+    ->name('studio.library.destroy');
 
 Route::post('/webhooks/paystack', PaystackWebhookController::class)
     ->middleware('throttle:120,1')

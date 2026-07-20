@@ -84,6 +84,11 @@ class Stream extends Model
         return $this->hasMany(GalleryImage::class)->latest('id');
     }
 
+    public function studioAudioAssets(): HasMany
+    {
+        return $this->hasMany(StudioAudioAsset::class)->latest('id');
+    }
+
     public function activeListenerCount(int $withinSeconds = 45): int
     {
         return $this->listenerSessions()

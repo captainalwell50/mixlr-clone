@@ -969,6 +969,22 @@ function setFileChannelReady(channel, ready, detail = '') {
     }
 }
 
+function formatBytes(bytes) {
+    const n = Number(bytes) || 0;
+    if (n >= 1024 * 1024) {
+        return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    return `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+
+function formatTrackDuration(seconds) {
+    const s = Number(seconds);
+    if (!Number.isFinite(s) || s <= 0) {
+        return '';
+    }
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
 function removeFileChannel(id) {
     const channel = fileChannels.get(id);
     if (!channel) {
@@ -981,26 +997,33 @@ function removeFileChannel(id) {
     } catch {
         /* ignore */
     }
-    URL.revokeObjectURL(channel.objectUrl);
+    if (channel.objectUrl && String(channel.objectUrl).startsWith('blob:')) {
+        URL.revokeObjectURL(channel.objectUrl);
+    }
     channel.card.remove();
     fileChannels.delete(id);
     updatePlaylistMeta();
 }
 
-function addFileChannel(file) {
+/**
+ * @param {{ name: string, src: string, objectUrl?: string|null, sizeLabel?: string, assetId?: number|null, duration?: number }} opts
+ */
+function addPlaylistTrack(opts) {
+    const name = opts.name || 'Audio';
+    const src = opts.src;
+    if (!src) {
+        return null;
+    }
+
     const id = `file-${++fileChannelSeq}`;
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = opts.objectUrl ?? null;
+    const sizeLabel = opts.sizeLabel || '';
     const audio = new Audio();
     audio.loop = false;
     audio.preload = 'auto';
-    // Keep audible into the mixer graph; MediaElementSource prevents speaker double-play.
     audio.muted = false;
     audio.volume = 1;
-    audio.src = objectUrl;
-
-    const sizeLabel = file.size >= 1024 * 1024
-        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+    audio.src = src;
 
     const card = document.createElement('div');
     card.className = 'mixer-track is-loading';
@@ -1020,21 +1043,22 @@ function addFileChannel(file) {
     `;
     const nameEl = card.querySelector('.mixer-track-name');
     if (nameEl) {
-        nameEl.textContent = file.name;
-        nameEl.title = file.name;
+        nameEl.textContent = name;
+        nameEl.title = name;
     }
 
     channelsEl?.appendChild(card);
 
     const channel = {
         id,
-        name: file.name,
+        name,
         objectUrl,
+        assetId: opts.assetId ?? null,
         audio,
         source: null,
         gain: null,
         card,
-        duration: 0,
+        duration: Number(opts.duration) > 0 ? Number(opts.duration) : 0,
         ready: false,
     };
     fileChannels.set(id, channel);
@@ -1045,23 +1069,21 @@ function addFileChannel(file) {
         if (channel.ready) {
             return;
         }
-        channel.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
-        const dur = channel.duration > 0
-            ? `${Math.floor(channel.duration / 60)}:${String(Math.floor(channel.duration % 60)).padStart(2, '0')}`
-            : '';
+        channel.duration = Number.isFinite(audio.duration) ? audio.duration : channel.duration;
+        const dur = formatTrackDuration(channel.duration);
         const metaEl = card.querySelector('[data-meta]');
         if (metaEl) {
-            metaEl.textContent = dur ? `${dur} · ${sizeLabel}` : sizeLabel;
+            metaEl.textContent = [dur, sizeLabel].filter(Boolean).join(' · ') || 'Ready';
         }
         card.classList.remove('is-loading');
         card.classList.add('is-ready');
         setFileChannelReady(channel, true, 'Ready');
         updatePlaylistMeta();
-        setStatus(`“${file.name}” ready — press Play (turn on Playlist CUE + headphones to monitor).`);
+        setStatus(`“${name}” ready — press Play (turn on Playlist CUE + headphones to monitor).`);
     };
 
     audio.addEventListener('loadedmetadata', () => {
-        channel.duration = audio.duration || 0;
+        channel.duration = audio.duration || channel.duration;
         updatePlaylistMeta();
         if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
             markReady();
@@ -1074,10 +1096,9 @@ function addFileChannel(file) {
     audio.addEventListener('error', () => {
         setFileChannelReady(channel, false, 'Failed to load');
         card.classList.add('is-error');
-        setStatus(`Could not load “${file.name}”. Try another file (mp3/wav/m4a).`);
+        setStatus(`Could not load “${name}”. Try another file (mp3/wav/m4a).`);
     });
 
-    // Kick decode for local blob URLs.
     void audio.load();
 
     if (audioCtx && playlistGain) {
@@ -1099,8 +1120,8 @@ function addFileChannel(file) {
             await channel.audio.play();
             setStatus(
                 playlistCueOn
-                    ? `Playing “${file.name}” in the mix (cue on).`
-                    : `Playing “${file.name}” in the mix. Enable Playlist CUE + headphones to hear it in Studio.`,
+                    ? `Playing “${name}” in the mix (cue on).`
+                    : `Playing “${name}” in the mix. Enable Playlist CUE + headphones to hear it in Studio.`,
             );
         } catch (e) {
             setStatus(e instanceof Error ? e.message : 'Could not play file.');
@@ -1125,25 +1146,64 @@ function addFileChannel(file) {
             setStatus(e instanceof Error ? e.message : 'Could not restart file.');
         }
     });
+
+    return channel;
+}
+
+function queueLibraryAsset(asset) {
+    if (!asset?.url) {
+        return;
+    }
+    addPlaylistTrack({
+        name: asset.title || asset.original_filename || 'Audio',
+        src: asset.url,
+        objectUrl: null,
+        sizeLabel: formatBytes(asset.size_bytes),
+        assetId: asset.id,
+        duration: asset.duration_seconds || 0,
+    });
+    setStatus(`Queued “${asset.title || asset.original_filename}” in the session playlist.`);
+}
+
+/**
+ * @param {File} file
+ * @returns {Promise<number|null>}
+ */
+function probeAudioDuration(file) {
+    return new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const audio = new Audio();
+        let settled = false;
+        const finish = (value) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            URL.revokeObjectURL(url);
+            resolve(value);
+        };
+        audio.addEventListener('loadedmetadata', () => {
+            finish(Number.isFinite(audio.duration) ? audio.duration : null);
+        });
+        audio.addEventListener('error', () => finish(null));
+        audio.preload = 'metadata';
+        audio.src = url;
+        setTimeout(() => finish(null), 5000);
+    });
 }
 
 btnAddFile?.addEventListener('click', () => {
     fileInput?.click();
 });
 
+document.getElementById('btn-upload-library')?.addEventListener('click', () => {
+    fileInput?.click();
+});
+
 fileInput?.addEventListener('change', () => {
     const files = Array.from(fileInput.files || []);
-    for (const file of files) {
-        if (!file.type.startsWith('audio/') && !/\.(mp3|wav|m4a|aac|ogg|flac|webm)$/i.test(file.name)) {
-            setStatus(`Skipped non-audio file: ${file.name}`);
-            continue;
-        }
-        addFileChannel(file);
-    }
     fileInput.value = '';
-    if (files.length) {
-        setStatus(`Adding ${files.length} sound${files.length === 1 ? '' : 's'}… wait for Ready, then press Play.`);
-    }
+    void uploadFilesToLibrary(files, true);
 });
 
 /**
@@ -1350,6 +1410,14 @@ async function teardownLive() {
     }
 }
 
+const libraryListEl = document.getElementById('library-list');
+const librarySearchEl = document.getElementById('library-search');
+const libraryListUrl = root?.dataset.libraryListUrl;
+const libraryUploadUrl = root?.dataset.libraryUploadUrl;
+/** @type {Array<Record<string, any>>} */
+let libraryAssets = [];
+let librarySearchTimer = 0;
+
 const btnAddGallery = document.getElementById('btn-add-gallery');
 const galleryInput = document.getElementById('gallery-input');
 const btnAddReel = document.getElementById('btn-add-reel');
@@ -1361,6 +1429,190 @@ const studioGalleryList = document.getElementById('studio-gallery-list');
 const galleryUploadUrl = root?.dataset.galleryUploadUrl;
 const backgroundUploadUrl = root?.dataset.backgroundUploadUrl;
 const galleryCsrf = root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content;
+
+function filteredLibraryAssets() {
+    const q = (librarySearchEl?.value || '').trim().toLowerCase();
+    if (!q) {
+        return libraryAssets;
+    }
+    return libraryAssets.filter((a) => {
+        const title = String(a.title || '').toLowerCase();
+        const name = String(a.original_filename || '').toLowerCase();
+        return title.includes(q) || name.includes(q);
+    });
+}
+
+function renderLibraryList(assets = filteredLibraryAssets()) {
+    if (!libraryListEl) {
+        return;
+    }
+    libraryListEl.innerHTML = '';
+    if (!assets.length) {
+        const empty = document.createElement('p');
+        empty.className = 'mixer-hint';
+        empty.textContent = librarySearchEl?.value?.trim()
+            ? 'No matching songs in the library.'
+            : 'Library is empty — upload sounds to keep them after refresh.';
+        libraryListEl.appendChild(empty);
+        return;
+    }
+
+    for (const asset of assets) {
+        const row = document.createElement('div');
+        row.className = 'mixer-library-row';
+        row.setAttribute('role', 'listitem');
+        row.dataset.id = String(asset.id);
+
+        const dur = formatTrackDuration(asset.duration_seconds);
+        const meta = [dur, formatBytes(asset.size_bytes)].filter(Boolean).join(' · ');
+
+        row.innerHTML = `
+            <div class="mixer-library-copy">
+                <p class="mixer-library-title"></p>
+                <p class="mixer-library-meta"></p>
+            </div>
+            <div class="mixer-library-actions">
+                <button type="button" data-queue>Queue</button>
+                <button type="button" data-delete>Delete</button>
+            </div>
+        `;
+        row.querySelector('.mixer-library-title').textContent = asset.title || asset.original_filename || 'Audio';
+        row.querySelector('.mixer-library-meta').textContent = meta;
+
+        row.querySelector('[data-queue]')?.addEventListener('click', () => {
+            queueLibraryAsset(asset);
+        });
+        row.querySelector('[data-delete]')?.addEventListener('click', async () => {
+            if (!asset.delete_url) {
+                setStatus('Could not delete — missing permission link.');
+                return;
+            }
+            if (!window.confirm(`Delete “${asset.title || asset.original_filename}” from the library?`)) {
+                return;
+            }
+            try {
+                const res = await fetch(asset.delete_url, {
+                    method: 'DELETE',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRF-TOKEN': galleryCsrf || '',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+                if (!res.ok) {
+                    throw new Error('delete failed');
+                }
+                libraryAssets = libraryAssets.filter((a) => a.id !== asset.id);
+                renderLibraryList();
+                setStatus('Removed from audio library.');
+            } catch {
+                setStatus('Could not delete from library.');
+            }
+        });
+
+        libraryListEl.appendChild(row);
+    }
+}
+
+async function refreshLibrary() {
+    if (!libraryListUrl) {
+        return;
+    }
+    try {
+        // Keep the signed URL query string intact (do not append search params).
+        const res = await fetch(libraryListUrl, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+        if (!res.ok) {
+            throw new Error('list failed');
+        }
+        const data = await res.json();
+        libraryAssets = Array.isArray(data.assets) ? data.assets : [];
+        renderLibraryList();
+    } catch {
+        if (libraryListEl) {
+            libraryListEl.innerHTML = '<p class="mixer-hint">Could not load audio library.</p>';
+        }
+    }
+}
+
+/**
+ * @param {File[]} files
+ * @param {boolean} queueAfterUpload
+ */
+async function uploadFilesToLibrary(files, queueAfterUpload) {
+    if (!libraryUploadUrl) {
+        setStatus('Audio library upload is not available on this Studio link.');
+        return;
+    }
+
+    const audioFiles = files.filter(
+        (file) => file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4)$/i.test(file.name),
+    );
+    if (!audioFiles.length) {
+        setStatus('Choose an audio file (mp3, wav, m4a, …).');
+        return;
+    }
+
+    setStatus(`Saving ${audioFiles.length} sound${audioFiles.length === 1 ? '' : 's'} to the library…`);
+
+    for (const file of audioFiles) {
+        try {
+            const duration = await probeAudioDuration(file);
+            const body = new FormData();
+            body.append('audio', file);
+            body.append('title', file.name.replace(/\.[^.]+$/, '') || file.name);
+            if (duration != null) {
+                body.append('duration_seconds', String(Math.round(duration)));
+            }
+
+            const res = await fetch(libraryUploadUrl, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': galleryCsrf || '',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body,
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                const msg = err?.message || err?.errors?.audio?.[0] || `Upload failed (${res.status})`;
+                throw new Error(msg);
+            }
+            const data = await res.json();
+            const asset = data.asset;
+            if (asset) {
+                libraryAssets = [asset, ...libraryAssets.filter((a) => a.id !== asset.id)];
+                if (queueAfterUpload) {
+                    queueLibraryAsset(asset);
+                }
+            }
+        } catch (e) {
+            setStatus(e instanceof Error ? e.message : `Could not upload “${file.name}”.`);
+            return;
+        }
+    }
+
+    renderLibraryList();
+    setStatus(
+        queueAfterUpload
+            ? 'Saved to library and queued. Wait for Ready, then Play.'
+            : 'Saved to audio library.',
+    );
+}
+
+librarySearchEl?.addEventListener('input', () => {
+    window.clearTimeout(librarySearchTimer);
+    librarySearchTimer = window.setTimeout(() => {
+        renderLibraryList();
+    }, 150);
+});
+
+void refreshLibrary();
 
 const REEL_MAX_SECONDS = 60;
 
