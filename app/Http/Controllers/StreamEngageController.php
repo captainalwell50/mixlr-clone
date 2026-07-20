@@ -18,7 +18,7 @@ class StreamEngageController extends Controller
         $sessionKey = substr((string) (
             $request->input('session_key')
             ?: $request->cookie('listener_sid')
-            ?: $request->session()->getId()
+            ?: ($request->hasSession() ? $request->session()->getId() : null)
             ?: Str::uuid()
         ), 0, 64);
 
