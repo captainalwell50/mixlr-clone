@@ -574,12 +574,22 @@ a.stage-platform:hover {
     gap: 0.9rem;
     width: 100%;
     align-items: stretch;
+    order: 1;
+}
+
+.portal-below {
+    order: 2;
 }
 
 @media (min-width: 720px) {
     .portal-cards {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 1rem;
+        order: 2;
+    }
+
+    .portal-below {
+        order: 1;
     }
 }
 
@@ -656,7 +666,6 @@ a.stage-platform:hover {
     width: 100%;
     max-width: 44rem;
     margin: 0 auto;
-    padding-bottom: 1.5rem;
 }
 
 .portal-title {
