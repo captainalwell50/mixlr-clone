@@ -412,6 +412,11 @@ copyBtn?.addEventListener('click', async () => {
     }
 });
 
+document.getElementById('btn-refresh-studio')?.addEventListener('click', () => {
+    setStatus('Refreshing Studio…');
+    window.location.reload();
+});
+
 micFaderEl?.addEventListener('input', applyMicGain);
 auxFaderEl?.addEventListener('input', applyAuxGain);
 playlistFaderEl?.addEventListener('input', applyPlaylistGain);

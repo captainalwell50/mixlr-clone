@@ -4171,6 +4171,28 @@ a.stage-platform:hover {
     cursor: pointer;
 }
 
+.mixer-btn-refresh {
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #f0c35a, #d4a24c);
+    color: #1a1408;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    padding: 0.45rem 0.95rem;
+    cursor: pointer;
+    box-shadow:
+        0 0 0 1px rgba(212, 162, 76, 0.45),
+        0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.mixer-btn-refresh:hover {
+    filter: brightness(1.06);
+}
+.mixer-btn-refresh:active {
+    transform: translateY(1px);
+}
+
 .mixer-mobile-nav {
     display: none;
 }
@@ -5166,8 +5188,11 @@ a.stage-platform:hover {
         display: none;
     }
     .mixer-top-copy {
-        font-size: 0.75rem;
-        color: color-mix(in srgb, var(--mixer-accent, #3d9b7a) 80%, white);
+        display: none;
+    }
+    .mixer-btn-refresh {
+        font-size: 0.78rem;
+        padding: 0.5rem 0.85rem;
     }
 
     .mixer-hero {

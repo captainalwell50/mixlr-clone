@@ -25,6 +25,7 @@
                 <span class="mixer-user">{{ $organization->name }}</span>
                 <a href="{{ route('dashboard') }}" class="mixer-top-link">Dashboard</a>
                 <button type="button" class="mixer-top-link mixer-top-copy" id="btn-copy-listen" title="Copy listen link">Copy link</button>
+                <button type="button" class="mixer-btn-refresh" id="btn-refresh-studio" title="Reload Studio">Refresh</button>
             </div>
         </header>
 
