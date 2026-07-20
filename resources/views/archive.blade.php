@@ -1,10 +1,10 @@
 @extends('layouts.app')
 
-@section('title', 'Archive · '.config('app.name', 'Live Mix Audio'))
+@section('title', 'Recorded Audio · '.config('app.name', 'Live Mix Audio'))
 
 @section('content')
     <p class="site-section-label">Past broadcasts</p>
-    <h1 class="console-title mt-2">Archive</h1>
+    <h1 class="console-title mt-2">Recorded Audio</h1>
     <p class="console-lead">Listen back to recorded services.</p>
 
     <div class="console-table">
