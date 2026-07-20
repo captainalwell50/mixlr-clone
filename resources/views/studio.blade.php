@@ -24,9 +24,9 @@
         <section class="mixer-hero">
             <div class="mixer-hero-art" style="background-image: url('{{ $artwork ?: asset('images/listen-stage-bg.jpg') }}')"></div>
             <div class="mixer-hero-copy">
-                <p class="mixer-hero-kicker" id="studio-mode">Off air</p>
+                <p class="mixer-hero-kicker" id="studio-mode">Standby</p>
                 <h1 class="mixer-hero-title">{{ $stream->title }}</h1>
-                <p class="mixer-hero-sub" id="studio-hero-hint">Click Start to go live</p>
+                <p class="mixer-hero-sub" id="studio-hero-hint">Hit Go on air when you’re ready</p>
             </div>
             <div class="mixer-hero-actions">
                 <a class="mixer-icon-btn" href="{{ route('dashboard') }}" title="Back to dashboard" aria-label="Back to dashboard">←</a>
@@ -207,12 +207,12 @@
         <footer class="mixer-bar">
             <p class="mixer-air" id="studio-on-air-pill" aria-live="polite">
                 <span class="mixer-air-dot"></span>
-                <span id="studio-air-label">OFF AIR</span>
+                <span id="studio-air-label">STANDBY</span>
             </p>
             <p class="mixer-timer" id="studio-timer">00:00:00</p>
             <div class="mixer-bar-actions">
-                <button type="button" id="btn-stop" class="mixer-btn-stop" disabled>Stop</button>
-                <button type="button" id="btn-start" class="mixer-btn-start">Start</button>
+                <button type="button" id="btn-stop" class="mixer-btn-stop" disabled>End broadcast</button>
+                <button type="button" id="btn-start" class="mixer-btn-start">Go on air</button>
             </div>
         </footer>
 

@@ -158,18 +158,18 @@ function setOnAir(live) {
     isLive = live;
     stageEl?.classList.toggle('is-on-air', live);
     if (modeEl) {
-        modeEl.textContent = live ? 'Live now' : 'Off air';
+        modeEl.textContent = live ? 'On the air' : 'Standby';
     }
     if (airLabel) {
-        airLabel.textContent = live ? 'LIVE NOW' : 'OFF AIR';
+        airLabel.textContent = live ? 'ON THE AIR' : 'STANDBY';
     }
     if (heroHint) {
         heroHint.textContent = live
-            ? 'You’re on air — cue stays off unless you enable headphones'
-            : 'Click Start to go live';
+            ? 'You’re broadcasting — cue stays off unless you enable headphones'
+            : 'Hit Go on air when you’re ready';
     }
     if (btnStart) {
-        btnStart.textContent = live ? 'On air' : 'Start';
+        btnStart.textContent = live ? 'Broadcasting' : 'Go on air';
         btnStart.disabled = live;
     }
     if (live) {
@@ -293,7 +293,7 @@ async function syncCuePlayback() {
     try {
         await cueAudio.play();
     } catch {
-        setStatus('Could not start cue monitor — click Start/cue again after interacting with the page.');
+        setStatus('Could not start cue monitor — click Go on air or cue again after interacting with the page.');
     }
 }
 
@@ -334,7 +334,7 @@ if (audioLayoutSelect) {
     audioLayoutSelect.addEventListener('change', () => {
         localStorage.setItem(LAYOUT_STORAGE_KEY, audioLayout());
         if (isLive) {
-            setStatus('Output layout changed — Stop and Start again to apply.');
+            setStatus('Output layout changed — End broadcast, then Go on air again to apply.');
         }
     });
 }
@@ -1026,7 +1026,7 @@ fileInput?.addEventListener('change', () => {
         setStatus(
             isLive
                 ? 'Sound added. Press Play to include it in the live mix.'
-                : 'Sound ready. Press Play when you want it in the mix, then Start.',
+                : 'Sound ready. Press Play when you want it in the mix, then Go on air.',
         );
     }
 });
@@ -1103,7 +1103,7 @@ async function publishWhip(stream) {
 
     const answerSdp = await res.text();
     if (/G722|PCMU|PCMA/i.test(answerSdp) && !/opus\/48000/i.test(answerSdp)) {
-        throw new Error('Server answered without Opus (phone codec). Stop and Start again after refresh.');
+        throw new Error('Server answered without Opus (phone codec). End broadcast and Go on air again after refresh.');
     }
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     silenceRemoteAudio(pc);
@@ -1132,7 +1132,7 @@ async function primeMicrophone() {
         }
         await loadDevices();
         setToggle(auxMuteBtn, auxMuted);
-        setStatus('Ready. Cue is off — Studio stays silent. Start to go live; use the listen link (or cue + headphones) to monitor.');
+        setStatus('Ready. Cue is off — Studio stays silent. Go on air when ready; use the listen link (or cue + headphones) to monitor.');
     } catch (e) {
         setStatus(friendlyError(e));
     }
@@ -1154,7 +1154,7 @@ btnStart?.addEventListener('click', async () => {
         return;
     }
     btnStart.disabled = true;
-    setStatus('Starting…');
+    setStatus('Going on air…');
 
     try {
         publishMode = 'mixer';
@@ -1169,8 +1169,8 @@ btnStart?.addEventListener('click', async () => {
 
         setStatus(
             anyCueOn()
-                ? 'You’re on air. Cue is on — use headphones to avoid feedback.'
-                : 'You’re on air. Studio is silent (cue off). Monitor on the listen link or enable cue with headphones.',
+                ? 'You’re broadcasting. Cue is on — use headphones to avoid feedback.'
+                : 'You’re broadcasting. Studio is silent (cue off). Monitor on the listen link or enable cue with headphones.',
         );
         setOnAir(true);
         btnStop.disabled = false;
@@ -1186,9 +1186,9 @@ btnStart?.addEventListener('click', async () => {
 
 btnStop?.addEventListener('click', async () => {
     btnStop.disabled = true;
-    setStatus('Stopping…');
+    setStatus('Ending broadcast…');
     await teardownLive();
-    setStatus('Stopped. Ready when you are.');
+    setStatus('Back on standby. Ready when you are.');
     btnStart.disabled = false;
 });
 

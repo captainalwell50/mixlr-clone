@@ -3650,9 +3650,10 @@ a.stage-platform:hover {
     color: white;
     font-weight: 700;
     font-size: 0.95rem;
-    padding: 0.65rem 1.5rem;
+    padding: 0.65rem 1.35rem;
     cursor: pointer;
-    min-width: 6.5rem;
+    min-width: 8.5rem;
+    letter-spacing: 0.01em;
 }
 .mixer-btn-start:hover {
     filter: brightness(1.05);
