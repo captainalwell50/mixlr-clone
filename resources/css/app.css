@@ -534,14 +534,18 @@ a.stage-platform:hover {
 .portal-follow {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-height: 2.35rem;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--stage-cream) 22%, transparent);
-    padding: 0.28rem 0.7rem;
-    font-size: 0.78rem;
+    background: color-mix(in srgb, var(--stage-ink) 45%, transparent);
+    padding: 0.35rem 0.9rem;
+    font-size: 0.85rem;
     font-weight: 650;
     color: var(--stage-cream);
     text-decoration: none;
     white-space: nowrap;
+    cursor: pointer;
 }
 .portal-follow:hover {
     background: color-mix(in srgb, var(--stage-cream) 8%, transparent);
