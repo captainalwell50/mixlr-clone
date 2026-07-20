@@ -63,7 +63,9 @@
                                 <div class="mixer-fader-scale" aria-hidden="true">
                                     <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
                                 </div>
-                                <input id="mic-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Input 1 level">
+                                <div class="mixer-fader-slot">
+                                    <input id="mic-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" aria-label="Input 1 level">
+                                </div>
                             </div>
                             <label class="mixer-field mixer-field--source" for="audio-input">
                                 <span class="mixer-field-label">Source</span>
@@ -90,7 +92,9 @@
                                 <div class="mixer-fader-scale" aria-hidden="true">
                                     <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
                                 </div>
-                                <input id="aux-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Input 2 level">
+                                <div class="mixer-fader-slot">
+                                    <input id="aux-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" aria-label="Input 2 level">
+                                </div>
                             </div>
                             <label class="mixer-field mixer-field--source" for="aux-input">
                                 <span class="mixer-field-label">Source</span>
@@ -119,7 +123,9 @@
                                 <div class="mixer-fader-scale" aria-hidden="true">
                                     <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
                                 </div>
-                                <input id="playlist-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Playlist level">
+                                <div class="mixer-fader-slot">
+                                    <input id="playlist-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" aria-label="Playlist level">
+                                </div>
                             </div>
                             <div class="mixer-field mixer-field--source">
                                 <span class="mixer-field-label">Queue</span>
@@ -145,7 +151,9 @@
                                 <div class="mixer-fader-scale" aria-hidden="true">
                                     <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
                                 </div>
-                                <input id="master-fader" class="mixer-fader mixer-fader--master" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Master level">
+                                <div class="mixer-fader-slot">
+                                    <input id="master-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" aria-label="Master level">
+                                </div>
                             </div>
                             <div class="mixer-master-fields">
                                 <label class="mixer-field" for="audio-layout">
