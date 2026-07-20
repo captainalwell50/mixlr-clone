@@ -41,10 +41,12 @@
                 </nav>
             </header>
 
-            <div class="portal-layout has-side" id="portal-layout">
-                <main class="portal-main">
+            <div class="portal-layout" id="portal-layout">
+                <div class="portal-cards stage-rise-delay">
+                    <div class="portal-card portal-art" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork"></div>
+
                     @if ($stream->chat_enabled)
-                        <div class="stage-rail wa-chat portal-chat-slot stage-rise-delay" id="portal-chat" aria-label="Live chat">
+                        <div class="portal-card stage-rail wa-chat portal-chat-slot" id="portal-chat" aria-label="Live chat">
                             <header class="wa-header">
                                 @if ($artwork)
                                     <img src="{{ $artwork }}" alt="" class="wa-header-avatar">
@@ -78,9 +80,39 @@
                             ></div>
                         </div>
                     @else
-                        <div class="portal-art stage-rise-delay" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork"></div>
+                        <div class="portal-card portal-chat-off" aria-label="Chat unavailable">
+                            <p>Chat is off for this broadcast.</p>
+                        </div>
                     @endif
 
+                    <section class="portal-card portal-gallery" aria-label="Service gallery">
+                        <div class="portal-section-head portal-section-head--side">
+                            <h2>Live Gallery - Happening Now</h2>
+                            <p>Tap a photo to open</p>
+                        </div>
+                        <div class="portal-gallery-grid" id="gallery-grid">
+                            @forelse ($galleryImages as $image)
+                                <button
+                                    type="button"
+                                    class="portal-gallery-item"
+                                    data-id="{{ $image->id }}"
+                                    data-url="{{ $image->url() }}"
+                                    data-caption="{{ $image->caption }}"
+                                    aria-label="Open gallery photo"
+                                >
+                                    <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Service photo' }}" loading="lazy">
+                                    @if ($image->caption)
+                                        <span class="portal-gallery-caption">{{ $image->caption }}</span>
+                                    @endif
+                                </button>
+                            @empty
+                                <p class="portal-empty" id="gallery-empty">No photos yet — they’ll appear here when the studio posts them.</p>
+                            @endforelse
+                        </div>
+                    </section>
+                </div>
+
+                <div class="portal-below">
                     <h1 class="portal-title stage-rise-delay">{{ $stream->title }}</h1>
 
                     <div class="portal-badges stage-rise-delay-2">
@@ -173,35 +205,7 @@
                         data-gallery-url="{{ route('gallery.index', $stream) }}"
                         class="hidden"
                     ></div>
-                </main>
-
-                <aside class="portal-side stage-rise-delay-2" aria-label="Live gallery">
-                    <section class="portal-gallery" aria-label="Service gallery">
-                        <div class="portal-section-head portal-section-head--side">
-                            <h2>Live Gallery - Happening Now</h2>
-                            <p>Tap a photo to open</p>
-                        </div>
-                        <div class="portal-gallery-grid" id="gallery-grid">
-                            @forelse ($galleryImages as $image)
-                                <button
-                                    type="button"
-                                    class="portal-gallery-item"
-                                    data-id="{{ $image->id }}"
-                                    data-url="{{ $image->url() }}"
-                                    data-caption="{{ $image->caption }}"
-                                    aria-label="Open gallery photo"
-                                >
-                                    <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Service photo' }}" loading="lazy">
-                                    @if ($image->caption)
-                                        <span class="portal-gallery-caption">{{ $image->caption }}</span>
-                                    @endif
-                                </button>
-                            @empty
-                                <p class="portal-empty" id="gallery-empty">No photos yet — they’ll appear here when the studio posts them.</p>
-                            @endforelse
-                        </div>
-                    </section>
-                </aside>
+                </div>
             </div>
 
             <div id="engage-root" class="hidden"
