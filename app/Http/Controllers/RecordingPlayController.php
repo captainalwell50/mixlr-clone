@@ -13,11 +13,14 @@ class RecordingPlayController extends Controller
     public function show(Recording $recording): View
     {
         $recording->loadMissing('stream.organization');
+        $stream = $recording->stream;
 
         return view('archive-play', [
             'recording' => $recording,
-            'stream' => $recording->stream,
+            'stream' => $stream,
             'fileUrl' => route('archive.file', $recording),
+            'galleryImages' => $stream->galleryImages()->limit(24)->get(),
+            'listenBackgroundUrl' => $stream->listenBackgroundUrl(),
         ]);
     }
 

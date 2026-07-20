@@ -1313,6 +1313,62 @@ a.stage-platform:hover {
     min-width: 0;
 }
 
+.archive-play-page .stage-shell {
+    max-width: 72rem;
+}
+
+.archive-play-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+    width: 100%;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding-top: clamp(1rem, 3vh, 2rem);
+    align-items: start;
+}
+
+@media (min-width: 960px) {
+    .archive-play-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem);
+    }
+}
+
+.archive-play-main {
+    order: 1;
+    max-width: 40rem;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.archive-play-main .site-section-label {
+    margin-bottom: 0.35rem;
+}
+
+.archive-play-channel {
+    margin: 0.45rem 0 0;
+    font-size: 1rem;
+    color: color-mix(in srgb, var(--stage-cream) 78%, transparent);
+}
+
+.archive-play-gallery {
+    order: 2;
+    width: 100%;
+    max-width: 22rem;
+    margin-inline: auto;
+}
+
+.archive-gallery-card {
+    height: auto;
+    min-height: 18rem;
+    max-height: min(70dvh, 28rem);
+}
+
+.archive-gallery-card .portal-gallery-grid {
+    flex: 1;
+    min-height: 12rem;
+}
+
 .stage-wave.is-hidden {
     visibility: hidden;
     height: 0;

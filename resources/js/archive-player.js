@@ -1,5 +1,6 @@
 import './bootstrap';
 import { bindStagePlayer } from './player';
+import { bindInitialGalleryFromDom, refreshGalleryFromUrl } from './gallery-ui';
 
 const root = document.getElementById('archive-root');
 const audio = document.getElementById('stream-audio');
@@ -187,4 +188,11 @@ if (root && audio) {
             }, 0);
         });
     }
+}
+
+bindInitialGalleryFromDom();
+const galleryUrl = root?.dataset.galleryUrl;
+if (galleryUrl) {
+    void refreshGalleryFromUrl(galleryUrl);
+    window.setInterval(() => void refreshGalleryFromUrl(galleryUrl), 20000);
 }

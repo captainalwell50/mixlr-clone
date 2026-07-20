@@ -10,82 +10,125 @@
     $organization = $stream->organization;
     $theme = $organization->themeColor();
     $artwork = $organization->artworkUrl();
+    $background = $listenBackgroundUrl ?: ($artwork ?: asset('images/listen-stage-bg.jpg'));
 @endphp
 
 @section('content')
-    <div class="stage" style="--stage-accent: {{ $theme }};">
-        <div
-            class="stage-atmosphere {{ $artwork ? 'has-art' : '' }}"
-            @if ($artwork) style="--stage-art: url('{{ $artwork }}')" @endif
-        ></div>
+    <div class="stage stage-cinema portal archive-play-page" style="--stage-accent: {{ $theme }}; --stage-art: url('{{ $background }}')">
+        <div class="stage-atmosphere has-art is-fullscreen" aria-hidden="true"></div>
 
-        <div class="stage-content">
-            <header class="stage-top stage-rise">
-                <p class="stage-platform">{{ config('app.name', 'Live Mix Audio') }}</p>
-                <a href="{{ route('archive.index') }}" class="stage-top-link">Recorded Audio</a>
+        <div class="stage-shell">
+            <header class="portal-bar stage-rise">
+                <div class="portal-brand">
+                    <a href="{{ route('channels.show', $organization) }}" class="portal-channel-link">
+                        @if ($artwork)
+                            <img src="{{ $artwork }}" alt="" class="portal-avatar">
+                        @else
+                            <span class="portal-avatar portal-avatar--fallback" aria-hidden="true">{{ strtoupper(substr($organization->name, 0, 1)) }}</span>
+                        @endif
+                        <span class="portal-channel-name">{{ $organization->name }}</span>
+                    </a>
+                </div>
+                <nav class="portal-bar-links">
+                    <a href="{{ route('archive.index') }}" class="stage-top-link">Recorded Audio</a>
+                    <a href="{{ route('discover') }}" class="stage-top-link">Discover</a>
+                </nav>
             </header>
 
-            <p class="stage-status stage-rise-delay is-idle">Recording</p>
-            <h1 class="stage-channel stage-rise-delay">{{ $organization->name }}</h1>
-            <p class="stage-title stage-rise-delay-2">{{ $stream->title }}</p>
-            <p class="stage-meta">
-                {{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }}
-            </p>
+            <div class="portal-layout archive-play-layout">
+                <div class="portal-below archive-play-main">
+                    <p class="site-section-label">Recording</p>
+                    <h1 class="portal-title stage-rise-delay">{{ $stream->title }}</h1>
+                    <p class="archive-play-channel">{{ $organization->name }}</p>
+                    <p class="stage-meta">
+                        {{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }}
+                        · {{ $recording->durationLabel() }}
+                    </p>
 
-            <div class="stage-player stage-rise-delay-2 archive-player">
-                <div id="stage-wave" class="stage-wave" aria-hidden="true"></div>
+                    <div class="stage-player stage-rise-delay-2 archive-player">
+                        <div id="stage-wave" class="stage-wave" aria-hidden="true"></div>
 
-                <div class="archive-scrub" aria-label="Playback progress">
-                    <span id="archive-time-current" class="archive-time">0:00</span>
-                    <input
-                        id="archive-seek"
-                        class="archive-seek"
-                        type="range"
-                        min="0"
-                        max="0"
-                        value="0"
-                        step="0.1"
-                        aria-label="Seek in recording"
-                        disabled
-                    >
-                    <span id="archive-time-duration" class="archive-time">0:00</span>
-                </div>
+                        <div class="archive-scrub" aria-label="Playback progress">
+                            <span id="archive-time-current" class="archive-time">0:00</span>
+                            <input
+                                id="archive-seek"
+                                class="archive-seek"
+                                type="range"
+                                min="0"
+                                max="0"
+                                value="0"
+                                step="0.1"
+                                aria-label="Seek in recording"
+                                disabled
+                            >
+                            <span id="archive-time-duration" class="archive-time">0:00</span>
+                        </div>
 
-                <div class="stage-transport archive-transport">
-                    <button type="button" id="btn-skip-back" class="stage-transport-btn" aria-label="Back 15 seconds" title="−15s">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8zm-1.06 8.63 2.53 1.53-.75 1.3-3.19-1.92V8.89h1.5v4.74z"/></svg>
-                    </button>
-                    <div id="stage-play-shell" class="player-breath rounded-full">
-                        <button type="button" id="btn-play" class="stage-play" aria-label="Play">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86z"/></svg>
-                        </button>
+                        <div class="stage-transport archive-transport">
+                            <button type="button" id="btn-skip-back" class="stage-transport-btn" aria-label="Back 15 seconds" title="−15s">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8zm-1.06 8.63 2.53 1.53-.75 1.3-3.19-1.92V8.89h1.5v4.74z"/></svg>
+                            </button>
+                            <div id="stage-play-shell" class="player-breath rounded-full">
+                                <button type="button" id="btn-play" class="stage-play" aria-label="Play">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86z"/></svg>
+                                </button>
+                            </div>
+                            <button type="button" id="btn-skip-forward" class="stage-transport-btn" aria-label="Forward 15 seconds" title="+15s">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8zm1.09 8.63V8.89h-1.5v4.65l-3.19 1.92.75 1.3 2.94-1.78z"/></svg>
+                            </button>
+                        </div>
+
+                        <div class="archive-volume" aria-label="Volume">
+                            <button type="button" id="btn-volume" class="stage-transport-btn" aria-label="Mute" title="Mute">
+                                <svg class="icon-volume" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 10v4h4l5 4V6L7 10H3zm13.5 2a3.5 3.5 0 0 0-1.8-3.1v6.2A3.5 3.5 0 0 0 16.5 12zM14 4.7v2.1a5.5 5.5 0 0 1 0 10.4v2.1a7.5 7.5 0 0 0 0-14.6z"/></svg>
+                                <svg class="icon-muted hidden" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.5 12a3.5 3.5 0 0 0-1.8-3.1v2.36l1.75 1.75c.03-.33.05-.67.05-1.01zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-3.53-2.04-6.55-5-7.97v2.21A5.5 5.5 0 0 1 19 12zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.14a8.94 8.94 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"/></svg>
+                            </button>
+                            <input
+                                id="archive-volume"
+                                class="archive-volume-slider"
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value="1"
+                                aria-label="Volume level"
+                            >
+                        </div>
+
+                        <audio id="stream-audio" class="sr-only" playsinline preload="metadata"></audio>
+                        <p id="stream-status" class="stage-status-line">Press play to listen</p>
                     </div>
-                    <button type="button" id="btn-skip-forward" class="stage-transport-btn" aria-label="Forward 15 seconds" title="+15s">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8zm1.09 8.63V8.89h-1.5v4.65l-3.19 1.92.75 1.3 2.94-1.78z"/></svg>
-                    </button>
+                    <div id="archive-root" data-src="{{ $fileUrl }}" data-gallery-url="{{ route('gallery.index', $stream) }}" class="hidden"></div>
                 </div>
 
-                <div class="archive-volume" aria-label="Volume">
-                    <button type="button" id="btn-volume" class="stage-transport-btn" aria-label="Mute" title="Mute">
-                        <svg class="icon-volume" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 10v4h4l5 4V6L7 10H3zm13.5 2a3.5 3.5 0 0 0-1.8-3.1v6.2A3.5 3.5 0 0 0 16.5 12zM14 4.7v2.1a5.5 5.5 0 0 1 0 10.4v2.1a7.5 7.5 0 0 0 0-14.6z"/></svg>
-                        <svg class="icon-muted hidden" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.5 12a3.5 3.5 0 0 0-1.8-3.1v2.36l1.75 1.75c.03-.33.05-.67.05-1.01zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-3.53-2.04-6.55-5-7.97v2.21A5.5 5.5 0 0 1 19 12zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.14a8.94 8.94 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"/></svg>
-                    </button>
-                    <input
-                        id="archive-volume"
-                        class="archive-volume-slider"
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value="1"
-                        aria-label="Volume level"
-                    >
-                </div>
-
-                <audio id="stream-audio" class="sr-only" playsinline preload="metadata"></audio>
-                <p id="stream-status" class="stage-status-line">Press play to listen</p>
+                <aside class="archive-play-gallery stage-rise-delay-2" aria-label="Live gallery">
+                    <section class="portal-card portal-gallery archive-gallery-card" aria-label="Service gallery">
+                        <div class="portal-section-head portal-section-head--side">
+                            <h2>Live Gallery - Happening Now</h2>
+                            <p>Tap a photo to open</p>
+                        </div>
+                        <div class="portal-gallery-grid" id="gallery-grid">
+                            @forelse ($galleryImages as $image)
+                                <button
+                                    type="button"
+                                    class="portal-gallery-item"
+                                    data-id="{{ $image->id }}"
+                                    data-url="{{ $image->url() }}"
+                                    data-caption="{{ $image->caption }}"
+                                    aria-label="Open gallery photo"
+                                >
+                                    <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Service photo' }}" loading="lazy">
+                                    @if ($image->caption)
+                                        <span class="portal-gallery-caption">{{ $image->caption }}</span>
+                                    @endif
+                                </button>
+                            @empty
+                                <p class="portal-empty" id="gallery-empty">No photos yet from this service.</p>
+                            @endforelse
+                        </div>
+                    </section>
+                </aside>
             </div>
-            <div id="archive-root" data-src="{{ $fileUrl }}" class="hidden"></div>
         </div>
     </div>
 @endsection
