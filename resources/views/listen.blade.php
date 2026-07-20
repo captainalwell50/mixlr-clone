@@ -11,7 +11,6 @@
     $theme = $organization->themeColor();
     $artwork = $organization->artworkUrl();
     $background = $listenBackgroundUrl ?: asset('images/listen-stage-bg.jpg');
-    $cardArt = $artwork ?: $background;
     $shareUrl = route('listen.stream', $stream);
 @endphp
 
@@ -43,8 +42,6 @@
 
             <div class="portal-layout has-side {{ $stream->chat_enabled ? 'has-chat' : '' }}" id="portal-layout">
                 <main class="portal-main">
-                    <div class="portal-art stage-rise-delay" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork"></div>
-
                     <h1 class="portal-title stage-rise-delay">{{ $stream->title }}</h1>
 
                     <div class="portal-badges stage-rise-delay-2">

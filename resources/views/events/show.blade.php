@@ -9,9 +9,8 @@
 @php
     $theme = $event->organization->themeColor();
     $isLive = $event->isLive();
-    $artwork = $event->artworkUrl();
-    $background = ($listenBackgroundUrl ?? null) ?: asset('images/listen-stage-bg.jpg');
-    $cardArt = $artwork ?: $background;
+    $artwork = $event->organization->artworkUrl();
+    $background = ($listenBackgroundUrl ?? null) ?: ($event->artworkUrl() ?: asset('images/listen-stage-bg.jpg'));
     $statusLabel = match ($event->status->value) {
         'live' => 'Live',
         'ended' => 'Ended',
@@ -48,8 +47,6 @@
 
             <div class="portal-layout has-side {{ $event->chat_enabled ? 'has-chat' : '' }}" id="portal-layout">
                 <main class="portal-main">
-                    <div class="portal-art stage-rise-delay" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Event artwork"></div>
-
                     <h1 class="portal-title stage-rise-delay">{{ $event->title }}</h1>
 
                     <div class="portal-badges stage-rise-delay-2">

@@ -584,11 +584,13 @@ a.stage-platform:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     text-align: center;
     min-width: 0;
     max-width: 40rem;
     margin: 0 auto;
     width: 100%;
+    min-height: min(62dvh, 36rem);
 }
 
 .portal-side {
@@ -600,24 +602,16 @@ a.stage-platform:hover {
     min-width: 0;
 }
 
-.portal-art {
-    width: min(100%, 22rem);
-    aspect-ratio: 1;
-    margin-inline: auto;
-    border-radius: 0.85rem;
-    background: #1a1a1a center/cover no-repeat;
-    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
-}
-
 .portal-title {
-    margin: 1.25rem 0 0;
+    margin: 0;
     max-width: 36rem;
     font-family: var(--font-display);
-    font-size: clamp(1.35rem, 3.4vw, 1.85rem);
+    font-size: clamp(1.45rem, 3.6vw, 2rem);
     font-weight: 600;
     line-height: 1.2;
     letter-spacing: -0.02em;
     color: var(--stage-cream);
+    text-shadow: 0 2px 28px rgba(0, 0, 0, 0.45);
 }
 
 .portal-badges {
