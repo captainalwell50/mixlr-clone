@@ -104,7 +104,7 @@
                 <aside class="archive-play-gallery stage-rise-delay-2" aria-label="Live gallery">
                     <section class="portal-card portal-gallery archive-gallery-card" aria-label="Service gallery">
                         <div class="portal-section-head portal-section-head--side">
-                            <h2>Live Gallery - Happening Now</h2>
+                            <h2>Event photos</h2>
                             <p>Photos & video reels · tap to open</p>
                         </div>
                         <div class="portal-gallery-grid" id="gallery-grid">
