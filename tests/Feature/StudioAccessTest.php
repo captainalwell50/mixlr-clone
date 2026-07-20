@@ -33,7 +33,7 @@ class StudioAccessTest extends TestCase
 
         $this->get($url)
             ->assertOk()
-            ->assertSee('Go live', false)
+            ->assertSee('Go on air', false)
             ->assertSee('studio-root', false);
     }
 
@@ -45,7 +45,7 @@ class StudioAccessTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.streams.studio', $stream))
             ->assertOk()
-            ->assertSee('Go live', false);
+            ->assertSee('Go on air', false);
     }
 
     private function makeStream(): Stream

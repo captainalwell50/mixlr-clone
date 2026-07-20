@@ -66,6 +66,13 @@ APP_URL=https://stream.yourchurch.org
 REGISTRATION_ENABLED=false
 ADMIN_EMAIL=admin@yourchurch.org
 
+# SaaS / multi-tenant: set REGISTRATION_ENABLED=true and configure Paystack
+# PAYSTACK_PUBLIC_KEY=pk_live_...
+# PAYSTACK_SECRET_KEY=sk_live_...
+# PAYSTACK_PLAN_STARTER=PLN_...
+# PAYSTACK_PLAN_PRO=PLN_...
+# Webhook URL in Paystack Dashboard: https://stream.yourchurch.org/webhooks/paystack
+
 MEDIAMTX_WEBRTC_PUBLIC_BASE=https://stream.yourchurch.org/rtc
 MEDIAMTX_HLS_PUBLIC_BASE=https://stream.yourchurch.org/hls
 # Optional CDN for ~1k listeners (see CDN.md):
@@ -124,6 +131,14 @@ sudo crontab -u www-data -e
 # add:
 * * * * * cd /var/www/app && php artisan schedule:run >> /dev/null 2>&1
 ```
+
+## 5b. SaaS billing (Paystack)
+
+1. Create **Starter** and **Pro** plans in the [Paystack Dashboard](https://dashboard.paystack.com/#/plans) (monthly, NGN or your currency).
+2. Set `REGISTRATION_ENABLED=true` and paste plan codes into `PAYSTACK_PLAN_*` in `.env`.
+3. Run `php artisan db:seed --class=PlanSeeder` (or full `--seed`) so `plans` rows match.
+4. In Paystack → Settings → Webhooks, add `https://<your-host>/webhooks/paystack` (events: `charge.success`, `subscription.create`, `subscription.disable`, `invoice.payment_failed`).
+5. Signature verification uses `PAYSTACK_SECRET_KEY` (HMAC SHA512), matching Paystack’s docs.
 
 ## 6. Sunday go-live checklist
 

@@ -24,11 +24,17 @@
                 <a href="{{ route('discover') }}">Discover</a>
                 <a href="{{ route('archive.index') }}">Recorded Audio</a>
                 @auth
-                    @if(auth()->user()->is_admin || auth()->user()->manageableOrganizations()->exists())
+                    @if(auth()->user()->is_admin)
                         <a href="{{ route('admin.events.index') }}">Events</a>
                         <a href="{{ route('admin.analytics.index') }}">Analytics</a>
                         <a href="{{ route('admin.organizations.index') }}">Channels</a>
                         <a href="{{ route('admin.streams.index') }}">Streams</a>
+                    @elseif(auth()->user()->organizations()->exists())
+                        <a href="{{ route('creator.home') }}">Home</a>
+                        <a href="{{ route('admin.events.index') }}">Events</a>
+                        <a href="{{ route('admin.streams.index') }}">Streams</a>
+                    @else
+                        <a href="{{ route('onboarding.show') }}">Set up channel</a>
                     @endif
                     <span class="text-[var(--stage-muted)]">{{ auth()->user()->name }}</span>
                     <form method="POST" action="{{ route('logout') }}" class="inline">

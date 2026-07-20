@@ -245,7 +245,7 @@
             <p class="mixer-timer" id="studio-timer">00:00:00</p>
             <div class="mixer-bar-actions">
                 <button type="button" id="btn-stop" class="mixer-btn-stop" disabled>End broadcast</button>
-                <button type="button" id="btn-start" class="mixer-btn-start">Go on air</button>
+                <button type="button" id="btn-start" class="mixer-btn-start" @disabled(! ($broadcastAllowed ?? true))>Go on air</button>
             </div>
         </footer>
 
@@ -255,6 +255,8 @@
         <div
             id="studio-root"
             data-whip-url="{{ $whipUrl }}"
+            data-broadcast-allowed="{{ ($broadcastAllowed ?? true) ? '1' : '0' }}"
+            data-billing-url="{{ $billingUrl ?? route('billing.plans') }}"
             data-gallery-upload-url="{{ $galleryUploadUrl }}"
             data-background-upload-url="{{ $backgroundUploadUrl }}"
             data-gallery-list-url="{{ $galleryListUrl }}"

@@ -15,6 +15,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
             'stream.manage' => \App\Http\Middleware\EnsureCanManageStreams::class,
+            'onboarded' => \App\Http\Middleware\EnsureOnboarded::class,
+            'subscribed' => \App\Http\Middleware\EnsureSubscribed::class,
+        ]);
+
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/paystack',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

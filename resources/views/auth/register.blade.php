@@ -5,8 +5,8 @@
 @section('content')
     <div class="mx-auto max-w-md">
         <p class="site-section-label">Live Mix Audio</p>
-        <h1 class="console-title mt-2">Create account</h1>
-        <p class="console-lead">Listener accounts are optional — broadcasting stays on signed studio links.</p>
+        <h1 class="console-title mt-2">Start broadcasting</h1>
+        <p class="console-lead">Create your creator account — then set up a church, radio, or event channel and open Studio.</p>
 
         <form method="POST" action="{{ route('register') }}" class="mt-8 space-y-4">
             @csrf

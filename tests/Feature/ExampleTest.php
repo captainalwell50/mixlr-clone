@@ -16,7 +16,7 @@ class ExampleTest extends TestCase
 
         $response->assertOk();
         $response->assertSee(config('app.name'), false);
-        $response->assertSee('When the room gathers', false);
+        $response->assertSee('Effortless live audio for every gathering.', false);
         $response->assertDontSee('From link to live stage in three beats', false);
     }
 

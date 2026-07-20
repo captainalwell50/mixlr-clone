@@ -34,8 +34,15 @@
                     <a href="{{ url('/dashboard') }}">Dashboard</a>
                 @else
                     <a href="{{ route('login') }}">Log in</a>
+                    @if (config('app.registration_enabled') && Route::has('register'))
+                        <a href="{{ route('register') }}">Register</a>
+                    @endif
                 @endauth
-                <a href="{{ route('discover') }}" class="mkt-nav-cta">Discover live</a>
+                @if (config('app.registration_enabled') && Route::has('register') && auth()->guest())
+                    <a href="{{ route('register') }}" class="mkt-nav-cta">Start broadcasting</a>
+                @else
+                    <a href="{{ route('discover') }}" class="mkt-nav-cta">Discover live</a>
+                @endif
             </nav>
         </div>
     </header>
@@ -50,16 +57,23 @@
                     Share one event link. Listeners get a clean stage with chat and hearts — built for churches, rooms, and real-time presence.
                 </p>
                 <div class="mkt-cta stage-rise-delay-2">
-                    <a href="{{ route('discover') }}" class="site-btn site-btn-primary">Discover live</a>
-                    @auth
-                        @if(auth()->user()->is_admin || auth()->user()->manageableOrganizations()->exists())
-                            <a href="{{ route('admin.streams.index') }}" class="site-btn site-btn-ghost">Open streams</a>
-                        @else
-                            <a href="{{ url('/dashboard') }}" class="site-btn site-btn-ghost">Dashboard</a>
-                        @endif
+                    @if (config('app.registration_enabled') && Route::has('register') && auth()->guest())
+                        <a href="{{ route('register') }}" class="site-btn site-btn-primary">Start broadcasting</a>
+                        <a href="{{ route('discover') }}" class="site-btn site-btn-ghost">Discover live</a>
                     @else
-                        <a href="{{ route('login') }}" class="site-btn site-btn-ghost">Log in</a>
-                    @endauth
+                        <a href="{{ route('discover') }}" class="site-btn site-btn-primary">Discover live</a>
+                        @auth
+                            @if(auth()->user()->is_admin)
+                                <a href="{{ route('admin.streams.index') }}" class="site-btn site-btn-ghost">Open streams</a>
+                            @elseif(auth()->user()->organizations()->exists())
+                                <a href="{{ route('creator.home') }}" class="site-btn site-btn-ghost">Creator home</a>
+                            @else
+                                <a href="{{ route('onboarding.show') }}" class="site-btn site-btn-ghost">Set up channel</a>
+                            @endif
+                        @else
+                            <a href="{{ route('login') }}" class="site-btn site-btn-ghost">Log in</a>
+                        @endauth
+                    @endif
                 </div>
             </div>
 

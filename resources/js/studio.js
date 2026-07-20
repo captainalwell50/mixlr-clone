@@ -2,6 +2,8 @@ import './bootstrap';
 
 const root = document.getElementById('studio-root');
 const whipUrl = root?.dataset.whipUrl;
+const broadcastAllowed = root?.dataset.broadcastAllowed !== '0';
+const billingUrl = root?.dataset.billingUrl || '/billing';
 const audioSelect = document.getElementById('audio-input');
 const auxSelect = document.getElementById('aux-input');
 const outputSelect = document.getElementById('audio-output');
@@ -1145,6 +1147,13 @@ if (navigator.mediaDevices && 'addEventListener' in navigator.mediaDevices) {
 }
 
 btnStart?.addEventListener('click', async () => {
+    if (!broadcastAllowed) {
+        setStatus('An active subscription is required to go on air.');
+        if (billingUrl) {
+            window.location.href = billingUrl;
+        }
+        return;
+    }
     if (!window.isSecureContext) {
         setStatus(`Studio needs HTTPS for the microphone. Open ${httpsStudioUrl()}`);
         return;

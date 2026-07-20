@@ -8,15 +8,19 @@ use App\Http\Controllers\Admin\RecordingDestroyController;
 use App\Http\Controllers\Admin\RecordingDownloadController;
 use App\Http\Controllers\Admin\StreamController;
 use App\Http\Controllers\ArchiveController;
+use App\Http\Controllers\BillingController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ChannelFollowController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\CreatorHomeController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscoverController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventEngageController;
 use App\Http\Controllers\GalleryController;
 use App\Http\Controllers\ListenController;
+use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\PaystackWebhookController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlayController;
 use App\Http\Controllers\StreamEngageController;
@@ -107,11 +111,28 @@ Route::get('/studio/{stream}', [StudioController::class, 'show'])
     ->middleware('signed')
     ->name('studio.stream');
 
+Route::post('/webhooks/paystack', PaystackWebhookController::class)
+    ->middleware('throttle:120,1')
+    ->name('webhooks.paystack');
+
 Route::middleware('auth')->group(function (): void {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
+    Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding.show');
+    Route::post('/onboarding/type', [OnboardingController::class, 'storeType'])->name('onboarding.type');
+    Route::get('/onboarding/channel', [OnboardingController::class, 'channel'])->name('onboarding.channel');
+    Route::post('/onboarding/channel', [OnboardingController::class, 'storeChannel'])->name('onboarding.channel.store');
+
+    Route::middleware('onboarded')->group(function (): void {
+        Route::get('/home', CreatorHomeController::class)->name('creator.home');
+        Route::get('/billing', [BillingController::class, 'plans'])->name('billing.plans');
+        Route::post('/billing/trial', [BillingController::class, 'startTrial'])->name('billing.trial');
+        Route::post('/billing/checkout/{plan}', [BillingController::class, 'checkout'])->name('billing.checkout');
+        Route::get('/billing/callback', [BillingController::class, 'callback'])->name('billing.callback');
+    });
 });
 
-Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function (): void {
+Route::middleware(['auth', 'onboarded'])->prefix('admin')->name('admin.')->group(function (): void {
     Route::get('organizations', [OrganizationController::class, 'index'])->name('organizations.index');
     Route::get('organizations/create', [OrganizationController::class, 'create'])->name('organizations.create');
     Route::post('organizations', [OrganizationController::class, 'store'])->name('organizations.store');
@@ -130,14 +151,18 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function ():
         Route::get('events/{event}/edit', [AdminEventController::class, 'edit'])->name('events.edit');
         Route::put('events/{event}', [AdminEventController::class, 'update'])->name('events.update');
         Route::delete('events/{event}', [AdminEventController::class, 'destroy'])->name('events.destroy');
-        Route::post('events/{event}/go-live', [AdminEventController::class, 'goLive'])->name('events.go-live');
+        Route::post('events/{event}/go-live', [AdminEventController::class, 'goLive'])
+            ->middleware('subscribed')
+            ->name('events.go-live');
         Route::post('events/{event}/end', [AdminEventController::class, 'end'])->name('events.end');
 
         Route::get('analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
 
         Route::get('streams', [StreamController::class, 'index'])->name('streams.index');
         Route::get('streams/create', [StreamController::class, 'create'])->name('streams.create');
-        Route::post('streams', [StreamController::class, 'store'])->name('streams.store');
+        Route::post('streams', [StreamController::class, 'store'])
+            ->middleware('subscribed')
+            ->name('streams.store');
         Route::get('streams/{stream}/edit', [StreamController::class, 'edit'])->name('streams.edit');
         Route::put('streams/{stream}', [StreamController::class, 'update'])->name('streams.update');
         Route::delete('streams/{stream}', [StreamController::class, 'destroy'])->name('streams.destroy');

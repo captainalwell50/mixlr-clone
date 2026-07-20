@@ -26,6 +26,8 @@ class StudioController extends Controller
             'whipUrl' => $stream->whipUrl(),
             'organization' => $stream->organization,
             'listenUrl' => $listenUrl,
+            'broadcastAllowed' => $stream->organization?->allowsBroadcast() ?? true,
+            'billingUrl' => route('billing.plans'),
             'galleryUploadUrl' => URL::temporarySignedRoute(
                 'gallery.store',
                 now()->addHours(12),

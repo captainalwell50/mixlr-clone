@@ -20,6 +20,7 @@ Broadcaster (Studio WHIP or OBS RTMP) --> MediaMTX --HLS (+ optional CDN)--> Lis
 - Installable PWA (manifest + service worker) for creator and listener
 - CDN: set `MEDIAMTX_HLS_CDN_BASE` (see [deploy/azure/CDN.md](deploy/azure/CDN.md))
 - Registration is off by default (`REGISTRATION_ENABLED=false`)
+- **SaaS mode:** enable registration, creator onboarding (church / radio / event), Paystack subscriptions, and creator home at `/home`
 
 ## Requirements
 
@@ -88,7 +89,9 @@ Do **not** put MediaMTX on Azure App Service alone — WebRTC needs UDP and cust
 |----------|---------|
 | `APP_NAME` | Product name in UI |
 | `APP_URL` | Public site URL |
-| `REGISTRATION_ENABLED` | `false` for church default |
+| `REGISTRATION_ENABLED` | `false` for church default; `true` for SaaS self-serve signup |
+| `PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` | Paystack API keys (billing) |
+| `PAYSTACK_PLAN_STARTER` / `PAYSTACK_PLAN_PRO` | Paystack plan codes from dashboard |
 | `ADMIN_EMAIL` | Seeded admin |
 | `MEDIAMTX_WEBRTC_PUBLIC_BASE` | Public WHIP base (e.g. `https://stream.example.org/rtc`) |
 | `MEDIAMTX_HLS_PUBLIC_BASE` | Public HLS base (e.g. `https://stream.example.org/hls`) |
