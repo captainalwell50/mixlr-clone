@@ -671,11 +671,11 @@ a.stage-platform:hover {
 .portal-title {
     margin: 0;
     max-width: 44rem;
-    font-family: Syne, var(--font-sans);
+    font-family: 'Open Sans', var(--font-sans);
     font-size: clamp(1.85rem, 5.2vw, 2.85rem);
-    font-weight: 800;
-    line-height: 1.12;
-    letter-spacing: -0.035em;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
     color: var(--stage-cream);
     text-shadow: 0 2px 28px rgba(0, 0, 0, 0.45);
 }
