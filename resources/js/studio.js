@@ -44,7 +44,7 @@ const playlistMuteBtn = document.getElementById('playlist-mute');
 const OPUS_MAX_BITRATE = 510_000;
 const LAYOUT_STORAGE_KEY = 'studio-audio-layout';
 
-/** Raw interface capture — no browser AGC / NS / EC. */
+/** Raw interface capture — no browser AGC / NS / EC (desktop / USB interfaces). */
 const CLEAN_AUDIO = {
     channelCount: { ideal: 2 },
     sampleRate: { ideal: 48000 },
@@ -58,6 +58,23 @@ const CLEAN_AUDIO = {
     googHighpassFilter: false,
     googTypingNoiseDetection: false,
 };
+
+/** Simpler constraints for phones — strict CLEAN_AUDIO often fails on Android. */
+const MOBILE_AUDIO = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+};
+
+let micPrimed = false;
+
+function isMobileUa() {
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+}
+
+function audioCaptureConstraints() {
+    return isMobileUa() ? { ...MOBILE_AUDIO } : { ...CLEAN_AUDIO };
+}
 
 let pc = null;
 /** @type {string|null} */
@@ -211,11 +228,25 @@ function friendlyError(err) {
     if (!window.isSecureContext || /secure origin|insecure/i.test(msg)) {
         return `Studio needs HTTPS for the microphone. Open ${httpsStudioUrl()}`;
     }
-    if (name === 'NotAllowedError' || /permission|denied/i.test(msg)) {
-        return 'Microphone permission denied. Allow the mic in your browser settings and try again.';
+    if (
+        name === 'NotReadableError'
+        || name === 'AbortError'
+        || /Could not start|Device in use|in use|busy|TrackStartError/i.test(msg)
+    ) {
+        return isMobileUa()
+            ? 'Microphone is busy. Close WhatsApp (or Phone / Zoom / Meet), dismiss any chat bubbles or overlays, then tap Allow microphone again.'
+            : 'Microphone is busy in another app. Close that app and try again.';
+    }
+    if (name === 'NotAllowedError' || /permission|denied|dismissed/i.test(msg)) {
+        return isMobileUa()
+            ? 'Mic permission blocked. Close WhatsApp and any bubbles/overlays, then tap Allow microphone. If it still fails, open Chrome site settings → Microphone → Allow for this site.'
+            : 'Microphone permission denied. Allow the mic in your browser settings and try again.';
     }
     if (name === 'NotFoundError' || /requested device not found/i.test(msg)) {
         return 'Could not open that microphone. Pick another input, or reload and allow mic access.';
+    }
+    if (name === 'OverconstrainedError' || /constraint/i.test(msg)) {
+        return 'This device rejected the mic settings. Tap Allow microphone again, or try another browser.';
     }
     if (/WHIP|403|401|forbidden|publish secret|Not Found|<!DOCTYPE/i.test(msg)) {
         return 'Publish rejected or media proxy misconfigured. Confirm /rtc reaches MediaMTX (not Laravel).';
@@ -227,6 +258,13 @@ function friendlyError(err) {
         return 'Could not reach the WHIP endpoint. Check HTTPS, Caddy /rtc proxy, and MediaMTX.';
     }
     return msg || 'Could not go live.';
+}
+
+function setMicEnableVisible(show) {
+    const wrap = document.getElementById('mic-enable-wrap');
+    if (wrap) {
+        wrap.hidden = !show;
+    }
 }
 
 /** @returns {'mono' | 'stereo'} */
@@ -698,7 +736,7 @@ async function ensureMixer() {
  * @param {string} [deviceId]
  */
 async function openDevice(deviceId = '') {
-    const base = { ...CLEAN_AUDIO };
+    const base = audioCaptureConstraints();
     if (deviceId) {
         try {
             return await navigator.mediaDevices.getUserMedia({
@@ -716,7 +754,15 @@ async function openDevice(deviceId = '') {
             }
         }
     }
-    return navigator.mediaDevices.getUserMedia({ audio: base, video: false });
+    try {
+        return await navigator.mediaDevices.getUserMedia({ audio: base, video: false });
+    } catch (first) {
+        // Last resort on phones: bare audio track.
+        if (isMobileUa()) {
+            return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
+        throw first;
+    }
 }
 
 function disconnectMicGraph() {
@@ -1224,7 +1270,7 @@ async function publishWhip(stream) {
     silenceRemoteAudio(pc);
 
     try {
-        await track.applyConstraints(CLEAN_AUDIO);
+        await track.applyConstraints(audioCaptureConstraints());
     } catch {
         /* optional */
     }
@@ -1288,35 +1334,60 @@ async function publishWhip(stream) {
     await applyMaxAudioBitrate(pc);
 }
 
-async function primeMicrophone() {
+async function primeMicrophone({ interactive = false } = {}) {
     if (!window.isSecureContext) {
         setStatus(`Studio needs HTTPS for the microphone. Open ${httpsStudioUrl()}`);
+        setMicEnableVisible(false);
         if (btnStart) {
             btnStart.disabled = true;
         }
-        return;
+        return false;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
         setStatus('This browser does not support microphone capture.');
-        return;
+        setMicEnableVisible(false);
+        return false;
     }
+
+    // Mobile browsers often cannot show the permission dialog on page load,
+    // and Android blocks it when WhatsApp/bubbles/overlays hold the mic.
+    if (isMobileUa() && !interactive && !micPrimed) {
+        setMicEnableVisible(true);
+        setStatus(
+            'Tap Allow microphone to continue. If Android says it can’t ask for permission: close WhatsApp, dismiss chat bubbles/overlays, then try again.',
+        );
+        return false;
+    }
+
     try {
-        const priming = await navigator.mediaDevices.getUserMedia({
-            audio: CLEAN_AUDIO,
-            video: false,
-        });
+        setStatus('Requesting microphone…');
+        const priming = await openDevice(audioSelect?.value || '');
         for (const t of priming.getTracks()) {
             t.stop();
         }
+        micPrimed = true;
+        setMicEnableVisible(false);
         await loadDevices();
         setToggle(auxMuteBtn, auxMuted);
-        setStatus('Ready. Cue is off — Studio stays silent. Go on air when ready; use the listen link (or cue + headphones) to monitor.');
+        setStatus(
+            isMobileUa()
+                ? 'Microphone ready. Close other apps using the mic, then tap Go on air.'
+                : 'Ready. Cue is off — Studio stays silent. Go on air when ready; use the listen link (or cue + headphones) to monitor.',
+        );
+        return true;
     } catch (e) {
+        micPrimed = false;
+        setMicEnableVisible(true);
         setStatus(friendlyError(e));
+        return false;
     }
 }
 
-await primeMicrophone();
+document.getElementById('btn-enable-mic')?.addEventListener('click', async () => {
+    await primeMicrophone({ interactive: true });
+});
+
+void primeMicrophone({ interactive: false });
 
 if (navigator.mediaDevices && 'addEventListener' in navigator.mediaDevices) {
     navigator.mediaDevices.addEventListener('devicechange', loadDevices);
@@ -1342,6 +1413,13 @@ btnStart?.addEventListener('click', async () => {
     setStatus('Going on air…');
 
     try {
+        if (!micPrimed) {
+            const ok = await primeMicrophone({ interactive: true });
+            if (!ok) {
+                btnStart.disabled = false;
+                return;
+            }
+        }
         publishMode = 'mixer';
         await ensureMixer();
         await attachMicrophoneToMixer();

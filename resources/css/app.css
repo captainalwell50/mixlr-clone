@@ -4927,6 +4927,23 @@ a.stage-platform:hover {
     filter: brightness(1.05);
 }
 
+.mixer-mic-enable {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 0 0 0.65rem;
+    padding: 0.75rem 0.85rem;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in srgb, #d4a24c 40%, var(--mixer-line));
+    background: color-mix(in srgb, #d4a24c 10%, #161920);
+}
+.mixer-mic-enable[hidden] {
+    display: none;
+}
+.mixer-mic-enable .mixer-hint {
+    margin: 0;
+}
+
 .mixer-hint,
 .mixer-status {
     margin: 0;

@@ -263,6 +263,10 @@
                 <p class="mixer-hint">
                     Cue (headphones) is off by default — Studio stays silent. Under Master, set broadcast layout and cue output, then turn a channel’s CUE on. Master sets overall mix volume for Input 1, Input 2, and Playlist.
                 </p>
+                <div id="mic-enable-wrap" class="mixer-mic-enable" hidden>
+                    <button type="button" id="btn-enable-mic" class="mixer-add-sounds">Allow microphone</button>
+                    <p class="mixer-hint">On Android, close WhatsApp and any chat bubbles/overlays first if the permission dialog won’t appear.</p>
+                </div>
                 <p id="studio-status" class="mixer-status" role="status">Allow microphone access when prompted.</p>
                 <div class="mixer-listen-row">
                     <code id="listen-url" title="{{ $listenUrl }}">{{ $listenUrl }}</code>
