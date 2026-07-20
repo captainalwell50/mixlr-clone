@@ -410,7 +410,8 @@ function stopMeter() {
     }
     for (const el of [meterEl, micMeterEl, auxMeterEl, playlistMeterEl]) {
         if (el) {
-            el.style.height = '0%';
+            el.style.width = '0%';
+            el.style.height = '100%';
         }
     }
     if (meterLabel) {
@@ -435,7 +436,8 @@ function fillMeter(el, rms) {
         return;
     }
     const pct = Math.min(100, Math.round(rms * 220));
-    el.style.height = `${pct}%`;
+    el.style.width = `${pct}%`;
+    el.style.height = '100%';
 }
 
 function rmsFromAnalyser(node) {

@@ -36,114 +36,100 @@
         </section>
 
         <section class="mixer-board">
-            <div class="mixer-deck">
-                <div class="mixer-strips" id="mixer-strips">
-                    {{-- INPUT 1 (primary device) --}}
-                    <div class="mixer-strip" data-strip="mic" id="mic-channel">
-                        <p class="mixer-strip-label">INPUT 1</p>
-                        <div class="mixer-strip-body">
-                            <div class="mixer-strip-meter" aria-hidden="true">
-                                <div class="mixer-strip-meter-fill" id="mic-meter"></div>
-                            </div>
-                            <input
-                                id="mic-fader"
-                                class="mixer-fader"
-                                type="range"
-                                min="0"
-                                max="150"
-                                value="100"
-                                step="1"
-                                orient="vertical"
-                                aria-label="Input 1 level"
-                            >
-                        </div>
-                        <div class="mixer-strip-toggles">
-                            <button type="button" class="mixer-cue" id="mic-cue" aria-pressed="false" title="Cue in headphones (off by default)">
-                                <span class="sr-only">Cue input 1</span>
-                                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 3a4 4 0 0 0-4 4v4a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Zm-7 8a1 1 0 0 1 1 1 6 6 0 0 0 12 0 1 1 0 1 1 2 0 8 8 0 0 1-7 7.93V22h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.07A8 8 0 0 1 4 12a1 1 0 0 1 1-1Z"/></svg>
-                            </button>
-                            <button type="button" class="mixer-mute" id="mic-mute" aria-pressed="false" title="Mute input 1">
-                                <span class="sr-only">Mute input 1</span>
-                                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3.28 2.22 2.22 3.28l4.1 4.1A6.96 6.96 0 0 0 5 12a1 1 0 1 0 2 0 5 5 0 0 1 .4-1.96l1.6 1.6A4 4 0 0 0 12 17a3.98 3.98 0 0 0 2.36-.77l1.5 1.5A5.97 5.97 0 0 1 12 19a6 6 0 0 1-6-6H4a8 8 0 0 0 7 7.93V22H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-1.07a7.96 7.96 0 0 0 3.78-1.5l4.94 4.95 1.06-1.06L3.28 2.22ZM16.8 14.66l1.48 1.48A7.9 7.9 0 0 0 20 12a1 1 0 1 0-2 0c0 .96-.2 1.87-.56 2.66ZM9.17 6.99l5.7 5.7A4 4 0 0 0 16 11V7a4 4 0 0 0-6.83-.01Z"/></svg>
-                            </button>
-                        </div>
-                        <label class="sr-only" for="audio-input">Input 1 source</label>
-                        <select id="audio-input" class="mixer-source"></select>
+            <div class="mixer-deck" aria-label="Mixing console">
+                <div class="mixer-chassis">
+                    <div class="mixer-chassis-rail">
+                        <span class="mixer-chassis-title">Console</span>
+                        <span class="mixer-chassis-meta">Input 1 · Input 2 · Playlist · Master</span>
                     </div>
 
-                    {{-- INPUT 2 --}}
-                    <div class="mixer-strip" data-strip="aux" id="aux-channel">
-                        <p class="mixer-strip-label">INPUT 2</p>
-                        <div class="mixer-strip-body">
-                            <div class="mixer-strip-meter" aria-hidden="true">
-                                <div class="mixer-strip-meter-fill" id="aux-meter"></div>
+                    <div class="mixer-strips" id="mixer-strips">
+                        {{-- INPUT 1 --}}
+                        <div class="mixer-strip" data-strip="mic" id="mic-channel">
+                            <div class="mixer-scribble">
+                                <span class="mixer-ch-num">1</span>
+                                <span class="mixer-strip-label">INPUT 1</span>
                             </div>
-                            <input
-                                id="aux-fader"
-                                class="mixer-fader"
-                                type="range"
-                                min="0"
-                                max="150"
-                                value="100"
-                                step="1"
-                                orient="vertical"
-                                aria-label="Input 2 level"
-                            >
-                        </div>
-                        <div class="mixer-strip-toggles">
-                            <button type="button" class="mixer-cue" id="aux-cue" aria-pressed="false" title="Cue in headphones (off by default)">
-                                <span class="sr-only">Cue input 2</span>
-                                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 3a4 4 0 0 0-4 4v4a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Zm-7 8a1 1 0 0 1 1 1 6 6 0 0 0 12 0 1 1 0 1 1 2 0 8 8 0 0 1-7 7.93V22h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.07A8 8 0 0 1 4 12a1 1 0 0 1 1-1Z"/></svg>
-                            </button>
-                            <button type="button" class="mixer-mute is-active" id="aux-mute" aria-pressed="true" title="Mute input 2">
-                                <span class="sr-only">Mute input 2</span>
-                                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3.28 2.22 2.22 3.28l4.1 4.1A6.96 6.96 0 0 0 5 12a1 1 0 1 0 2 0 5 5 0 0 1 .4-1.96l1.6 1.6A4 4 0 0 0 12 17a3.98 3.98 0 0 0 2.36-.77l1.5 1.5A5.97 5.97 0 0 1 12 19a6 6 0 0 1-6-6H4a8 8 0 0 0 7 7.93V22H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-1.07a7.96 7.96 0 0 0 3.78-1.5l4.94 4.95 1.06-1.06L3.28 2.22ZM16.8 14.66l1.48 1.48A7.9 7.9 0 0 0 20 12a1 1 0 1 0-2 0c0 .96-.2 1.87-.56 2.66ZM9.17 6.99l5.7 5.7A4 4 0 0 0 16 11V7a4 4 0 0 0-6.83-.01Z"/></svg>
-                            </button>
-                        </div>
-                        <label class="sr-only" for="aux-input">Input 2 source</label>
-                        <select id="aux-input" class="mixer-source">
-                            <option value="">Select source</option>
-                        </select>
-                    </div>
-
-                    {{-- PLAYLIST --}}
-                    <div class="mixer-strip" data-strip="playlist" id="playlist-channel">
-                        <p class="mixer-strip-label">PLAYLIST</p>
-                        <div class="mixer-strip-body">
-                            <div class="mixer-strip-meter" aria-hidden="true">
-                                <div class="mixer-strip-meter-fill" id="playlist-meter"></div>
+                            <div class="mixer-meterbridge" aria-hidden="true">
+                                <div class="mixer-strip-meter">
+                                    <div class="mixer-strip-meter-fill" id="mic-meter"></div>
+                                </div>
                             </div>
-                            <input
-                                id="playlist-fader"
-                                class="mixer-fader"
-                                type="range"
-                                min="0"
-                                max="150"
-                                value="100"
-                                step="1"
-                                orient="vertical"
-                                aria-label="Playlist level"
-                            >
+                            <div class="mixer-strip-toggles">
+                                <button type="button" class="mixer-cue" id="mic-cue" aria-pressed="false" title="Cue in headphones">CUE</button>
+                                <button type="button" class="mixer-mute" id="mic-mute" aria-pressed="false" title="Mute input 1">M</button>
+                            </div>
+                            <div class="mixer-fader-well">
+                                <div class="mixer-fader-scale" aria-hidden="true">
+                                    <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
+                                </div>
+                                <input id="mic-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Input 1 level">
+                            </div>
+                            <label class="sr-only" for="audio-input">Input 1 source</label>
+                            <select id="audio-input" class="mixer-source"></select>
                         </div>
-                        <div class="mixer-strip-toggles">
-                            <button type="button" class="mixer-cue" id="playlist-cue" aria-pressed="false" title="Cue playlist (off by default)">
-                                <span class="sr-only">Cue playlist</span>
-                                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 3a4 4 0 0 0-4 4v4a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Zm-7 8a1 1 0 0 1 1 1 6 6 0 0 0 12 0 1 1 0 1 1 2 0 8 8 0 0 1-7 7.93V22h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.07A8 8 0 0 1 4 12a1 1 0 0 1 1-1Z"/></svg>
-                            </button>
-                            <button type="button" class="mixer-mute" id="playlist-mute" aria-pressed="false" title="Mute playlist">
-                                <span class="sr-only">Mute playlist</span>
-                                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3.28 2.22 2.22 3.28l4.1 4.1A6.96 6.96 0 0 0 5 12a1 1 0 1 0 2 0 5 5 0 0 1 .4-1.96l1.6 1.6A4 4 0 0 0 12 17a3.98 3.98 0 0 0 2.36-.77l1.5 1.5A5.97 5.97 0 0 1 12 19a6 6 0 0 1-6-6H4a8 8 0 0 0 7 7.93V22H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-1.07a7.96 7.96 0 0 0 3.78-1.5l4.94 4.95 1.06-1.06L3.28 2.22ZM16.8 14.66l1.48 1.48A7.9 7.9 0 0 0 20 12a1 1 0 1 0-2 0c0 .96-.2 1.87-.56 2.66ZM9.17 6.99l5.7 5.7A4 4 0 0 0 16 11V7a4 4 0 0 0-6.83-.01Z"/></svg>
-                            </button>
-                        </div>
-                        <p class="mixer-source mixer-source--static" id="playlist-count">No sounds</p>
-                    </div>
 
-                    {{-- MASTER OUT --}}
-                    <div class="mixer-strip mixer-strip--out" data-strip="out">
-                        <p class="mixer-strip-label">MASTER</p>
-                        <div class="mixer-strip-body">
-                            <div class="mixer-strip-meter mixer-strip-meter--out" aria-hidden="true">
-                                <div class="mixer-strip-meter-fill" id="level-meter"></div>
+                        {{-- INPUT 2 --}}
+                        <div class="mixer-strip" data-strip="aux" id="aux-channel">
+                            <div class="mixer-scribble">
+                                <span class="mixer-ch-num">2</span>
+                                <span class="mixer-strip-label">INPUT 2</span>
+                            </div>
+                            <div class="mixer-meterbridge" aria-hidden="true">
+                                <div class="mixer-strip-meter">
+                                    <div class="mixer-strip-meter-fill" id="aux-meter"></div>
+                                </div>
+                            </div>
+                            <div class="mixer-strip-toggles">
+                                <button type="button" class="mixer-cue" id="aux-cue" aria-pressed="false" title="Cue in headphones">CUE</button>
+                                <button type="button" class="mixer-mute is-active" id="aux-mute" aria-pressed="true" title="Mute input 2">M</button>
+                            </div>
+                            <div class="mixer-fader-well">
+                                <div class="mixer-fader-scale" aria-hidden="true">
+                                    <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
+                                </div>
+                                <input id="aux-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Input 2 level">
+                            </div>
+                            <label class="sr-only" for="aux-input">Input 2 source</label>
+                            <select id="aux-input" class="mixer-source">
+                                <option value="">Select source</option>
+                            </select>
+                        </div>
+
+                        {{-- PLAYLIST --}}
+                        <div class="mixer-strip" data-strip="playlist" id="playlist-channel">
+                            <div class="mixer-scribble">
+                                <span class="mixer-ch-num">3</span>
+                                <span class="mixer-strip-label">PLAYLIST</span>
+                            </div>
+                            <div class="mixer-meterbridge" aria-hidden="true">
+                                <div class="mixer-strip-meter">
+                                    <div class="mixer-strip-meter-fill" id="playlist-meter"></div>
+                                </div>
+                            </div>
+                            <div class="mixer-strip-toggles">
+                                <button type="button" class="mixer-cue" id="playlist-cue" aria-pressed="false" title="Cue playlist">CUE</button>
+                                <button type="button" class="mixer-mute" id="playlist-mute" aria-pressed="false" title="Mute playlist">M</button>
+                            </div>
+                            <div class="mixer-fader-well">
+                                <div class="mixer-fader-scale" aria-hidden="true">
+                                    <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
+                                </div>
+                                <input id="playlist-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Playlist level">
+                            </div>
+                            <p class="mixer-source mixer-source--static" id="playlist-count">No sounds</p>
+                        </div>
+
+                        {{-- MASTER --}}
+                        <div class="mixer-strip mixer-strip--out" data-strip="out">
+                            <div class="mixer-scribble">
+                                <span class="mixer-ch-num">M</span>
+                                <span class="mixer-strip-label">MASTER</span>
+                            </div>
+                            <div class="mixer-meterbridge" aria-hidden="true">
+                                <div class="mixer-strip-meter mixer-strip-meter--out">
+                                    <div class="mixer-strip-meter-fill" id="level-meter"></div>
+                                </div>
                             </div>
                             <div class="mixer-out-tools">
                                 <label class="mixer-sq" title="Output layout">
@@ -155,11 +141,11 @@
                                 </label>
                                 <span class="mixer-rec" id="meter-label" title="Mix level">—</span>
                             </div>
+                            <label class="sr-only" for="audio-output">Monitor output</label>
+                            <select id="audio-output" class="mixer-source">
+                                <option value="">Default output</option>
+                            </select>
                         </div>
-                        <label class="sr-only" for="audio-output">Monitor output</label>
-                        <select id="audio-output" class="mixer-source">
-                            <option value="">Default output</option>
-                        </select>
                     </div>
                 </div>
             </div>
