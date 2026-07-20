@@ -915,11 +915,33 @@ function wireFileChannelAudio(channel) {
     if (!audioCtx || !playlistGain || channel.source) {
         return;
     }
+    // MediaElementSource takes over element output — do not mute the element
+    // (muted/volume=0 silences the Web Audio graph in Chromium).
+    channel.audio.muted = false;
+    channel.audio.volume = 1;
     channel.source = audioCtx.createMediaElementSource(channel.audio);
     channel.gain = audioCtx.createGain();
     channel.gain.gain.value = 1;
     channel.source.connect(channel.gain);
     channel.gain.connect(playlistGain);
+}
+
+function setFileChannelReady(channel, ready, detail = '') {
+    channel.ready = ready;
+    const statusEl = channel.card.querySelector('[data-ready-status]');
+    const playBtn = channel.card.querySelector('[data-play]');
+    const restartBtn = channel.card.querySelector('[data-restart]');
+    if (statusEl) {
+        statusEl.textContent = ready ? (detail || 'Ready') : (detail || 'Loading…');
+        statusEl.classList.toggle('is-ready', ready);
+        statusEl.classList.toggle('is-loading', !ready);
+    }
+    if (playBtn) {
+        playBtn.disabled = !ready;
+    }
+    if (restartBtn) {
+        restartBtn.disabled = !ready;
+    }
 }
 
 function removeFileChannel(id) {
@@ -943,24 +965,32 @@ function removeFileChannel(id) {
 function addFileChannel(file) {
     const id = `file-${++fileChannelSeq}`;
     const objectUrl = URL.createObjectURL(file);
-    const audio = new Audio(objectUrl);
+    const audio = new Audio();
     audio.loop = false;
     audio.preload = 'auto';
-    audio.muted = true;
-    audio.volume = 0;
+    // Keep audible into the mixer graph; MediaElementSource prevents speaker double-play.
+    audio.muted = false;
+    audio.volume = 1;
+    audio.src = objectUrl;
+
+    const sizeLabel = file.size >= 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.max(1, Math.round(file.size / 1024))} KB`;
 
     const card = document.createElement('div');
-    card.className = 'mixer-track';
+    card.className = 'mixer-track is-loading';
     card.dataset.id = id;
     card.innerHTML = `
         <div class="mixer-track-head">
             <span class="mixer-track-name" title=""></span>
             <button type="button" class="mixer-track-remove" data-remove>Remove</button>
         </div>
+        <p class="mixer-track-status is-loading" data-ready-status>Loading…</p>
+        <p class="mixer-track-meta" data-meta>${sizeLabel}</p>
         <div class="mixer-track-controls">
-            <button type="button" data-play>Play</button>
+            <button type="button" data-play disabled>Play</button>
             <button type="button" data-pause>Pause</button>
-            <button type="button" data-restart>Restart</button>
+            <button type="button" data-restart disabled>Restart</button>
         </div>
     `;
     const nameEl = card.querySelector('.mixer-track-name');
@@ -980,14 +1010,50 @@ function addFileChannel(file) {
         gain: null,
         card,
         duration: 0,
+        ready: false,
     };
     fileChannels.set(id, channel);
     updatePlaylistMeta();
+    setFileChannelReady(channel, false, 'Loading…');
+
+    const markReady = () => {
+        if (channel.ready) {
+            return;
+        }
+        channel.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+        const dur = channel.duration > 0
+            ? `${Math.floor(channel.duration / 60)}:${String(Math.floor(channel.duration % 60)).padStart(2, '0')}`
+            : '';
+        const metaEl = card.querySelector('[data-meta]');
+        if (metaEl) {
+            metaEl.textContent = dur ? `${dur} · ${sizeLabel}` : sizeLabel;
+        }
+        card.classList.remove('is-loading');
+        card.classList.add('is-ready');
+        setFileChannelReady(channel, true, 'Ready');
+        updatePlaylistMeta();
+        setStatus(`“${file.name}” ready — press Play (turn on Playlist CUE + headphones to monitor).`);
+    };
 
     audio.addEventListener('loadedmetadata', () => {
         channel.duration = audio.duration || 0;
         updatePlaylistMeta();
+        if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+            markReady();
+        } else {
+            setFileChannelReady(channel, false, 'Buffering…');
+        }
     });
+    audio.addEventListener('canplay', markReady);
+    audio.addEventListener('canplaythrough', markReady);
+    audio.addEventListener('error', () => {
+        setFileChannelReady(channel, false, 'Failed to load');
+        card.classList.add('is-error');
+        setStatus(`Could not load “${file.name}”. Try another file (mp3/wav/m4a).`);
+    });
+
+    // Kick decode for local blob URLs.
+    void audio.load();
 
     if (audioCtx && playlistGain) {
         wireFileChannelAudio(channel);
@@ -998,10 +1064,19 @@ function addFileChannel(file) {
     });
 
     card.querySelector('[data-play]')?.addEventListener('click', async () => {
+        if (!channel.ready) {
+            setStatus('Still loading this sound — wait until it shows Ready.');
+            return;
+        }
         try {
             await ensureMixer();
             wireFileChannelAudio(channel);
             await channel.audio.play();
+            setStatus(
+                playlistCueOn
+                    ? `Playing “${file.name}” in the mix (cue on).`
+                    : `Playing “${file.name}” in the mix. Enable Playlist CUE + headphones to hear it in Studio.`,
+            );
         } catch (e) {
             setStatus(e instanceof Error ? e.message : 'Could not play file.');
         }
@@ -1012,6 +1087,10 @@ function addFileChannel(file) {
     });
 
     card.querySelector('[data-restart]')?.addEventListener('click', async () => {
+        if (!channel.ready) {
+            setStatus('Still loading this sound — wait until it shows Ready.');
+            return;
+        }
         try {
             await ensureMixer();
             wireFileChannelAudio(channel);
@@ -1038,11 +1117,7 @@ fileInput?.addEventListener('change', () => {
     }
     fileInput.value = '';
     if (files.length) {
-        setStatus(
-            isLive
-                ? 'Sound added. Press Play to include it in the live mix.'
-                : 'Sound ready. Press Play when you want it in the mix, then Go on air.',
-        );
+        setStatus(`Adding ${files.length} sound${files.length === 1 ? '' : 's'}… wait for Ready, then press Play.`);
     }
 });
 
