@@ -8,6 +8,12 @@ if (root) {
     const listenerEl = document.getElementById('listener-count');
     const heartCountEl = document.getElementById('heart-count');
     const heartBtn = document.getElementById('btn-heart');
+    const shareBtn = document.getElementById('btn-share');
+    const infoBtn = document.getElementById('btn-info');
+    const infoPanel = document.getElementById('portal-info');
+    const chatToggle = document.getElementById('btn-chat-toggle');
+    const chatClose = document.getElementById('btn-chat-close');
+    const layout = document.getElementById('portal-layout');
 
     let sessionKey = localStorage.getItem('listener_sid') || '';
 
@@ -45,7 +51,11 @@ if (root) {
         }
     }
 
-    heartBtn?.addEventListener('click', async () => {
+    heartBtn?.addEventListener('click', async (ev) => {
+        if (heartBtn.tagName === 'A') {
+            return;
+        }
+        ev.preventDefault();
         if (!heartUrl || heartBtn.dataset.hearted === '1') {
             return;
         }
@@ -67,14 +77,57 @@ if (root) {
             }
             const data = await res.json();
             heartBtn.dataset.hearted = '1';
-            heartBtn.textContent = '♥ Hearted';
-            heartBtn.classList.add('is-on', 'text-rose-300');
+            heartBtn.classList.add('is-on');
             if (heartCountEl && data.hearts != null) {
                 heartCountEl.textContent = String(data.hearts);
             }
         } catch {
             /* ignore */
         }
+    });
+
+    shareBtn?.addEventListener('click', async () => {
+        const url = shareBtn.dataset.shareUrl || window.location.href;
+        const title = shareBtn.dataset.shareTitle || document.title;
+        try {
+            if (navigator.share) {
+                await navigator.share({ title, url });
+                return;
+            }
+            await navigator.clipboard.writeText(url);
+            shareBtn.classList.add('is-on');
+            window.setTimeout(() => shareBtn.classList.remove('is-on'), 1600);
+        } catch {
+            /* ignore cancel / clipboard errors */
+        }
+    });
+
+    infoBtn?.addEventListener('click', () => {
+        if (!infoPanel) {
+            return;
+        }
+        const open = infoPanel.hasAttribute('hidden');
+        if (open) {
+            infoPanel.removeAttribute('hidden');
+        } else {
+            infoPanel.setAttribute('hidden', '');
+        }
+        infoBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        infoBtn.classList.toggle('is-on', open);
+    });
+
+    function setChatOpen(open) {
+        layout?.classList.toggle('chat-open', open);
+        chatToggle?.classList.toggle('is-on', open);
+    }
+
+    chatToggle?.addEventListener('click', () => {
+        setChatOpen(!layout?.classList.contains('chat-open'));
+        document.getElementById('portal-chat')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    chatClose?.addEventListener('click', () => {
+        setChatOpen(false);
     });
 
     void beat();

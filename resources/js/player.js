@@ -104,6 +104,8 @@ export function bindStagePlayer(audio) {
     const btn = document.getElementById('btn-play');
     const wave = document.getElementById('stage-wave');
     const playShell = document.getElementById('stage-play-shell');
+    const volumeBtn = document.getElementById('btn-volume');
+    const waveToggle = document.getElementById('btn-wave-toggle');
 
     ensureBars(wave);
 
@@ -122,6 +124,23 @@ export function bindStagePlayer(audio) {
             } else {
                 audio.pause();
             }
+        });
+
+        volumeBtn?.addEventListener('click', () => {
+            audio.muted = !audio.muted;
+            volumeBtn.classList.toggle('is-muted', audio.muted);
+            volumeBtn.setAttribute('aria-label', audio.muted ? 'Unmute' : 'Mute');
+            const vol = volumeBtn.querySelector('.icon-volume');
+            const muted = volumeBtn.querySelector('.icon-muted');
+            vol?.classList.toggle('hidden', audio.muted);
+            muted?.classList.toggle('hidden', !audio.muted);
+        });
+
+        waveToggle?.addEventListener('click', () => {
+            const on = waveToggle.getAttribute('aria-pressed') !== 'true';
+            waveToggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+            waveToggle.classList.toggle('is-on', on);
+            wave?.classList.toggle('is-hidden', !on);
         });
     }
 

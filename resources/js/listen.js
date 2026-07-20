@@ -75,9 +75,9 @@ function updateBroadcastBadge(live) {
 
     if (live) {
         badge.innerHTML =
-            '<span class="live-dot inline-block h-1.5 w-1.5 rounded-full bg-current"></span> Live';
+            '<span class="live-dot" aria-hidden="true"></span> Live';
     } else {
-        badge.textContent = 'Offline';
+        badge.textContent = badge.classList.contains('portal-badge') ? 'Offline' : 'Offline';
     }
 }
 
