@@ -4442,6 +4442,22 @@ a.stage-platform:hover {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.3rem;
+    min-height: 1.7rem;
+}
+
+.mixer-strip-toggles--master {
+    align-items: stretch;
+}
+
+.mixer-sq--inline {
+    margin: 0;
+    min-width: 0;
+}
+.mixer-sq--inline select {
+    width: 100%;
+    min-height: 1.7rem;
+    font-size: 0.58rem;
+    padding: 0.2rem 0.15rem;
 }
 
 .mixer-cue,
@@ -4494,23 +4510,6 @@ a.stage-platform:hover {
     padding: 0.35rem 0.2rem;
 }
 
-.mixer-out-tools {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: center;
-    gap: 0.35rem;
-    padding: 0.35rem 0.25rem;
-    border-radius: 0.35rem;
-    background: linear-gradient(180deg, #0d0f14, #181c24);
-    border: 1px solid rgba(0, 0, 0, 0.55);
-}
-
-.mixer-out-tools--compact {
-    flex: 0 0 auto;
-    min-height: 0;
-}
-
 .mixer-sq {
     display: flex;
     flex-direction: column;
@@ -4536,11 +4535,11 @@ a.stage-platform:hover {
     min-height: 1.7rem;
     border-radius: 0.25rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    font-size: 0.68rem;
+    font-size: 0.58rem;
     font-weight: 800;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     color: #9aa3b5;
-    background: #0a0c10;
+    background: linear-gradient(180deg, #2a2f3a, #171b23);
 }
 
 .mixer-playlist {

@@ -120,7 +120,7 @@
                             <p class="mixer-source mixer-source--static" id="playlist-count">No sounds</p>
                         </div>
 
-                        {{-- MASTER --}}
+                        {{-- MASTER — same strip rhythm as Input 1/2/Playlist --}}
                         <div class="mixer-strip mixer-strip--out" data-strip="out">
                             <div class="mixer-scribble">
                                 <span class="mixer-ch-num">M</span>
@@ -131,9 +131,8 @@
                                     <div class="mixer-strip-meter-fill" id="level-meter"></div>
                                 </div>
                             </div>
-                            <div class="mixer-out-tools mixer-out-tools--compact">
-                                <label class="mixer-sq" title="Output layout">
-                                    <span>Layout</span>
+                            <div class="mixer-strip-toggles mixer-strip-toggles--master">
+                                <label class="mixer-sq mixer-sq--inline" title="Output layout">
                                     <select id="audio-layout" aria-label="Output layout">
                                         <option value="mono" selected>Mono</option>
                                         <option value="stereo">Stereo</option>
