@@ -7,6 +7,8 @@ const audio = document.getElementById('stream-audio');
 const statusEl = document.getElementById('stream-status');
 
 const STATUS_POLL_MS = 5000;
+const DISCONNECT_GRACE_MS = 8000;
+const OFFLINE_CONFIRM_POLLS = 2;
 
 /** @type {import('hls.js').default | null} */
 let hls = null;
@@ -15,8 +17,10 @@ let pc = null;
 /** @type {string|null} */
 let whepResourceUrl = null;
 let retryTimer = null;
+let disconnectTimer = null;
 let statusPollTimer = null;
 let startingPlayback = false;
+let offlinePollStreak = 0;
 /** @type {ReturnType<typeof bindStagePlayer> | null} */
 let stagePlayer = null;
 
@@ -47,6 +51,21 @@ function clearRetry() {
     }
 }
 
+function clearDisconnectGrace() {
+    if (disconnectTimer) {
+        window.clearTimeout(disconnectTimer);
+        disconnectTimer = null;
+    }
+}
+
+function isPeerHealthy() {
+    return Boolean(
+        pc &&
+        (pc.connectionState === 'connected' || pc.connectionState === 'connecting') &&
+        audio?.srcObject,
+    );
+}
+
 function scheduleRetry(reason) {
     if (retryTimer) {
         return;
@@ -56,11 +75,58 @@ function scheduleRetry(reason) {
         setStatus(reason);
         return;
     }
+    // Don't tear down a connection that already recovered.
+    if (isPeerHealthy() || (audio && !audio.paused && !audio.ended && (audio.srcObject || audio.src))) {
+        return;
+    }
     setStatus(reason);
     retryTimer = window.setTimeout(() => {
         retryTimer = null;
+        if (isPeerHealthy()) {
+            setStatus(isMarkedLive() ? 'On air' : 'Playing');
+            return;
+        }
         void startPlayback();
     }, 4000);
+}
+
+function handlePeerConnectionChange() {
+    if (!pc) {
+        return;
+    }
+
+    const state = pc.connectionState;
+    if (state === 'connected') {
+        clearDisconnectGrace();
+        clearRetry();
+        setStatus(isMarkedLive() ? 'On air' : 'Playing');
+        return;
+    }
+
+    if (state === 'connecting' || state === 'new') {
+        return;
+    }
+
+    // Brief ICE blips often report "disconnected" then recover — wait before reconnecting.
+    if (state === 'disconnected') {
+        if (disconnectTimer) {
+            return;
+        }
+        setStatus('Connection unstable — holding…');
+        disconnectTimer = window.setTimeout(() => {
+            disconnectTimer = null;
+            if (!pc || pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
+                return;
+            }
+            scheduleRetry(waitingMessage());
+        }, DISCONNECT_GRACE_MS);
+        return;
+    }
+
+    if (state === 'failed' || state === 'closed') {
+        clearDisconnectGrace();
+        scheduleRetry(waitingMessage());
+    }
 }
 
 function updateBroadcastBadge(live) {
@@ -84,6 +150,8 @@ function updateBroadcastBadge(live) {
 
 async function applyOffline() {
     clearRetry();
+    clearDisconnectGrace();
+    offlinePollStreak = 0;
     if (root) {
         root.dataset.streamStatus = 'offline';
     }
@@ -95,10 +163,14 @@ async function applyOffline() {
 }
 
 async function applyLive() {
+    offlinePollStreak = 0;
     if (root) {
         root.dataset.streamStatus = 'live';
     }
     updateBroadcastBadge(true);
+    if (isPeerHealthy()) {
+        return;
+    }
     void startPlayback();
 }
 
@@ -123,14 +195,21 @@ async function refreshStreamStatus() {
         const wasLive = isMarkedLive();
 
         if (wasLive && !live) {
+            // Require consecutive offline polls so a blip does not kill audio.
+            offlinePollStreak += 1;
+            if (offlinePollStreak < OFFLINE_CONFIRM_POLLS) {
+                return true;
+            }
             await applyOffline();
         } else if (!wasLive && live) {
+            offlinePollStreak = 0;
             await applyLive();
         } else if (root) {
+            offlinePollStreak = live ? 0 : offlinePollStreak;
             root.dataset.streamStatus = live ? 'live' : 'offline';
         }
 
-        return live;
+        return live || (wasLive && offlinePollStreak > 0 && offlinePollStreak < OFFLINE_CONFIRM_POLLS);
     } catch {
         return isMarkedLive();
     }
@@ -217,18 +296,7 @@ async function startWhep(whepUrl) {
         });
     };
 
-    pc.onconnectionstatechange = () => {
-        if (!pc) {
-            return;
-        }
-        if (pc.connectionState === 'connected') {
-            setStatus(isMarkedLive() ? 'On air' : 'Playing');
-            return;
-        }
-        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-            scheduleRetry(waitingMessage());
-        }
-    };
+    pc.onconnectionstatechange = () => handlePeerConnectionChange();
 
     const offer = await pc.createOffer();
     // Prefer stereo Opus on the receive side when the browser offers it.
@@ -348,6 +416,12 @@ async function startPlayback() {
         return;
     }
 
+    // Already listening — do not tear down a healthy session.
+    if (isPeerHealthy()) {
+        setStatus(isMarkedLive() ? 'On air' : 'Playing');
+        return;
+    }
+
     if (!stagePlayer) {
         stagePlayer = bindStagePlayer(audio);
     }
@@ -369,6 +443,7 @@ async function startPlayback() {
 
     startingPlayback = true;
     clearRetry();
+    clearDisconnectGrace();
     stagePlayer.enable();
     setStatus(isMarkedLive() ? 'Connecting…' : 'Waiting for the broadcast to start. This page will keep trying.');
 
@@ -401,6 +476,7 @@ async function startPlayback() {
 
 window.addEventListener('beforeunload', () => {
     clearRetry();
+    clearDisconnectGrace();
     if (statusPollTimer) {
         window.clearTimeout(statusPollTimer);
         statusPollTimer = null;
