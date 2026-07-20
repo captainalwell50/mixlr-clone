@@ -9,7 +9,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="preconnect" href="https://fonts.bunny.net">
-    <link href="https://fonts.bunny.net/css?family=fraunces:500,600|source-sans-3:400,500,600" rel="stylesheet" />
+    <link href="https://fonts.bunny.net/css?family=fraunces:500,600|source-sans-3:400,500,600|syne:600,700,800" rel="stylesheet" />
     <title>@yield('title', config('app.name', 'Live Mix Audio'))</title>
     @vite(['resources/css/app.css', 'resources/js/pwa.js'])
     @yield('vite')
