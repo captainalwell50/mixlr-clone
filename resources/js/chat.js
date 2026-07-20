@@ -7,20 +7,62 @@ if (root) {
     const bodyEl = document.getElementById('chat-body');
     const pollUrl = root.dataset.pollUrl;
     const postUrl = root.dataset.postUrl;
+    const selfName = (root.dataset.selfName || '').trim().toLowerCase();
     const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
     let lastId = 0;
+
+    function initials(name) {
+        const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) {
+            return '?';
+        }
+        if (parts.length === 1) {
+            return parts[0].slice(0, 2).toUpperCase();
+        }
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+
+    function formatTime(iso) {
+        if (!iso) {
+            return '';
+        }
+        try {
+            return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        } catch {
+            return '';
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;');
+    }
 
     function appendMessage(msg) {
         if (!listEl || msg.id <= lastId) {
             return;
         }
         lastId = Math.max(lastId, msg.id);
+        listEl.querySelector('.wa-empty')?.remove();
+        const mine = selfName !== '' && String(msg.name || '').trim().toLowerCase() === selfName;
         const row = document.createElement('div');
-        row.className = 'text-sm';
-        row.innerHTML = `<span class="font-medium text-emerald-300/90"></span><span class="text-zinc-500"> · </span><span class="text-zinc-200"></span>`;
-        row.children[0].textContent = msg.name;
-        row.children[2].textContent = msg.body;
+        row.className = `wa-msg ${mine ? 'is-mine' : 'is-theirs'}`;
+        row.innerHTML = `
+            ${mine ? '' : `<span class="wa-avatar" aria-hidden="true">${escapeHtml(initials(msg.name))}</span>`}
+            <div class="wa-bubble">
+                ${mine ? '' : `<p class="wa-name">${escapeHtml(msg.name)}</p>`}
+                <p class="wa-body"></p>
+                <span class="wa-meta">
+                    <time>${escapeHtml(formatTime(msg.at))}</time>
+                    ${mine ? '<span class="wa-ticks" aria-hidden="true">✓✓</span>' : ''}
+                </span>
+            </div>
+        `;
+        row.querySelector('.wa-body').textContent = msg.body;
         listEl.appendChild(row);
         listEl.scrollTop = listEl.scrollHeight;
     }
@@ -35,7 +77,7 @@ if (root) {
             }
             const data = await res.json();
             if (data.enabled === false && listEl) {
-                listEl.innerHTML = '<p class="text-sm text-zinc-500">Chat is off for this event.</p>';
+                listEl.innerHTML = '<p class="wa-empty">Chat is off for this broadcast.</p>';
                 return;
             }
             for (const msg of data.messages || []) {
@@ -51,6 +93,10 @@ if (root) {
         const body = bodyEl?.value?.trim();
         if (!body) {
             return;
+        }
+        const sendBtn = formEl.querySelector('button[type="submit"]');
+        if (sendBtn) {
+            sendBtn.disabled = true;
         }
         try {
             const res = await fetch(postUrl, {
@@ -78,9 +124,14 @@ if (root) {
             }
             if (bodyEl) {
                 bodyEl.value = '';
+                bodyEl.focus();
             }
         } catch {
             alert('Could not send message.');
+        } finally {
+            if (sendBtn) {
+                sendBtn.disabled = false;
+            }
         }
     });
 

@@ -584,13 +584,11 @@ a.stage-platform:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     text-align: center;
     min-width: 0;
     max-width: 40rem;
     margin: 0 auto;
     width: 100%;
-    min-height: min(62dvh, 36rem);
 }
 
 .portal-side {
@@ -602,16 +600,38 @@ a.stage-platform:hover {
     min-width: 0;
 }
 
+.portal-art {
+    width: min(100%, 22rem);
+    aspect-ratio: 1;
+    margin-inline: auto;
+    border-radius: 0.85rem;
+    background: #1a1a1a center/cover no-repeat;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.portal-chat-slot {
+    width: min(100%, 22rem);
+    height: min(72vw, 22rem);
+    max-height: 22rem;
+    min-height: 16rem;
+    margin-inline: auto;
+    text-align: left;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.portal-chat-slot .wa-messages {
+    min-height: 0;
+}
+
 .portal-title {
-    margin: 0;
+    margin: 1.25rem 0 0;
     max-width: 36rem;
     font-family: var(--font-display);
-    font-size: clamp(1.45rem, 3.6vw, 2rem);
+    font-size: clamp(1.35rem, 3.4vw, 1.85rem);
     font-weight: 600;
     line-height: 1.2;
     letter-spacing: -0.02em;
     color: var(--stage-cream);
-    text-shadow: 0 2px 28px rgba(0, 0, 0, 0.45);
 }
 
 .portal-badges {
@@ -748,10 +768,62 @@ a.stage-platform:hover {
 }
 
 .portal-gallery-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.55rem;
     width: 100%;
+}
+
+.portal-gallery-viewport {
+    overflow: hidden;
+    width: 100%;
+    border-radius: 0.65rem;
+}
+
+.portal-gallery-track {
+    display: flex;
+    width: 100%;
+    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+}
+
+.portal-gallery-page {
+    flex: 0 0 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+@media (min-width: 960px) {
+    .portal-gallery-page {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.portal-gallery-dots {
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+    margin-top: 0.65rem;
+}
+
+.portal-gallery-dots[hidden] {
+    display: none !important;
+}
+
+.portal-gallery-dots button {
+    width: 0.45rem;
+    height: 0.45rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--stage-cream) 28%, transparent);
+    cursor: pointer;
+    transition: width 0.2s ease, background 0.2s ease;
+}
+
+.portal-gallery-dots button.is-active {
+    width: 1.1rem;
+    background: var(--stage-accent);
 }
 
 .portal-gallery-item {
@@ -1062,53 +1134,290 @@ a.stage-platform:hover {
         max-width: 22rem;
         margin-inline: auto;
     }
-    .portal-layout.has-chat .portal-rail {
-        display: none;
-    }
-    .portal-layout.has-chat.chat-open .portal-rail {
-        display: flex;
-        position: fixed;
-        inset: auto 0.75rem 0.75rem 0.75rem;
-        z-index: 40;
-        max-height: min(70dvh, 28rem);
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
-    }
-    .portal-rail-close {
-        display: inline-flex;
-    }
 }
 
-/* ——— Chat (legacy stacked + cinema rail) ——— */
+/* ——— Chat (WhatsApp-style rail) ——— */
 .stage-chat {
     margin-top: auto;
     padding-top: 1.75rem;
 }
 
-.stage-chat-panel {
-    border-top: 1px solid color-mix(in srgb, var(--stage-cream) 12%, transparent);
-    padding-top: 1rem;
-}
-
-.stage-rail {
+.stage-rail,
+.wa-chat {
+    --wa-header: #075e54;
+    --wa-header-deep: #054c44;
+    --wa-mine: #dcf8c6;
+    --wa-theirs: #ffffff;
+    --wa-ink: #111b21;
+    --wa-muted: #667781;
+    --wa-composer: #f0f2f5;
+    --wa-send: #25d366;
     display: flex;
     flex-direction: column;
-    min-height: 16rem;
-    max-height: min(70dvh, 36rem);
-    padding: 1.15rem 1.2rem 1.2rem;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--stage-cream) 12%, transparent);
-    border-radius: 1.1rem;
-    background: color-mix(in srgb, rgba(8, 12, 10, 0.72) 88%, transparent);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    border-radius: 0.85rem;
+    background: #0b141a;
 }
 
-@media (min-width: 960px) {
-    .stage-rail {
-        max-height: min(78dvh, 42rem);
-        min-height: 22rem;
-        margin-bottom: 0.25rem;
+.wa-header {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem 0.85rem;
+    background: linear-gradient(180deg, var(--wa-header) 0%, var(--wa-header-deep) 100%);
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.wa-header-avatar {
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 999px;
+    object-fit: cover;
+    background: color-mix(in srgb, #fff 18%, transparent);
+    display: grid;
+    place-items: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.wa-header-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.wa-header-copy h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wa-header-copy p {
+    margin: 0.1rem 0 0;
+    font-size: 0.72rem;
+    color: color-mix(in srgb, #fff 78%, transparent);
+}
+
+.wa-header .portal-rail-close {
+    color: #fff;
+    opacity: 0.9;
+}
+
+.wa-messages {
+    position: relative;
+    margin: 0;
+    display: flex;
+    flex: 1;
+    min-height: 10rem;
+    flex-direction: column;
+    gap: 0.35rem;
+    overflow-y: auto;
+    padding: 0.85rem 0.7rem 1rem;
+    background-color: #0b141a;
+    background-image:
+        radial-gradient(circle at 20% 18%, color-mix(in srgb, var(--stage-accent) 14%, transparent) 0 1px, transparent 1.5px),
+        radial-gradient(circle at 70% 40%, color-mix(in srgb, #25d366 10%, transparent) 0 1px, transparent 1.5px),
+        radial-gradient(circle at 40% 75%, color-mix(in srgb, #fff 6%, transparent) 0 1px, transparent 1.5px);
+    background-size: 18px 18px, 22px 22px, 16px 16px;
+    scrollbar-width: thin;
+}
+
+.wa-empty {
+    margin: auto;
+    padding: 0.75rem 1rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, #182229 92%, transparent);
+    color: #8696a0;
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.wa-msg {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.4rem;
+    max-width: 92%;
+    animation: wa-pop 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes wa-pop {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
     }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.wa-msg.is-mine {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+}
+
+.wa-msg.is-theirs {
+    align-self: flex-start;
+}
+
+.wa-avatar {
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(145deg, #128c7e, #075e54);
+}
+
+.wa-bubble {
+    position: relative;
+    max-width: 100%;
+    padding: 0.4rem 0.55rem 0.3rem 0.65rem;
+    border-radius: 0.7rem;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+}
+
+.wa-msg.is-theirs .wa-bubble {
+    background: var(--wa-theirs);
+    color: var(--wa-ink);
+    border-top-left-radius: 0.2rem;
+}
+
+.wa-msg.is-mine .wa-bubble {
+    background: var(--wa-mine);
+    color: var(--wa-ink);
+    border-top-right-radius: 0.2rem;
+}
+
+.wa-name {
+    margin: 0 0 0.15rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #128c7e;
+}
+
+.wa-body {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.wa-meta {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.15rem;
+    font-size: 0.65rem;
+    color: var(--wa-muted);
+}
+
+.wa-ticks {
+    color: #53bdeb;
+    letter-spacing: -0.08em;
+    font-size: 0.75rem;
+    line-height: 1;
+}
+
+.wa-composer,
+.wa-chat .stage-chat-input {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.6rem 0.65rem;
+    background: #1f2c34;
+    flex-shrink: 0;
+}
+
+.wa-composer input,
+.wa-chat .stage-chat-input input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    border-radius: 999px;
+    background: #2a3942;
+    padding: 0.65rem 1rem;
+    font-size: 0.9rem;
+    color: #e9edef;
+    outline: none;
+}
+
+.wa-composer input::placeholder,
+.wa-chat .stage-chat-input input::placeholder {
+    color: #8696a0;
+}
+
+.wa-composer input:focus,
+.wa-chat .stage-chat-input input:focus {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--wa-send) 35%, transparent);
+}
+
+.wa-composer button,
+.wa-chat .stage-chat-input button {
+    width: 2.6rem;
+    height: 2.6rem;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 999px;
+    background: var(--wa-send);
+    color: #fff;
+    font-size: 0;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M2.01 21L23 12 2.01 3 2 10l15 2-15 2z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 55% 50%;
+    background-size: 1.15rem;
+    transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.wa-composer button:hover,
+.wa-chat .stage-chat-input button:hover {
+    filter: brightness(1.08);
+    transform: scale(1.04);
+}
+
+.wa-composer button:disabled,
+.wa-chat .stage-chat-input button:disabled {
+    opacity: 0.55;
+    cursor: wait;
+    transform: none;
+}
+
+.wa-login {
+    margin: 0;
+    padding: 0.85rem 1rem;
+    background: #1f2c34;
+    color: #8696a0;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.wa-login a {
+    color: var(--wa-send);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.wa-login a:hover {
+    text-decoration: underline;
 }
 
 .stage-chat-label {
@@ -1128,10 +1437,6 @@ a.stage-platform:hover {
     flex-direction: column;
     gap: 0.5rem;
     overflow-y: auto;
-}
-
-.stage-rail .stage-chat-messages {
-    max-height: none;
 }
 
 .stage-chat-form {
@@ -1157,11 +1462,6 @@ a.stage-platform:hover {
     margin-top: 0.75rem;
     display: flex;
     gap: 0.5rem;
-}
-
-.stage-rail .stage-chat-input,
-.stage-chat-form .stage-chat-input {
-    margin-top: 0;
 }
 
 .stage-chat-input input {

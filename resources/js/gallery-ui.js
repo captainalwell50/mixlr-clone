@@ -1,10 +1,15 @@
 /**
- * Listener gallery grid + lightbox carousel.
+ * Listener gallery: paged viewport (4 desktop / 1 mobile) + auto-scroll + lightbox.
  */
 
 /** @type {{ id: string, url: string, caption: string }[]} */
 let galleryItems = [];
 let lightboxIndex = 0;
+let pageIndex = 0;
+let autoTimer = 0;
+let resizeBound = false;
+let lastPageSize = 0;
+let resizeTimer = 0;
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -12,6 +17,15 @@ function escapeHtml(value) {
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;');
+}
+
+function pageSize() {
+    return window.matchMedia('(max-width: 959px)').matches ? 1 : 4;
+}
+
+function pageCount() {
+    const size = pageSize();
+    return Math.max(1, Math.ceil(galleryItems.length / size));
 }
 
 function ensureLightbox() {
@@ -88,6 +102,7 @@ export function openLightbox(index) {
     const root = ensureLightbox();
     root.hidden = false;
     document.body.classList.add('gallery-lightbox-open');
+    pauseAutoScroll();
     renderLightbox();
 }
 
@@ -97,6 +112,7 @@ export function closeLightbox() {
         root.hidden = true;
     }
     document.body.classList.remove('gallery-lightbox-open');
+    startAutoScroll();
 }
 
 function stepLightbox(delta) {
@@ -107,12 +123,46 @@ function stepLightbox(delta) {
     renderLightbox();
 }
 
+function pauseAutoScroll() {
+    if (autoTimer) {
+        window.clearInterval(autoTimer);
+        autoTimer = 0;
+    }
+}
+
+function startAutoScroll() {
+    pauseAutoScroll();
+    if (galleryItems.length <= pageSize()) {
+        return;
+    }
+    autoTimer = window.setInterval(() => {
+        pageIndex = (pageIndex + 1) % pageCount();
+        applyPage();
+    }, 4200);
+}
+
+function applyPage() {
+    const track = document.getElementById('gallery-track');
+    const dots = document.getElementById('gallery-dots');
+    if (!track) {
+        return;
+    }
+    const pages = pageCount();
+    pageIndex = ((pageIndex % pages) + pages) % pages;
+    track.style.transform = `translateX(-${pageIndex * 100}%)`;
+    if (dots) {
+        for (const btn of dots.querySelectorAll('button')) {
+            btn.classList.toggle('is-active', Number(btn.dataset.page) === pageIndex);
+        }
+    }
+}
+
 /**
  * @param {{ id: string|number, url: string, caption?: string }[]} images
  */
 export function renderGalleryGrid(images) {
-    const grid = document.getElementById('gallery-grid');
-    if (!grid) {
+    const host = document.getElementById('gallery-grid');
+    if (!host) {
         return;
     }
 
@@ -122,29 +172,80 @@ export function renderGalleryGrid(images) {
         caption: image.caption || '',
     }));
 
-    const empty = document.getElementById('gallery-empty');
     if (galleryItems.length === 0) {
-        grid.innerHTML = '';
-        if (empty) {
-            grid.appendChild(empty);
-            empty.hidden = false;
-        } else {
-            grid.innerHTML = '<p class="portal-empty" id="gallery-empty">No photos yet — they’ll appear here when the studio posts them.</p>';
-        }
+        pauseAutoScroll();
+        host.innerHTML = '<p class="portal-empty" id="gallery-empty">No photos yet — they’ll appear here when the studio posts them.</p>';
         return;
     }
 
-    empty?.remove();
-    grid.innerHTML = galleryItems.map((image, index) => `
-        <button type="button" class="portal-gallery-item" data-id="${escapeHtml(image.id)}" data-index="${index}" aria-label="Open photo ${index + 1}">
-            <img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.caption || 'Service photo')}" loading="lazy">
-            ${image.caption ? `<span class="portal-gallery-caption">${escapeHtml(image.caption)}</span>` : ''}
-        </button>
-    `).join('');
+    const size = pageSize();
+    const pages = [];
+    for (let i = 0; i < galleryItems.length; i += size) {
+        pages.push(galleryItems.slice(i, i + size));
+    }
 
-    for (const btn of grid.querySelectorAll('.portal-gallery-item')) {
+    host.innerHTML = `
+        <div class="portal-gallery-viewport" id="gallery-viewport">
+            <div class="portal-gallery-track" id="gallery-track">
+                ${pages.map((page, pIndex) => `
+                    <div class="portal-gallery-page" data-page="${pIndex}">
+                        ${page.map((image, i) => {
+                            const globalIndex = pIndex * size + i;
+                            return `
+                            <button type="button" class="portal-gallery-item" data-id="${escapeHtml(image.id)}" data-index="${globalIndex}" aria-label="Open photo">
+                                <img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.caption || 'Service photo')}" loading="lazy">
+                                ${image.caption ? `<span class="portal-gallery-caption">${escapeHtml(image.caption)}</span>` : ''}
+                            </button>`;
+                        }).join('')}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        <div class="portal-gallery-dots" id="gallery-dots" ${pages.length < 2 ? 'hidden' : ''}>
+            ${pages.map((_, i) => `<button type="button" data-page="${i}" aria-label="Gallery page ${i + 1}"></button>`).join('')}
+        </div>
+    `;
+
+    for (const btn of host.querySelectorAll('.portal-gallery-item')) {
         btn.addEventListener('click', () => {
             openLightbox(Number(btn.getAttribute('data-index') || 0));
+        });
+    }
+
+    const dots = document.getElementById('gallery-dots');
+    dots?.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            pageIndex = Number(btn.dataset.page || 0);
+            applyPage();
+            startAutoScroll();
+        });
+    });
+
+    pageIndex = 0;
+    lastPageSize = size;
+    applyPage();
+    startAutoScroll();
+
+    const viewport = document.getElementById('gallery-viewport');
+    viewport?.addEventListener('mouseenter', pauseAutoScroll);
+    viewport?.addEventListener('mouseleave', startAutoScroll);
+    viewport?.addEventListener('touchstart', pauseAutoScroll, { passive: true });
+    viewport?.addEventListener('touchend', startAutoScroll, { passive: true });
+
+    if (!resizeBound) {
+        resizeBound = true;
+        window.addEventListener('resize', () => {
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(() => {
+                if (!galleryItems.length) {
+                    return;
+                }
+                const nextSize = pageSize();
+                if (nextSize === lastPageSize) {
+                    return;
+                }
+                renderGalleryGrid(galleryItems);
+            }, 150);
         });
     }
 }
@@ -167,6 +268,11 @@ export async function refreshGalleryFromUrl(url) {
         }
         const data = await res.json();
         const images = Array.isArray(data.images) ? data.images : [];
+        const nextIds = images.map((i) => String(i.id)).join(',');
+        const prevIds = galleryItems.map((i) => i.id).join(',');
+        if (nextIds === prevIds && galleryItems.length > 0) {
+            return;
+        }
         renderGalleryGrid(images);
     } catch {
         /* ignore */

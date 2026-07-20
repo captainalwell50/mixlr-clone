@@ -11,6 +11,7 @@
     $isLive = $event->isLive();
     $artwork = $event->organization->artworkUrl();
     $background = ($listenBackgroundUrl ?? null) ?: ($event->artworkUrl() ?: asset('images/listen-stage-bg.jpg'));
+    $cardArt = $artwork ?: $background;
     $statusLabel = match ($event->status->value) {
         'live' => 'Live',
         'ended' => 'Ended',
@@ -45,8 +46,43 @@
                 </nav>
             </header>
 
-            <div class="portal-layout has-side {{ $event->chat_enabled ? 'has-chat' : '' }}" id="portal-layout">
+            <div class="portal-layout has-side" id="portal-layout">
                 <main class="portal-main">
+                    @if ($event->chat_enabled)
+                        <div class="stage-rail wa-chat portal-chat-slot stage-rise-delay" id="portal-chat" aria-label="Live chat">
+                            <header class="wa-header">
+                                @if ($artwork)
+                                    <img src="{{ $artwork }}" alt="" class="wa-header-avatar">
+                                @else
+                                    <span class="wa-header-avatar" aria-hidden="true">{{ strtoupper(substr($event->organization->name, 0, 1)) }}</span>
+                                @endif
+                                <div class="wa-header-copy">
+                                    <h2>{{ $event->organization->name }}</h2>
+                                    <p>Live chat · online now</p>
+                                </div>
+                            </header>
+                            <div id="chat-messages" class="wa-messages" aria-live="polite">
+                                <p class="wa-empty">Say hello — the room is listening.</p>
+                            </div>
+                            @auth
+                                <form id="chat-form" class="wa-composer stage-chat-input">
+                                    <input id="chat-body" type="text" maxlength="500" placeholder="Type a message" autocomplete="off" required>
+                                    <button type="submit" aria-label="Send">Send</button>
+                                </form>
+                            @else
+                                <p class="wa-login">
+                                    <a href="{{ route('login') }}">Log in</a> to join the conversation
+                                </p>
+                            @endauth
+                            <div id="chat-root" class="hidden"
+                                data-poll-url="{{ route('events.chat.index', $event) }}"
+                                data-post-url="{{ route('events.chat.store', $event) }}"
+                                data-self-name="{{ auth()->user()?->name }}"></div>
+                        </div>
+                    @else
+                        <div class="portal-art stage-rise-delay" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork"></div>
+                    @endif
+
                     <h1 class="portal-title stage-rise-delay">{{ $event->title }}</h1>
 
                     <div class="portal-badges stage-rise-delay-2">
@@ -101,12 +137,6 @@
                             </a>
                             <a href="{{ route('login') }}" class="portal-follow">+ Follow</a>
                         @endauth
-
-                        @if ($event->chat_enabled)
-                            <button type="button" id="btn-chat-toggle" class="portal-icon-btn" aria-label="Open chat" title="Chat">
-                                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/></svg>
-                            </button>
-                        @endif
 
                         <button type="button" id="btn-share" class="portal-icon-btn" aria-label="Share" title="Share" data-share-url="{{ $shareUrl }}" data-share-title="{{ $event->title }}">
                             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7a3.27 3.27 0 0 0 0-1.39l7.02-4.11A2.99 2.99 0 1 0 14 5c0 .17.02.34.05.5L7.04 9.61a3 3 0 1 0 0 4.78l7.12 4.16c-.03.14-.05.29-.05.45a3 3 0 1 0 3-3z"/></svg>
@@ -165,7 +195,7 @@
                     @endif
                 </main>
 
-                <aside class="portal-side stage-rise-delay-2" aria-label="Gallery and chat">
+                <aside class="portal-side stage-rise-delay-2" aria-label="Live gallery">
                     <section class="portal-gallery" aria-label="Service gallery">
                         <div class="portal-section-head portal-section-head--side">
                             <h2>Live Gallery - Happening Now</h2>
@@ -191,27 +221,6 @@
                             @endforelse
                         </div>
                     </section>
-
-                    @if ($event->chat_enabled)
-                        <div class="stage-rail portal-rail" id="portal-chat" aria-label="Live chat">
-                            <div class="portal-rail-head">
-                                <h2 class="stage-chat-label">Chat</h2>
-                                <button type="button" id="btn-chat-close" class="portal-rail-close" aria-label="Close chat">✕</button>
-                            </div>
-                            <div id="chat-messages" class="stage-chat-messages"></div>
-                            @auth
-                                <form id="chat-form" class="stage-chat-input">
-                                    <input id="chat-body" type="text" maxlength="500" placeholder="Chat as {{ auth()->user()->name }}…" required>
-                                    <button type="submit">Post</button>
-                                </form>
-                            @else
-                                <p class="stage-meta mt-3"><a href="{{ route('login') }}" style="color: var(--stage-accent)">Log in</a> to join the chat.</p>
-                            @endauth
-                            <div id="chat-root" class="hidden"
-                                data-poll-url="{{ route('events.chat.index', $event) }}"
-                                data-post-url="{{ route('events.chat.store', $event) }}"></div>
-                        </div>
-                    @endif
                 </aside>
             </div>
 
