@@ -20,6 +20,7 @@ const auxMeterEl = document.getElementById('aux-meter');
 const playlistMeterEl = document.getElementById('playlist-meter');
 const stageEl = document.getElementById('studio-stage');
 const modeEl = document.getElementById('studio-mode');
+const modeMobileEl = document.getElementById('studio-mode-mobile');
 const airLabel = document.getElementById('studio-air-label');
 const heroHint = document.getElementById('studio-hero-hint');
 const timerEl = document.getElementById('studio-timer');
@@ -184,6 +185,9 @@ function setOnAir(live) {
     stageEl?.classList.toggle('is-on-air', live);
     if (modeEl) {
         modeEl.textContent = live ? 'On the air' : 'Standby';
+    }
+    if (modeMobileEl) {
+        modeMobileEl.textContent = live ? 'ON AIR' : 'STANDBY';
     }
     if (airLabel) {
         airLabel.textContent = live ? 'ON THE AIR' : 'STANDBY';
@@ -1386,6 +1390,27 @@ async function primeMicrophone({ interactive = false } = {}) {
 document.getElementById('btn-enable-mic')?.addEventListener('click', async () => {
     await primeMicrophone({ interactive: true });
 });
+
+const mobileTabs = document.querySelectorAll('.mixer-mobile-tab');
+const mobilePanes = document.querySelectorAll('[data-mobile-pane]');
+
+function setMobilePane(pane) {
+    mobileTabs.forEach((tab) => {
+        tab.classList.toggle('is-active', tab.dataset.mobilePane === pane);
+    });
+    mobilePanes.forEach((el) => {
+        const match = el.dataset.mobilePane === pane;
+        el.classList.toggle('is-mobile-active', match);
+    });
+    stageEl?.setAttribute('data-mobile-pane', pane);
+}
+
+mobileTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+        setMobilePane(tab.dataset.mobilePane || 'mix');
+    });
+});
+setMobilePane('mix');
 
 void primeMicrophone({ interactive: false });
 

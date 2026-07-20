@@ -4142,6 +4142,51 @@ a.stage-platform:hover {
     background: #101218;
 }
 
+.mixer-topbar-status {
+    display: none;
+    margin: 0;
+    min-width: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--mixer-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mixer-topbar-stream {
+    font-weight: 600;
+    color: color-mix(in srgb, var(--mixer-text) 88%, transparent);
+    text-transform: none;
+    letter-spacing: 0;
+}
+.mixer.is-on-air .mixer-topbar-status {
+    color: #2fbf71;
+}
+.mixer-top-copy {
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+}
+
+.mixer-mobile-nav {
+    display: none;
+}
+
+.mixer-more {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem 1.1rem 1.25rem;
+    background: #101218;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
 .mixer-brand {
     font-weight: 650;
     letter-spacing: -0.02em;
@@ -4246,6 +4291,24 @@ a.stage-platform:hover {
     gap: 0;
     min-height: 0;
     overflow: hidden;
+    border-top: 1px solid var(--mixer-line);
+}
+
+.mixer-rail {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #101218;
+}
+.mixer-rail .mixer-playlist,
+.mixer-rail .mixer-more {
+    flex: 0 0 auto;
+    overflow: visible;
+}
+.mixer-rail .mixer-more {
     border-top: 1px solid var(--mixer-line);
 }
 
@@ -5050,13 +5113,17 @@ a.stage-platform:hover {
     cursor: not-allowed;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px) and (min-width: 701px) {
     .mixer-board {
         grid-template-columns: 1fr;
+        overflow: auto;
     }
     .mixer-deck {
         border-right: 0;
         border-bottom: 1px solid var(--mixer-line);
+    }
+    .mixer-rail {
+        overflow: visible;
     }
     .mixer-strips {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5073,5 +5140,179 @@ a.stage-platform:hover {
     .mixer-bar-actions {
         width: 100%;
         justify-content: center;
+    }
+}
+
+/* Phone Studio — one job per screen via Mix / Sounds / More */
+@media (max-width: 700px) {
+    .mixer-topbar {
+        gap: 0.5rem;
+        padding: 0.45rem 0.7rem;
+    }
+    .mixer-brand {
+        font-size: 0.85rem;
+        max-width: 5.5rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .mixer-topbar-status {
+        display: block;
+        flex: 1 1 auto;
+        text-align: center;
+    }
+    .mixer-user,
+    .mixer-top-link:not(.mixer-top-copy) {
+        display: none;
+    }
+    .mixer-top-copy {
+        font-size: 0.75rem;
+        color: color-mix(in srgb, var(--mixer-accent, #3d9b7a) 80%, white);
+    }
+
+    .mixer-hero {
+        display: none;
+    }
+
+    .mixer-mobile-nav {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.25rem;
+        padding: 0.4rem 0.55rem;
+        border-bottom: 1px solid var(--mixer-line);
+        background: #0e1015;
+        flex: 0 0 auto;
+    }
+    .mixer-mobile-tab {
+        border: 1px solid transparent;
+        border-radius: 0.4rem;
+        background: transparent;
+        color: var(--mixer-muted);
+        font-size: 0.78rem;
+        font-weight: 750;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 0.55rem 0.35rem;
+        cursor: pointer;
+    }
+    .mixer-mobile-tab.is-active {
+        color: var(--mixer-text);
+        background: #1a1f28;
+        border-color: var(--mixer-line);
+    }
+
+    .mixer-board {
+        display: block;
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .mixer-rail {
+        display: contents;
+    }
+    .mixer-deck,
+    .mixer-playlist,
+    .mixer-more {
+        display: none !important;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-top: 0;
+        padding: 0.65rem 0.7rem 0.85rem;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .mixer-deck.is-mobile-active,
+    .mixer-playlist.is-mobile-active,
+    .mixer-more.is-mobile-active {
+        display: flex !important;
+        flex-direction: column;
+    }
+
+    .mixer-chassis-rail {
+        padding: 0.35rem 0.45rem;
+        margin-bottom: 0.35rem;
+    }
+    .mixer-chassis-meta {
+        display: none;
+    }
+    .mixer-chassis-title {
+        font-size: 0.7rem;
+    }
+
+    .mixer-strips {
+        display: flex;
+        gap: 0.35rem;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 0.25rem;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+    }
+    .mixer-strip,
+    .mixer-strip--out {
+        flex: 0 0 42vw;
+        max-width: 11rem;
+        grid-column: auto;
+        scroll-snap-align: start;
+        padding: 0.4rem 0.35rem 0.45rem;
+        gap: 0.35rem;
+    }
+
+    .mixer-fader-well {
+        --fader-travel: 9.5rem;
+        height: 10.75rem;
+        min-height: 10.75rem;
+        max-height: 10.75rem;
+    }
+    .mixer-fader-well--master {
+        --fader-travel: 7.25rem;
+        height: 8.5rem;
+        min-height: 8.5rem;
+        max-height: 8.5rem;
+    }
+
+    .mixer-hint--desktop {
+        display: none;
+    }
+    .mixer-library-list {
+        max-height: none;
+        flex: 1;
+    }
+    .mixer-playlist-list {
+        max-height: 12rem;
+    }
+
+    .mixer-bar {
+        grid-template-columns: auto 1fr auto;
+        gap: 0.35rem;
+        padding: 0.45rem 0.55rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+        align-items: center;
+    }
+    .mixer-air {
+        font-size: 0.62rem;
+        justify-self: start;
+    }
+    .mixer-timer {
+        font-size: 0.9rem;
+        justify-self: center;
+    }
+    .mixer-bar-actions {
+        width: auto;
+        justify-content: flex-end;
+        justify-self: end;
+        gap: 0.3rem;
+    }
+    .mixer-btn-start {
+        min-width: 0;
+        font-size: 0.85rem;
+        padding: 0.55rem 0.95rem;
+    }
+    .mixer-btn-stop {
+        font-size: 0.75rem;
+        padding: 0.5rem 0.65rem;
     }
 }

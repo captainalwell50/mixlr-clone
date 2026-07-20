@@ -16,9 +16,15 @@
     <div id="studio-stage" class="mixer" style="--mixer-accent: {{ $theme }};">
         <header class="mixer-topbar">
             <a href="{{ url('/') }}" class="mixer-brand">{{ config('app.name', 'Live Mix Audio') }}</a>
+            <p class="mixer-topbar-status">
+                <span id="studio-mode-mobile">STANDBY</span>
+                <span class="mixer-topbar-dot" aria-hidden="true">·</span>
+                <span class="mixer-topbar-stream">{{ $stream->title }}</span>
+            </p>
             <div class="mixer-topbar-right">
                 <span class="mixer-user">{{ $organization->name }}</span>
                 <a href="{{ route('dashboard') }}" class="mixer-top-link">Dashboard</a>
+                <button type="button" class="mixer-top-link mixer-top-copy" id="btn-copy-listen" title="Copy listen link">Copy link</button>
             </div>
         </header>
 
@@ -31,12 +37,17 @@
             </div>
             <div class="mixer-hero-actions">
                 <a class="mixer-icon-btn" href="{{ route('dashboard') }}" title="Back to dashboard" aria-label="Back to dashboard">←</a>
-                <button type="button" class="mixer-icon-btn" id="btn-copy-listen" title="Copy listen link" aria-label="Copy listen link">↗</button>
             </div>
         </section>
 
+        <nav class="mixer-mobile-nav" aria-label="Studio sections">
+            <button type="button" class="mixer-mobile-tab is-active" data-mobile-pane="mix">Mix</button>
+            <button type="button" class="mixer-mobile-tab" data-mobile-pane="sounds">Sounds</button>
+            <button type="button" class="mixer-mobile-tab" data-mobile-pane="more">More</button>
+        </nav>
+
         <section class="mixer-board">
-            <div class="mixer-deck" aria-label="Mixing console">
+            <div class="mixer-deck" data-mobile-pane="mix" aria-label="Mixing console">
                 <div class="mixer-chassis">
                     <div class="mixer-chassis-rail">
                         <span class="mixer-chassis-title">Console</span>
@@ -175,11 +186,12 @@
                 </div>
             </div>
 
-            <div class="mixer-playlist">
+            <div class="mixer-rail">
+            <div class="mixer-playlist" data-mobile-pane="sounds">
                 <div class="mixer-playlist-head">
                     <h2>Audio library</h2>
                 </div>
-                <p class="mixer-hint">Saved on this stream — search and queue into the session playlist. Uploads survive refresh.</p>
+                <p class="mixer-hint mixer-hint--desktop">Saved on this stream — search and queue into the session playlist. Uploads survive refresh.</p>
                 <div class="mixer-library-toolbar">
                     <label class="sr-only" for="library-search">Search library</label>
                     <input id="library-search" class="mixer-library-search" type="search" placeholder="Search songs…" autocomplete="off">
@@ -192,11 +204,14 @@
                     <h2>Session playlist</h2>
                     <time id="playlist-duration" datetime="PT0S">00:00:00</time>
                 </div>
-                <p class="mixer-hint">Queued for this Studio session. Queue from the library above, then Play.</p>
+                <p class="mixer-hint mixer-hint--desktop">Queued for this Studio session. Queue from the library above, then Play.</p>
                 <div class="mixer-playlist-list" id="audio-channels"></div>
                 <div class="mixer-playlist-actions">
                     <button type="button" id="btn-add-file" class="mixer-add-sounds">+ Upload &amp; queue</button>
                 </div>
+            </div>
+
+            <div class="mixer-more" data-mobile-pane="more">
                 <div class="mixer-gallery">
                     <div class="mixer-playlist-head">
                         <h2>Listen background</h2>
@@ -260,7 +275,7 @@
                         @endforelse
                     </div>
                 </div>
-                <p class="mixer-hint">
+                <p class="mixer-hint mixer-hint--desktop">
                     Cue (headphones) is off by default — Studio stays silent. Under Master, set broadcast layout and cue output, then turn a channel’s CUE on. Master sets overall mix volume for Input 1, Input 2, and Playlist.
                 </p>
                 <div id="mic-enable-wrap" class="mixer-mic-enable" hidden>
@@ -271,6 +286,7 @@
                 <div class="mixer-listen-row">
                     <code id="listen-url" title="{{ $listenUrl }}">{{ $listenUrl }}</code>
                 </div>
+            </div>
             </div>
         </section>
 
