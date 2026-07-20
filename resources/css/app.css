@@ -4067,7 +4067,7 @@ a.stage-platform:hover {
     }
 }
 
-/* ——— Mixlr-style Studio mixer ——— */
+/* ——— Studio mixer ——— */
 .mixer {
     --mixer-bg: #0c0d10;
     --mixer-panel: #14161c;
@@ -4194,46 +4194,87 @@ a.stage-platform:hover {
 .mixer-board {
     flex: 1;
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(16rem, 0.9fr);
+    grid-template-columns: minmax(0, 1.05fr) minmax(17rem, 1fr);
     gap: 0;
     min-height: 0;
     border-top: 1px solid var(--mixer-line);
 }
 
-.mixer-strips {
+/* Dense mixing-console bay — fixed strip height, no tall empty columns */
+.mixer-deck {
     display: flex;
-    gap: 0.35rem;
-    padding: 1rem 0.75rem 1.25rem;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 1rem 0.85rem 1.15rem;
     overflow-x: auto;
-    background: var(--mixer-panel);
+    background:
+        linear-gradient(180deg, #161922 0%, var(--mixer-panel) 48%, #101218 100%);
     border-right: 1px solid var(--mixer-line);
 }
 
+.mixer-strips {
+    display: flex;
+    align-items: stretch;
+    gap: 0.4rem;
+    padding: 0.55rem;
+    border-radius: 0.55rem;
+    background: #0b0d12;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
 .mixer-strip {
-    flex: 0 0 6.5rem;
+    flex: 0 0 5.6rem;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.45rem;
-    padding: 0.55rem 0.4rem 0.65rem;
+    gap: 0.4rem;
+    padding: 0.45rem 0.35rem 0.5rem;
     border-radius: 0.35rem;
-    background: #0f1116;
-    border: 1px solid var(--mixer-line);
+    background: linear-gradient(180deg, #151821, #0f1218);
+    border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .mixer-strip--out {
-    flex-basis: 7.2rem;
-    margin-left: 0.35rem;
+    flex-basis: 6.1rem;
+    margin-left: 0.25rem;
+    border-color: color-mix(in srgb, var(--mixer-accent, #1a6b6a) 40%, rgba(255, 255, 255, 0.08));
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--mixer-accent, #1a6b6a) 14%, #151821),
+        #0f1218
+    );
+}
+
+.mixer-strip-label {
+    margin: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 0.62rem;
+    font-weight: 750;
+    letter-spacing: 0.07em;
+    color: rgba(242, 242, 244, 0.72);
+}
+
+.mixer-strip-body {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    min-height: 9.5rem;
 }
 
 .mixer-strip-meter {
     position: relative;
-    width: 0.55rem;
-    height: 8.5rem;
+    width: 0.45rem;
+    align-self: stretch;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.06);
     overflow: hidden;
-    order: 0;
+    flex: 0 0 auto;
 }
 
 .mixer-strip-meter-fill {
@@ -4249,15 +4290,15 @@ a.stage-platform:hover {
 .mixer-fader {
     writing-mode: vertical-lr;
     direction: rtl;
-    width: 1.6rem;
-    height: 8.5rem;
+    width: 1.35rem;
+    height: 9.5rem;
     accent-color: #d8d8dc;
     cursor: pointer;
 }
 
 .mixer-strip-toggles {
     display: flex;
-    gap: 0.35rem;
+    gap: 0.28rem;
 }
 
 .mixer-cue,
@@ -4265,9 +4306,9 @@ a.stage-platform:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.85rem;
-    height: 1.85rem;
-    border-radius: 999px;
+    width: 1.65rem;
+    height: 1.65rem;
+    border-radius: 0.3rem;
     border: 1px solid rgba(255, 255, 255, 0.14);
     background: #1a1d24;
     color: rgba(255, 255, 255, 0.38);
@@ -4288,23 +4329,14 @@ a.stage-platform:hover {
     background: color-mix(in srgb, #e11d3a 18%, #1a1d24);
 }
 
-.mixer-strip-label {
-    margin: 0;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--mixer-muted);
-}
-
 .mixer-source {
     width: 100%;
-    max-width: 6.1rem;
-    border-radius: 0.3rem;
+    border-radius: 0.28rem;
     border: 1px solid var(--mixer-line);
     background: #0c0d10;
     color: var(--mixer-text);
-    font-size: 0.62rem;
-    padding: 0.28rem 0.2rem;
+    font-size: 0.58rem;
+    padding: 0.28rem 0.15rem;
 }
 
 .mixer-source--static {
@@ -4312,45 +4344,45 @@ a.stage-platform:hover {
     text-align: center;
     color: var(--mixer-muted);
     border-style: dashed;
-    padding: 0.35rem 0.2rem;
+    padding: 0.3rem 0.15rem;
 }
 
 .mixer-out-tools {
     display: flex;
     flex-direction: column;
     align-items: stretch;
+    justify-content: flex-end;
     gap: 0.35rem;
     width: 100%;
-    min-height: 8.5rem;
-    justify-content: flex-end;
+    min-height: 9.5rem;
 }
 
 .mixer-sq {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
-    font-size: 0.65rem;
+    gap: 0.15rem;
+    font-size: 0.58rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
     color: var(--mixer-muted);
 }
 .mixer-sq select {
-    border-radius: 0.3rem;
+    border-radius: 0.28rem;
     border: 1px solid var(--mixer-line);
     background: #0c0d10;
     color: var(--mixer-text);
-    font-size: 0.7rem;
-    padding: 0.3rem;
+    font-size: 0.65rem;
+    padding: 0.28rem;
 }
 
 .mixer-rec {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 1.7rem;
-    border-radius: 0.3rem;
+    min-height: 1.45rem;
+    border-radius: 0.28rem;
     border: 1px solid var(--mixer-line);
-    font-size: 0.68rem;
+    font-size: 0.62rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     color: var(--mixer-muted);
@@ -4567,9 +4599,10 @@ a.stage-platform:hover {
     .mixer-board {
         grid-template-columns: 1fr;
     }
-    .mixer-strips {
+    .mixer-deck {
         border-right: 0;
         border-bottom: 1px solid var(--mixer-line);
+        justify-content: flex-start;
     }
     .mixer-bar {
         grid-template-columns: 1fr;
