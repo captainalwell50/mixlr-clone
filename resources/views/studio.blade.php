@@ -120,7 +120,7 @@
                             <p class="mixer-source mixer-source--static" id="playlist-count">No sounds</p>
                         </div>
 
-                        {{-- MASTER — mix bus volume only (Input 1 + 2 + Playlist) --}}
+                        {{-- MASTER — mix volume + cue headphone output --}}
                         <div class="mixer-strip mixer-strip--out" data-strip="out">
                             <div class="mixer-scribble">
                                 <span class="mixer-ch-num">M</span>
@@ -134,13 +134,16 @@
                             <div class="mixer-strip-toggles mixer-strip-toggles--master">
                                 <span class="mixer-rec" id="meter-label" title="Mix level">—</span>
                             </div>
-                            <div class="mixer-fader-well">
+                            <div class="mixer-fader-well mixer-fader-well--master">
                                 <div class="mixer-fader-scale" aria-hidden="true">
                                     <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
                                 </div>
-                                <input id="master-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Master level">
+                                <input id="master-fader" class="mixer-fader mixer-fader--master" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Master level">
                             </div>
-                            <p class="mixer-source mixer-source--static">Mix bus</p>
+                            <label class="sr-only" for="audio-output">Cue headphones</label>
+                            <select id="audio-output" class="mixer-source" title="Cue headphones" aria-label="Cue headphones">
+                                <option value="">Default output</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -239,15 +242,9 @@
                             <option value="stereo">Stereo</option>
                         </select>
                     </label>
-                    <label class="mixer-sq">
-                        <span>Cue headphones</span>
-                        <select id="audio-output" aria-label="Cue headphones output">
-                            <option value="">Default output</option>
-                        </select>
-                    </label>
                 </div>
                 <p class="mixer-hint">
-                    Cue (headphones) is off by default — Studio stays silent. Turn cue on only with headphones, or monitor on the listen link. Master only sets overall mix volume for Input 1, Input 2, and Playlist.
+                    Cue (headphones) is off by default — Studio stays silent. Pick cue output under Master, then turn a channel’s CUE on. Master sets overall mix volume for Input 1, Input 2, and Playlist.
                 </p>
                 <p id="studio-status" class="mixer-status" role="status">Allow microphone access when prompted.</p>
                 <div class="mixer-listen-row">
