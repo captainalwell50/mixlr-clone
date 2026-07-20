@@ -1063,6 +1063,74 @@ a.stage-platform:hover {
     object-fit: cover;
 }
 
+.mixer-recordings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+    max-height: 14rem;
+    overflow-y: auto;
+}
+
+.mixer-recording-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: 0.55rem 0.65rem;
+    border-radius: 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 10%, transparent);
+    background: color-mix(in srgb, var(--stage-ink) 55%, transparent);
+}
+
+.mixer-recording-copy {
+    min-width: 0;
+}
+
+.mixer-recording-title {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--stage-cream);
+}
+
+.mixer-recording-meta {
+    margin: 0.15rem 0 0;
+    font-size: 0.72rem;
+    color: var(--stage-muted);
+}
+
+.mixer-recording-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+
+.mixer-recording-link,
+.mixer-recording-delete {
+    border: 0;
+    background: transparent;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    padding: 0;
+}
+
+.mixer-recording-link {
+    color: var(--mixer-accent, var(--stage-accent));
+}
+
+.mixer-recording-delete {
+    color: #f0a0a8;
+}
+
+.mixer-recording-delete:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+
 .portal-icon-btn {
     display: inline-flex;
     align-items: center;
@@ -2282,6 +2350,48 @@ a.stage-platform:hover {
 
 .archive-pagination {
     margin-top: 1.5rem;
+}
+
+.archive-pagination nav {
+    display: flex;
+    justify-content: center;
+}
+
+.archive-pagination nav > div:first-child {
+    display: none;
+}
+
+.archive-pagination .flex {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.35rem;
+}
+
+.archive-pagination a,
+.archive-pagination span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0 0.65rem;
+    border-radius: 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 12%, transparent);
+    color: var(--stage-cream);
+    text-decoration: none;
+    font-size: 0.85rem;
+}
+
+.archive-pagination span[aria-current="page"] span,
+.archive-pagination [aria-current="page"] {
+    background: var(--stage-accent);
+    border-color: transparent;
+    color: white;
+}
+
+.archive-pagination a:hover {
+    border-color: color-mix(in srgb, var(--stage-accent) 50%, transparent);
 }
 
 /* Discover live rail */

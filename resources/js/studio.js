@@ -1319,6 +1319,48 @@ galleryInput?.addEventListener('change', async () => {
     galleryInput.value = '';
 });
 
+const studioRecordings = document.getElementById('studio-recordings');
+studioRecordings?.addEventListener('click', async (ev) => {
+    const btn = ev.target instanceof Element ? ev.target.closest('.mixer-recording-delete') : null;
+    if (!btn || !(btn instanceof HTMLButtonElement)) {
+        return;
+    }
+    const url = btn.dataset.deleteUrl;
+    const row = btn.closest('.mixer-recording-row');
+    if (!url || !row) {
+        return;
+    }
+    if (!window.confirm('Delete this recording permanently?')) {
+        return;
+    }
+    btn.disabled = true;
+    try {
+        const res = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+        if (!res.ok) {
+            throw new Error('delete failed');
+        }
+        row.remove();
+        if (studioRecordings && !studioRecordings.querySelector('.mixer-recording-row')) {
+            const empty = document.createElement('p');
+            empty.className = 'mixer-hint';
+            empty.id = 'studio-recordings-empty';
+            empty.textContent = 'No recordings yet for this stream.';
+            studioRecordings.appendChild(empty);
+        }
+        setStatus('Recording deleted.');
+    } catch {
+        btn.disabled = false;
+        setStatus('Could not delete recording.');
+    }
+});
+
 window.addEventListener('pagehide', () => {
     for (const id of [...fileChannels.keys()]) {
         removeFileChannel(id);

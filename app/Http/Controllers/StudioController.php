@@ -39,6 +39,7 @@ class StudioController extends Controller
             'galleryListUrl' => route('gallery.index', $stream),
             'galleryImages' => $stream->galleryImages()->limit(20)->get(),
             'listenBackgroundUrl' => $stream->listenBackgroundUrl(),
+            'recordings' => $stream->recordings()->latest('completed_at')->limit(30)->get(),
         ]);
     }
 }

@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\EventController as AdminEventController;
 use App\Http\Controllers\Admin\OrganizationController;
 use App\Http\Controllers\Admin\OrganizationMemberController;
+use App\Http\Controllers\Admin\RecordingDestroyController;
 use App\Http\Controllers\Admin\RecordingDownloadController;
 use App\Http\Controllers\Admin\StreamController;
 use App\Http\Controllers\ArchiveController;
@@ -16,8 +17,9 @@ use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventEngageController;
 use App\Http\Controllers\GalleryController;
 use App\Http\Controllers\ListenController;
-use App\Http\Controllers\StreamEngageController;
+use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlayController;
+use App\Http\Controllers\StreamEngageController;
 use App\Http\Controllers\StudioController;
 use Illuminate\Support\Facades\Route;
 
@@ -97,6 +99,10 @@ Route::post('/listen/{stream}/chat', [ChatController::class, 'store'])
     ->middleware(['auth', 'throttle:30,1'])
     ->name('chat.store');
 
+Route::delete('/listen/{stream}/recordings/{recording}', [RecordingController::class, 'destroy'])
+    ->middleware('throttle:30,1')
+    ->name('recordings.destroy');
+
 Route::get('/studio/{stream}', [StudioController::class, 'show'])
     ->middleware('signed')
     ->name('studio.stream');
@@ -138,6 +144,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function ():
         Route::post('streams/{stream}/regenerate-key', [StreamController::class, 'regenerateKey'])->name('streams.regenerate-key');
         Route::get('streams/{stream}/studio', [StudioController::class, 'show'])->name('streams.studio');
         Route::get('recordings/{recording}/download', [RecordingDownloadController::class, 'show'])->name('recordings.download');
+        Route::delete('recordings/{recording}', RecordingDestroyController::class)->name('recordings.destroy');
     });
 });
 

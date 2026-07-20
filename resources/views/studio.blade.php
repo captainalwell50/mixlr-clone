@@ -7,6 +7,7 @@
 @endsection
 
 @php
+    use Illuminate\Support\Facades\URL;
     $theme = $organization->themeColor();
     $artwork = $organization->artworkUrl();
 @endphp
@@ -192,6 +193,31 @@
                                 <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Gallery photo' }}">
                             </figure>
                         @endforeach
+                    </div>
+
+                    <div class="mixer-playlist-head" style="margin-top: 1rem">
+                        <h2>Recorded audio</h2>
+                    </div>
+                    <p class="mixer-hint">Delete past recordings from this stream when you no longer need them.</p>
+                    <div class="mixer-recordings" id="studio-recordings">
+                        @forelse ($recordings as $recording)
+                            <div class="mixer-recording-row" data-recording-id="{{ $recording->id }}">
+                                <div class="mixer-recording-copy">
+                                    <p class="mixer-recording-title">{{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }}</p>
+                                    <p class="mixer-recording-meta">{{ $recording->durationLabel() }} · {{ $recording->sizeLabel() }}</p>
+                                </div>
+                                <div class="mixer-recording-actions">
+                                    <a href="{{ route('archive.play', $recording) }}" target="_blank" rel="noopener" class="mixer-recording-link">Play</a>
+                                    <button
+                                        type="button"
+                                        class="mixer-recording-delete"
+                                        data-delete-url="{{ URL::temporarySignedRoute('recordings.destroy', now()->addHours(12), ['stream' => $stream, 'recording' => $recording]) }}"
+                                    >Delete</button>
+                                </div>
+                            </div>
+                        @empty
+                            <p class="mixer-hint" id="studio-recordings-empty">No recordings yet for this stream.</p>
+                        @endforelse
                     </div>
                 </div>
                 <p class="mixer-hint">

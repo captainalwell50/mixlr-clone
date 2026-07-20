@@ -153,6 +153,11 @@
                         <td class="px-4 py-2 text-right space-x-2 whitespace-nowrap">
                             <a href="{{ route('archive.play', $recording) }}" class="text-zinc-400 hover:text-white" target="_blank">Play</a>
                             <a href="{{ route('admin.recordings.download', $recording) }}" class="text-emerald-400 hover:text-emerald-300">Download</a>
+                            <form method="POST" action="{{ route('admin.recordings.destroy', $recording) }}" class="inline" onsubmit="return confirm('Delete this recording permanently?');">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="text-rose-400 hover:text-rose-300">Delete</button>
+                            </form>
                         </td>
                     </tr>
                 @empty

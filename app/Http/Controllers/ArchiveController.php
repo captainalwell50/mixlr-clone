@@ -12,7 +12,7 @@ class ArchiveController extends Controller
         $recordings = Recording::query()
             ->with('stream.organization')
             ->latest('completed_at')
-            ->paginate(20);
+            ->paginate(10);
 
         return view('archive', compact('recordings'));
     }
