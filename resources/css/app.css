@@ -4364,8 +4364,8 @@ a.stage-platform:hover {
     align-items: stretch;
     justify-content: center;
     gap: 0.35rem;
-    height: 10.5rem;
-    min-height: 10.5rem;
+    height: 21rem;
+    min-height: 21rem;
     padding: 0.35rem 0.15rem;
     border-radius: 0.35rem;
     background:
@@ -4393,8 +4393,8 @@ a.stage-platform:hover {
     writing-mode: vertical-lr;
     direction: rtl;
     width: 1.7rem;
-    height: 9.75rem;
-    min-height: 9.75rem;
+    height: 19.5rem;
+    min-height: 19.5rem;
     background: transparent;
     cursor: pointer;
 }
