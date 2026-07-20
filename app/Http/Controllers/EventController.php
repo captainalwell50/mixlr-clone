@@ -47,6 +47,7 @@ class EventController extends Controller
         $galleryImages = $event->stream
             ? $event->stream->galleryImages()->limit(24)->get()
             : collect();
+        $listenBackgroundUrl = $event->stream?->listenBackgroundUrl();
 
         return view('events.show', compact(
             'event',
@@ -57,6 +58,7 @@ class EventController extends Controller
             'hlsUrl',
             'whepUrl',
             'galleryImages',
+            'listenBackgroundUrl',
         ));
     }
 

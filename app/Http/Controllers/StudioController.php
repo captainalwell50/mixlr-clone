@@ -31,8 +31,14 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
+            'backgroundUploadUrl' => URL::temporarySignedRoute(
+                'gallery.background',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
             'galleryListUrl' => route('gallery.index', $stream),
             'galleryImages' => $stream->galleryImages()->limit(20)->get(),
+            'listenBackgroundUrl' => $stream->listenBackgroundUrl(),
         ]);
     }
 }

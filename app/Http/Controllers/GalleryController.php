@@ -69,6 +69,28 @@ class GalleryController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function storeBackground(Request $request, Stream $stream): JsonResponse
+    {
+        $this->authorizeUpload($request, $stream);
+
+        $validated = $request->validate([
+            'image' => ['required', 'image', 'max:12288'],
+        ]);
+
+        $path = $validated['image']->store('listen-bg/'.$stream->uuid, 'public');
+
+        $previous = $stream->listen_background_path;
+        if (is_string($previous) && $previous !== '' && ! str_starts_with($previous, 'http')) {
+            Storage::disk('public')->delete($previous);
+        }
+
+        $stream->forceFill(['listen_background_path' => $path])->save();
+
+        return response()->json([
+            'background_url' => $stream->listenBackgroundUrl(),
+        ]);
+    }
+
     private function authorizeListen(Request $request, Stream $stream): void
     {
         $organization = $stream->organization;

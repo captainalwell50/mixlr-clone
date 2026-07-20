@@ -1,5 +1,6 @@
 import './bootstrap';
 import { bindStagePlayer } from './player';
+import { bindInitialGalleryFromDom, refreshGalleryFromUrl } from './gallery-ui';
 
 const root = document.getElementById('listen-root');
 const audio = document.getElementById('stream-audio');
@@ -407,47 +408,11 @@ window.addEventListener('beforeunload', () => {
     void teardown();
 });
 
-async function refreshGallery() {
-    const url = root?.dataset.galleryUrl;
-    const grid = document.getElementById('gallery-grid');
-    if (!url || !grid) {
-        return;
-    }
-    try {
-        const res = await fetch(url, {
-            headers: { Accept: 'application/json' },
-            credentials: 'same-origin',
-            cache: 'no-store',
-        });
-        if (!res.ok) {
-            return;
-        }
-        const data = await res.json();
-        const images = Array.isArray(data.images) ? data.images : [];
-        if (images.length === 0) {
-            return;
-        }
-        const empty = document.getElementById('gallery-empty');
-        empty?.remove();
-        const known = new Set([...grid.querySelectorAll('[data-id]')].map((el) => el.getAttribute('data-id')));
-        for (const image of images.slice().reverse()) {
-            const id = String(image.id);
-            if (known.has(id)) {
-                continue;
-            }
-            const figure = document.createElement('figure');
-            figure.className = 'portal-gallery-item';
-            figure.dataset.id = id;
-            figure.innerHTML = `<img src="${image.url}" alt="${image.caption || 'Service photo'}" loading="lazy">` +
-                (image.caption ? `<figcaption>${image.caption}</figcaption>` : '');
-            grid.prepend(figure);
-        }
-    } catch {
-        /* ignore */
-    }
-}
-
 startStatusPolling();
 void startPlayback();
-void refreshGallery();
-window.setInterval(() => void refreshGallery(), 20000);
+bindInitialGalleryFromDom();
+const galleryUrl = root?.dataset.galleryUrl;
+if (galleryUrl) {
+    void refreshGalleryFromUrl(galleryUrl);
+    window.setInterval(() => void refreshGalleryFromUrl(galleryUrl), 20000);
+}

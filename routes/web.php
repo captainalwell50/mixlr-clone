@@ -83,6 +83,9 @@ Route::get('/listen/{stream}/gallery', [GalleryController::class, 'index'])
 Route::post('/listen/{stream}/gallery', [GalleryController::class, 'store'])
     ->middleware('throttle:30,1')
     ->name('gallery.store');
+Route::post('/listen/{stream}/background', [GalleryController::class, 'storeBackground'])
+    ->middleware('throttle:20,1')
+    ->name('gallery.background');
 Route::delete('/listen/{stream}/gallery/{image}', [GalleryController::class, 'destroy'])
     ->middleware(['auth', 'throttle:30,1'])
     ->name('gallery.destroy');

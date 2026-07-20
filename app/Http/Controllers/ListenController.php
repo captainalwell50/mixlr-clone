@@ -54,6 +54,7 @@ class ListenController extends Controller
             'listenerCount' => $listenerCount,
             'isFollowing' => $isFollowing,
             'galleryImages' => $galleryImages,
+            'listenBackgroundUrl' => $stream->listenBackgroundUrl(),
         ]);
     }
 

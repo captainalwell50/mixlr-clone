@@ -1230,12 +1230,54 @@ async function teardownLive() {
 
 const btnAddGallery = document.getElementById('btn-add-gallery');
 const galleryInput = document.getElementById('gallery-input');
+const btnAddBackground = document.getElementById('btn-add-background');
+const backgroundInput = document.getElementById('background-input');
+const studioBgPreview = document.getElementById('studio-bg-preview');
 const studioGalleryList = document.getElementById('studio-gallery-list');
 const galleryUploadUrl = root?.dataset.galleryUploadUrl;
+const backgroundUploadUrl = root?.dataset.backgroundUploadUrl;
 const galleryCsrf = root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content;
 
 btnAddGallery?.addEventListener('click', () => {
     galleryInput?.click();
+});
+
+btnAddBackground?.addEventListener('click', () => {
+    backgroundInput?.click();
+});
+
+backgroundInput?.addEventListener('change', async () => {
+    const file = backgroundInput.files?.[0];
+    if (!backgroundUploadUrl || !file) {
+        return;
+    }
+    const body = new FormData();
+    body.append('image', file);
+    try {
+        const res = await fetch(backgroundUploadUrl, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body,
+        });
+        if (!res.ok) {
+            setStatus('Could not set listen background.');
+            return;
+        }
+        const data = await res.json();
+        if (studioBgPreview && data.background_url) {
+            studioBgPreview.style.backgroundImage = `url('${data.background_url}')`;
+            studioBgPreview.classList.remove('is-empty');
+            studioBgPreview.textContent = '';
+        }
+        setStatus('Listen background updated — listeners will see it full screen.');
+    } catch {
+        setStatus('Could not set listen background.');
+    }
+    backgroundInput.value = '';
 });
 
 galleryInput?.addEventListener('change', async () => {

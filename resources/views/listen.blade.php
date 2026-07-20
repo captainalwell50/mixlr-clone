@@ -10,13 +10,14 @@
     $isLive = $stream->status === \App\Enums\StreamStatus::Live;
     $theme = $organization->themeColor();
     $artwork = $organization->artworkUrl();
-    $stageArt = $artwork ?: asset('images/listen-stage-bg.jpg');
+    $background = $listenBackgroundUrl ?: asset('images/listen-stage-bg.jpg');
+    $cardArt = $artwork ?: $background;
     $shareUrl = route('listen.stream', $stream);
 @endphp
 
 @section('content')
-    <div class="stage stage-cinema portal" style="--stage-accent: {{ $theme }}; --stage-art: url('{{ $stageArt }}')">
-        <div class="stage-atmosphere has-art" aria-hidden="true"></div>
+    <div class="stage stage-cinema portal" style="--stage-accent: {{ $theme }}; --stage-art: url('{{ $background }}')">
+        <div class="stage-atmosphere has-art is-fullscreen" aria-hidden="true"></div>
 
         <div class="stage-shell">
             <header class="portal-bar stage-rise">
@@ -54,9 +55,9 @@
                 </nav>
             </header>
 
-            <div class="portal-layout {{ $stream->chat_enabled ? 'has-chat' : '' }}" id="portal-layout">
+            <div class="portal-layout has-side {{ $stream->chat_enabled ? 'has-chat' : '' }}" id="portal-layout">
                 <main class="portal-main">
-                    <div class="portal-art stage-rise-delay" style="background-image: url('{{ $stageArt }}')" role="img" aria-label="Channel artwork"></div>
+                    <div class="portal-art stage-rise-delay" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork"></div>
 
                     <h1 class="portal-title stage-rise-delay">{{ $stream->title }}</h1>
 
@@ -123,25 +124,6 @@
                         'disabled' => ! $isLive,
                     ])
 
-                    <section class="portal-gallery stage-rise-delay-2" aria-label="Service gallery">
-                        <div class="portal-section-head">
-                            <h2>Gallery</h2>
-                            <p>Pictures from the desk while you listen</p>
-                        </div>
-                        <div class="portal-gallery-grid" id="gallery-grid">
-                            @forelse ($galleryImages as $image)
-                                <figure class="portal-gallery-item">
-                                    <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Service photo' }}" loading="lazy">
-                                    @if ($image->caption)
-                                        <figcaption>{{ $image->caption }}</figcaption>
-                                    @endif
-                                </figure>
-                            @empty
-                                <p class="portal-empty" id="gallery-empty">No photos yet — they’ll appear here when the studio posts them.</p>
-                            @endforelse
-                        </div>
-                    </section>
-
                     @if ($organization->social_feed_url)
                         <section class="portal-social stage-rise-delay-2">
                             <div class="portal-section-head">
@@ -166,31 +148,59 @@
                     ></div>
                 </main>
 
-                @if ($stream->chat_enabled)
-                    <aside class="stage-rail portal-rail stage-rise-delay-2" id="portal-chat" aria-label="Live chat">
-                        <div class="portal-rail-head">
-                            <h2 class="stage-chat-label">Chat</h2>
-                            <button type="button" id="btn-chat-close" class="portal-rail-close" aria-label="Close chat">✕</button>
+                <aside class="portal-side stage-rise-delay-2" aria-label="Gallery and chat">
+                    <section class="portal-gallery" aria-label="Service gallery">
+                        <div class="portal-section-head portal-section-head--side">
+                            <h2>Gallery</h2>
+                            <p>Tap a photo to open</p>
                         </div>
-                        <div id="chat-messages" class="stage-chat-messages"></div>
-                        @auth
-                            <form id="chat-form" class="stage-chat-input">
-                                <input id="chat-body" type="text" maxlength="500" placeholder="Chat as {{ auth()->user()->name }}…" required>
-                                <button type="submit">Post</button>
-                            </form>
-                        @else
-                            <p class="stage-meta mt-3">
-                                <a href="{{ route('login') }}" style="color: var(--stage-accent)">Log in</a> to join the chat.
-                            </p>
-                        @endauth
-                        <div
-                            id="chat-root"
-                            class="hidden"
-                            data-poll-url="{{ route('chat.index', $stream) }}"
-                            data-post-url="{{ route('chat.store', $stream) }}"
-                        ></div>
-                    </aside>
-                @endif
+                        <div class="portal-gallery-grid" id="gallery-grid">
+                            @forelse ($galleryImages as $image)
+                                <button
+                                    type="button"
+                                    class="portal-gallery-item"
+                                    data-id="{{ $image->id }}"
+                                    data-url="{{ $image->url() }}"
+                                    data-caption="{{ $image->caption }}"
+                                    aria-label="Open gallery photo"
+                                >
+                                    <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Service photo' }}" loading="lazy">
+                                    @if ($image->caption)
+                                        <span class="portal-gallery-caption">{{ $image->caption }}</span>
+                                    @endif
+                                </button>
+                            @empty
+                                <p class="portal-empty" id="gallery-empty">No photos yet — they’ll appear here when the studio posts them.</p>
+                            @endforelse
+                        </div>
+                    </section>
+
+                    @if ($stream->chat_enabled)
+                        <div class="stage-rail portal-rail" id="portal-chat" aria-label="Live chat">
+                            <div class="portal-rail-head">
+                                <h2 class="stage-chat-label">Chat</h2>
+                                <button type="button" id="btn-chat-close" class="portal-rail-close" aria-label="Close chat">✕</button>
+                            </div>
+                            <div id="chat-messages" class="stage-chat-messages"></div>
+                            @auth
+                                <form id="chat-form" class="stage-chat-input">
+                                    <input id="chat-body" type="text" maxlength="500" placeholder="Chat as {{ auth()->user()->name }}…" required>
+                                    <button type="submit">Post</button>
+                                </form>
+                            @else
+                                <p class="stage-meta mt-3">
+                                    <a href="{{ route('login') }}" style="color: var(--stage-accent)">Log in</a> to join the chat.
+                                </p>
+                            @endauth
+                            <div
+                                id="chat-root"
+                                class="hidden"
+                                data-poll-url="{{ route('chat.index', $stream) }}"
+                                data-post-url="{{ route('chat.store', $stream) }}"
+                            ></div>
+                        </div>
+                    @endif
+                </aside>
             </div>
 
             <div id="engage-root" class="hidden"

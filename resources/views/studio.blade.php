@@ -165,6 +165,20 @@
                 </div>
                 <div class="mixer-gallery">
                     <div class="mixer-playlist-head">
+                        <h2>Listen background</h2>
+                    </div>
+                    <p class="mixer-hint">Full-screen image behind the listener page (replaces the default).</p>
+                    <div class="mixer-gallery-actions">
+                        <button type="button" id="btn-add-background" class="mixer-add-sounds">Set background</button>
+                        <input id="background-input" type="file" accept="image/*" class="hidden">
+                    </div>
+                    @if (! empty($listenBackgroundUrl))
+                        <div class="mixer-bg-preview" id="studio-bg-preview" style="background-image: url('{{ $listenBackgroundUrl }}')"></div>
+                    @else
+                        <div class="mixer-bg-preview is-empty" id="studio-bg-preview">Default background</div>
+                    @endif
+
+                    <div class="mixer-playlist-head" style="margin-top: 1rem">
                         <h2>Service gallery</h2>
                     </div>
                     <p class="mixer-hint">Post photos for listeners while you’re on air.</p>
@@ -209,6 +223,7 @@
             id="studio-root"
             data-whip-url="{{ $whipUrl }}"
             data-gallery-upload-url="{{ $galleryUploadUrl }}"
+            data-background-upload-url="{{ $backgroundUploadUrl }}"
             data-gallery-list-url="{{ $galleryListUrl }}"
             data-csrf="{{ csrf_token() }}"
             class="hidden"

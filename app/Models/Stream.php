@@ -22,6 +22,7 @@ class Stream extends Model
         'started_at',
         'ended_at',
         'archive_path',
+        'listen_background_path',
     ];
 
     protected $hidden = [
@@ -88,6 +89,20 @@ class Stream extends Model
         return $this->listenerSessions()
             ->where('last_seen_at', '>=', now()->subSeconds($withinSeconds))
             ->count();
+    }
+
+    public function listenBackgroundUrl(): ?string
+    {
+        $path = $this->listen_background_path;
+        if (! is_string($path) || $path === '') {
+            return null;
+        }
+
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://') || str_starts_with($path, '/')) {
+            return $path;
+        }
+
+        return \Illuminate\Support\Facades\Storage::disk('public')->url($path);
     }
 
     public function getRouteKeyName(): string
