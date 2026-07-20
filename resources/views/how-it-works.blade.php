@@ -29,7 +29,7 @@
             <nav class="mkt-nav" aria-label="Primary">
                 <a href="{{ route('how-it-works') }}" aria-current="page">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
-                <a href="{{ route('archive.index') }}">Archive</a>
+                <a href="{{ route('archive.index') }}">Recorded Audio</a>
                 @auth
                     <a href="{{ url('/dashboard') }}">Dashboard</a>
                 @else
@@ -71,7 +71,7 @@
                 <li>
                     <span class="mkt-step-num">04</span>
                     <h2>Listen with chat &amp; hearts</h2>
-                    <p>People join from any phone, send hearts, and chat in real time. Later, recordings land in Archive for midweek catch-up.</p>
+                    <p>People join from any phone, send hearts, and chat in real time. Later, recordings land in Recorded Audio for midweek catch-up.</p>
                 </li>
             </ol>
             <div class="mkt-cta mkt-page-cta">
@@ -99,7 +99,7 @@
                 </p>
                 <div class="mkt-cta">
                     <a href="{{ route('discover') }}" class="site-btn site-btn-primary">Browse channels</a>
-                    <a href="{{ route('archive.index') }}" class="site-btn site-btn-ghost">Open archive</a>
+                    <a href="{{ route('archive.index') }}" class="site-btn site-btn-ghost">Recorded Audio</a>
                 </div>
             </div>
             <ul class="mkt-points">
@@ -138,7 +138,7 @@
             <nav aria-label="Footer">
                 <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
-                <a href="{{ route('archive.index') }}">Archive</a>
+                <a href="{{ route('archive.index') }}">Recorded Audio</a>
                 @auth
                     <a href="{{ url('/dashboard') }}">Dashboard</a>
                 @else

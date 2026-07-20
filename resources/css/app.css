@@ -2074,6 +2074,216 @@ a.stage-platform:hover {
     color: var(--stage-muted);
 }
 
+/* Recorded Audio listing */
+.archive-page {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: 1.75rem 1.25rem 3.5rem;
+}
+
+@media (min-width: 640px) {
+    .archive-page {
+        padding: 2.25rem 1.5rem 4rem;
+    }
+}
+
+.archive-head {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+}
+
+@media (min-width: 640px) {
+    .archive-head {
+        flex-direction: row;
+        align-items: flex-end;
+        justify-content: space-between;
+    }
+}
+
+.archive-head h1 {
+    font-family: 'Open Sans', var(--font-sans);
+    font-size: clamp(2rem, 5vw, 2.75rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.archive-head-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 16%, transparent);
+    padding: 0.55rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--stage-cream);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.archive-head-link:hover {
+    border-color: color-mix(in srgb, var(--stage-accent) 55%, transparent);
+    color: white;
+}
+
+.archive-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.archive-row {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.9rem 1rem;
+    align-items: center;
+    padding: 0.9rem;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 10%, transparent);
+    background:
+        linear-gradient(135deg, color-mix(in srgb, var(--tile-accent, var(--stage-accent)) 12%, transparent), transparent 55%),
+        color-mix(in srgb, rgba(10, 14, 12, 0.82) 92%, transparent);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
+}
+
+@media (min-width: 720px) {
+    .archive-row {
+        grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+        padding: 1rem 1.1rem;
+    }
+}
+
+.archive-art {
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 0.75rem;
+    display: grid;
+    place-items: center;
+    background:
+        radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--tile-accent, var(--stage-accent)) 45%, transparent), transparent 55%),
+        #151a17;
+    color: color-mix(in srgb, var(--stage-cream) 80%, transparent);
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 600;
+    overflow: hidden;
+}
+
+@media (min-width: 720px) {
+    .archive-art {
+        width: 5.5rem;
+        height: 5.5rem;
+    }
+}
+
+.archive-art.has-art {
+    background:
+        linear-gradient(180deg, transparent 35%, rgba(0, 0, 0, 0.35)),
+        var(--tile-art) center/cover no-repeat;
+}
+
+.archive-copy {
+    min-width: 0;
+}
+
+.archive-copy h2 {
+    margin: 0;
+    font-family: 'Open Sans', var(--font-sans);
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--stage-cream);
+}
+
+.archive-channel {
+    margin: 0.2rem 0 0;
+    font-size: 0.85rem;
+    color: var(--stage-muted);
+}
+
+.archive-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    margin-top: 0.55rem;
+    font-size: 0.75rem;
+    color: color-mix(in srgb, var(--stage-cream) 62%, transparent);
+}
+
+.archive-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.archive-meta span:not(:last-child)::after {
+    content: '';
+    width: 0.2rem;
+    height: 0.2rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--stage-cream) 35%, transparent);
+}
+
+.archive-play {
+    grid-column: 1 / -1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: 2.6rem;
+    border-radius: 999px;
+    background: var(--tile-accent, var(--stage-accent));
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+@media (min-width: 720px) {
+    .archive-play {
+        grid-column: auto;
+        min-width: 7.5rem;
+        padding: 0 1.15rem;
+    }
+}
+
+.archive-play svg {
+    width: 0.95rem;
+    height: 0.95rem;
+}
+
+.archive-play:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}
+
+.archive-empty {
+    margin-top: 0.5rem;
+    padding: 2.5rem 1.25rem;
+    border-radius: 1rem;
+    border: 1px dashed color-mix(in srgb, var(--stage-cream) 16%, transparent);
+    text-align: center;
+    color: var(--stage-muted);
+}
+
+.archive-empty-title {
+    margin: 0 0 0.35rem;
+    font-family: 'Open Sans', var(--font-sans);
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--stage-cream);
+}
+
+.archive-pagination {
+    margin-top: 1.5rem;
+}
+
 /* Discover live rail */
 .discover-page {
     max-width: 64rem;

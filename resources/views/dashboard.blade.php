@@ -15,7 +15,7 @@
             <a href="{{ route('admin.streams.index') }}" class="console-btn console-btn-ghost">Streams</a>
         @endif
         <a href="{{ route('discover') }}" class="console-btn console-btn-ghost">Discover</a>
-        <a href="{{ route('archive.index') }}" class="console-btn console-btn-ghost">Archive</a>
+        <a href="{{ route('archive.index') }}" class="console-btn console-btn-ghost">Recorded Audio</a>
     </div>
 
     <p class="mt-10 text-xs text-[var(--stage-muted)]">

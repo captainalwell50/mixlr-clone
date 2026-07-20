@@ -8,7 +8,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="preconnect" href="https://fonts.bunny.net">
-    <link href="https://fonts.bunny.net/css?family=fraunces:500,600|source-sans-3:400,500,600" rel="stylesheet" />
+    <link href="https://fonts.bunny.net/css?family=fraunces:500,600|source-sans-3:400,500,600|open-sans:600,700" rel="stylesheet" />
     <title>@yield('title', config('app.name', 'Live Mix Audio'))</title>
     @vite(['resources/css/app.css', 'resources/js/pwa.js'])
     @yield('vite')
@@ -22,7 +22,7 @@
             <div class="app-nav-links">
                 <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
-                <a href="{{ route('archive.index') }}">Archive</a>
+                <a href="{{ route('archive.index') }}">Recorded Audio</a>
                 @auth
                     @if(auth()->user()->is_admin || auth()->user()->manageableOrganizations()->exists())
                         <a href="{{ route('admin.events.index') }}">Events</a>

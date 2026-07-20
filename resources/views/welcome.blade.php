@@ -29,7 +29,7 @@
             <nav class="mkt-nav" aria-label="Primary">
                 <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
-                <a href="{{ route('archive.index') }}">Archive</a>
+                <a href="{{ route('archive.index') }}">Recorded Audio</a>
                 @auth
                     <a href="{{ url('/dashboard') }}">Dashboard</a>
                 @else
@@ -161,7 +161,7 @@
             <nav aria-label="Footer">
                 <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
-                <a href="{{ route('archive.index') }}">Archive</a>
+                <a href="{{ route('archive.index') }}">Recorded Audio</a>
                 @auth
                     <a href="{{ url('/dashboard') }}">Dashboard</a>
                 @else

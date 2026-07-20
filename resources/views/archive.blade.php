@@ -1,55 +1,71 @@
 @extends('layouts.app')
 
 @section('title', 'Recorded Audio · '.config('app.name', 'Live Mix Audio'))
+@section('main_class', 'w-full')
 
 @section('content')
-    <p class="site-section-label">Past broadcasts</p>
-    <h1 class="console-title mt-2">Recorded Audio</h1>
-    <p class="console-lead">Listen back to recorded services.</p>
+    <div class="archive-page site-page">
+        <div class="archive-head stage-rise">
+            <div>
+                <p class="site-section-label">Past broadcasts</p>
+                <h1 class="mt-2">Recorded Audio</h1>
+                <p class="mt-2 max-w-lg text-sm text-[var(--stage-muted)]">
+                    Catch up on services you missed — open any recording to listen with full playback controls.
+                </p>
+            </div>
+            <a href="{{ route('discover') }}" class="archive-head-link">Discover live</a>
+        </div>
 
-    <div class="console-table">
-        <table>
-            <thead>
-                <tr>
-                    <th>Stream</th>
-                    <th>Recorded</th>
-                    <th>Duration</th>
-                    <th>Size</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse ($recordings as $recording)
-                    <tr>
-                        <td>
-                            <span class="text-[var(--stage-cream)]">{{ $recording->stream->title }}</span>
-                            <span class="mt-0.5 block text-xs text-[var(--stage-muted)]">{{ $recording->stream->organization->name }}</span>
-                        </td>
-                        <td class="text-[var(--stage-muted)]">{{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y H:i') }}</td>
-                        <td class="text-[var(--stage-muted)]">{{ $recording->duration_raw ?: '—' }}</td>
-                        <td class="text-[var(--stage-muted)]">
-                            @if ($recording->size_bytes)
-                                {{ number_format($recording->size_bytes / 1024 / 1024, 1) }} MB
-                            @else
-                                —
-                            @endif
-                        </td>
-                        <td class="text-right">
-                            <a href="{{ route('archive.play', $recording) }}" class="console-link" target="_blank" rel="noopener">Play</a>
-                        </td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="5" class="py-8 text-center text-[var(--stage-muted)]">
-                            No recordings yet. Past broadcasts will show up here after a live service ends.
-                        </td>
-                    </tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
+        @if ($recordings->isEmpty())
+            <div class="archive-empty stage-rise-delay">
+                <p class="archive-empty-title">No recordings yet</p>
+                <p>Past broadcasts will appear here after a live service ends.</p>
+            </div>
+        @else
+            <ul class="archive-list stage-rise-delay">
+                @foreach ($recordings as $recording)
+                    @php
+                        $org = $recording->stream->organization;
+                        $art = $org->artworkUrl();
+                        $accent = $org->themeColor();
+                    @endphp
+                    <li class="archive-row" style="--tile-accent: {{ $accent }};">
+                        <div
+                            class="archive-art {{ $art ? 'has-art' : '' }}"
+                            @if ($art) style="--tile-art: url('{{ $art }}')" @endif
+                            aria-hidden="true"
+                        >
+                            @unless ($art)
+                                <span>{{ strtoupper(substr($org->name, 0, 1)) }}</span>
+                            @endunless
+                        </div>
 
-    <div class="mt-6">
-        {{ $recordings->links() }}
+                        <div class="archive-copy">
+                            <h2>{{ $recording->stream->title }}</h2>
+                            <p class="archive-channel">{{ $org->name }}</p>
+                            <div class="archive-meta">
+                                <span>{{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }}</span>
+                                <span>{{ $recording->durationLabel() }}</span>
+                                <span>{{ $recording->sizeLabel() }}</span>
+                            </div>
+                        </div>
+
+                        <a
+                            href="{{ route('archive.play', $recording) }}"
+                            class="archive-play"
+                            target="_blank"
+                            rel="noopener"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86z"/></svg>
+                            Play
+                        </a>
+                    </li>
+                @endforeach
+            </ul>
+
+            <div class="archive-pagination">
+                {{ $recordings->links() }}
+            </div>
+        @endif
     </div>
 @endsection
