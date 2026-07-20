@@ -33,33 +33,4 @@
         </form>
     </div>
 
-    <style>
-        .onboard-type-card {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            padding: 1.25rem;
-            border: 1px solid color-mix(in srgb, var(--stage-border) 80%, transparent);
-            border-radius: 0.75rem;
-            background: color-mix(in srgb, var(--stage-panel) 88%, transparent);
-            cursor: pointer;
-            transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
-        }
-        .onboard-type-card:hover,
-        .onboard-type-card:has(input:checked),
-        .onboard-type-card.is-selected {
-            border-color: var(--stage-accent, #3d9b7a);
-            background: color-mix(in srgb, var(--stage-accent, #3d9b7a) 12%, var(--stage-panel));
-            transform: translateY(-1px);
-        }
-        .onboard-type-title {
-            font-weight: 600;
-            color: var(--stage-text);
-        }
-        .onboard-type-blurb {
-            font-size: 0.875rem;
-            color: var(--stage-muted);
-            line-height: 1.4;
-        }
-    </style>
 @endsection

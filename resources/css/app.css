@@ -23,6 +23,9 @@
     --stage-ink: var(--color-ink);
     --stage-cream: var(--color-cream);
     --stage-muted: var(--color-muted);
+    --stage-text: var(--color-cream);
+    --stage-panel: var(--color-ink-elevated);
+    --stage-border: color-mix(in srgb, var(--color-cream) 18%, transparent);
 }
 
 /* ——— Shared type ——— */
@@ -2876,7 +2879,16 @@ a.stage-platform:hover {
 
 /* ——— Operator console (admin / auth / dashboard) ——— */
 .console {
-    color: var(--stage-cream);
+    /* Brighter secondary text on dark ink (marketing keeps global --stage-muted). */
+    --stage-muted: #c2cdc4;
+    --stage-text: #f2f5ef;
+    --stage-panel: #18221c;
+    --stage-border: color-mix(in srgb, var(--stage-cream) 22%, transparent);
+    color: var(--stage-text);
+}
+
+.console .site-section-label {
+    color: color-mix(in srgb, var(--stage-accent) 55%, #d7e0d8);
 }
 
 .console-title {
@@ -2884,13 +2896,44 @@ a.stage-platform:hover {
     font-size: clamp(1.75rem, 4vw, 2.25rem);
     font-weight: 600;
     letter-spacing: -0.02em;
-    color: var(--stage-cream);
+    color: var(--stage-text);
 }
 
 .console-lead {
     margin-top: 0.4rem;
     font-size: 0.95rem;
     color: var(--stage-muted);
+    line-height: 1.5;
+}
+
+.onboard-type-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 1.25rem;
+    border: 1px solid var(--stage-border);
+    border-radius: 0.75rem;
+    background: var(--stage-panel);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.onboard-type-card:hover,
+.onboard-type-card:has(input:checked),
+.onboard-type-card.is-selected {
+    border-color: color-mix(in srgb, var(--stage-accent, #3d9b7a) 70%, white);
+    background: color-mix(in srgb, var(--stage-accent, #3d9b7a) 16%, var(--stage-panel));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--stage-accent, #3d9b7a) 28%, transparent);
+    transform: translateY(-1px);
+}
+.onboard-type-title {
+    font-size: 1.05rem;
+    font-weight: 650;
+    color: #f4f7f2;
+}
+.onboard-type-blurb {
+    font-size: 0.9rem;
+    color: #c8d2ca;
+    line-height: 1.45;
 }
 
 .console-head {
@@ -3122,10 +3165,13 @@ a.stage-platform:hover {
 }
 
 .app-nav-links a {
-    color: var(--stage-muted);
+    color: color-mix(in srgb, var(--stage-cream) 82%, transparent);
 }
 .app-nav-links a:hover {
-    color: var(--stage-cream);
+    color: #fff;
+}
+.app-nav-links > span {
+    color: color-mix(in srgb, var(--stage-cream) 72%, transparent);
 }
 
 .app-nav-links .nav-accent {
