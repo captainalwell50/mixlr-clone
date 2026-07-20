@@ -433,6 +433,7 @@ function stopMeter() {
     }
     if (meterLabel) {
         meterLabel.textContent = '—';
+        meterLabel.classList.remove('is-hot');
     }
 }
 
@@ -483,7 +484,9 @@ function startMeters() {
         fillMeter(playlistMeterEl, plRms);
         fillMeter(meterEl, masterRms);
         if (meterLabel) {
-            meterLabel.textContent = masterRms > 0.02 ? 'SIGNAL' : '—';
+            const hot = masterRms > 0.02;
+            meterLabel.textContent = hot ? 'SIGNAL' : '—';
+            meterLabel.classList.toggle('is-hot', hot);
         }
         meterRaf = requestAnimationFrame(tick);
     };

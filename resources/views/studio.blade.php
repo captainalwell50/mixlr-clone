@@ -65,8 +65,10 @@
                                 </div>
                                 <input id="mic-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Input 1 level">
                             </div>
-                            <label class="sr-only" for="audio-input">Input 1 source</label>
-                            <select id="audio-input" class="mixer-source"></select>
+                            <label class="mixer-field mixer-field--source" for="audio-input">
+                                <span class="mixer-field-label">Source</span>
+                                <select id="audio-input" class="mixer-field-control"></select>
+                            </label>
                         </div>
 
                         {{-- INPUT 2 --}}
@@ -90,10 +92,12 @@
                                 </div>
                                 <input id="aux-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Input 2 level">
                             </div>
-                            <label class="sr-only" for="aux-input">Input 2 source</label>
-                            <select id="aux-input" class="mixer-source">
-                                <option value="">Select source</option>
-                            </select>
+                            <label class="mixer-field mixer-field--source" for="aux-input">
+                                <span class="mixer-field-label">Source</span>
+                                <select id="aux-input" class="mixer-field-control">
+                                    <option value="">Select source</option>
+                                </select>
+                            </label>
                         </div>
 
                         {{-- PLAYLIST --}}
@@ -117,7 +121,10 @@
                                 </div>
                                 <input id="playlist-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Playlist level">
                             </div>
-                            <p class="mixer-source mixer-source--static" id="playlist-count">No sounds</p>
+                            <div class="mixer-field mixer-field--source">
+                                <span class="mixer-field-label">Queue</span>
+                                <p class="mixer-field-static" id="playlist-count">No sounds</p>
+                            </div>
                         </div>
 
                         {{-- MASTER — mix volume + cue headphone output --}}
@@ -132,7 +139,7 @@
                                 </div>
                             </div>
                             <div class="mixer-strip-toggles mixer-strip-toggles--master">
-                                <span class="mixer-rec" id="meter-label" title="Mix level">—</span>
+                                <span class="mixer-rec" id="meter-label" title="Mix level" data-idle>—</span>
                             </div>
                             <div class="mixer-fader-well mixer-fader-well--master">
                                 <div class="mixer-fader-scale" aria-hidden="true">
@@ -140,16 +147,20 @@
                                 </div>
                                 <input id="master-fader" class="mixer-fader mixer-fader--master" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Master level">
                             </div>
-                            <div class="mixer-master-selects">
-                                <label class="sr-only" for="audio-layout">Broadcast layout</label>
-                                <select id="audio-layout" class="mixer-source" title="Broadcast layout" aria-label="Broadcast layout">
-                                    <option value="mono" selected>Mono</option>
-                                    <option value="stereo">Stereo</option>
-                                </select>
-                                <label class="sr-only" for="audio-output">Cue headphones</label>
-                                <select id="audio-output" class="mixer-source" title="Cue headphones" aria-label="Cue headphones">
-                                    <option value="">Default output</option>
-                                </select>
+                            <div class="mixer-master-fields">
+                                <label class="mixer-field" for="audio-layout">
+                                    <span class="mixer-field-label">Layout</span>
+                                    <select id="audio-layout" class="mixer-field-control" title="Broadcast layout">
+                                        <option value="mono" selected>Mono</option>
+                                        <option value="stereo">Stereo</option>
+                                    </select>
+                                </label>
+                                <label class="mixer-field" for="audio-output">
+                                    <span class="mixer-field-label">Cue HP</span>
+                                    <select id="audio-output" class="mixer-field-control" title="Cue headphones">
+                                        <option value="">Default output</option>
+                                    </select>
+                                </label>
                             </div>
                         </div>
                     </div>
