@@ -134,11 +134,12 @@ sudo crontab -u www-data -e
 
 ## 5b. SaaS billing (Paystack)
 
-1. Create **Starter** and **Pro** plans in the [Paystack Dashboard](https://dashboard.paystack.com/#/plans) (monthly, NGN or your currency).
-2. Set `REGISTRATION_ENABLED=true` and paste plan codes into `PAYSTACK_PLAN_*` in `.env`.
-3. Run `php artisan db:seed --class=PlanSeeder` (or full `--seed`) so `plans` rows match.
-4. In Paystack → Settings → Webhooks, add `https://<your-host>/webhooks/paystack` (events: `charge.success`, `subscription.create`, `subscription.disable`, `invoice.payment_failed`).
-5. Signature verification uses `PAYSTACK_SECRET_KEY` (HMAC SHA512), matching Paystack’s docs.
+1. Creators land on the **Free** plan after onboarding (1 stream, Studio go-live) so they can test without a card.
+2. Create **Starter** and **Pro** plans in the [Paystack Dashboard](https://dashboard.paystack.com/#/plans) (monthly, NGN or your currency).
+3. Set `REGISTRATION_ENABLED=true` and paste plan codes into `PAYSTACK_PLAN_*` in `.env`.
+4. Run `php artisan db:seed --class=PlanSeeder` (or full `--seed`) so `plans` rows match (includes Free + paid).
+5. In Paystack → Settings → Webhooks, add `https://<your-host>/webhooks/paystack` (events: `charge.success`, `subscription.create`, `subscription.disable`, `invoice.payment_failed`).
+6. Signature verification uses `PAYSTACK_SECRET_KEY` (HMAC SHA512), matching Paystack’s docs.
 
 ## 6. Sunday go-live checklist
 

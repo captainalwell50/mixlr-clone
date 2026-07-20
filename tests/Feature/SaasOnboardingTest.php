@@ -46,7 +46,7 @@ class SaasOnboardingTest extends TestCase
                 'slug' => 'grace-church',
                 'theme_color' => '#3d9b7a',
             ])
-            ->assertRedirect(route('billing.plans'));
+            ->assertRedirect(route('creator.home'));
 
         $this->assertDatabaseHas('organizations', [
             'slug' => 'grace-church',
@@ -64,10 +64,49 @@ class SaasOnboardingTest extends TestCase
             'organization_id' => $org->id,
             'title' => 'Grace Church',
         ]);
+        $freePlan = Plan::query()->where('slug', 'free')->first();
+        $this->assertNotNull($freePlan);
         $this->assertDatabaseHas('subscriptions', [
             'organization_id' => $org->id,
-            'status' => SubscriptionStatus::Trialing->value,
+            'plan_id' => $freePlan->id,
+            'status' => SubscriptionStatus::Active->value,
         ]);
+    }
+
+    public function test_free_plan_activates_without_paystack(): void
+    {
+        config(['services.paystack.secret_key' => 'sk_test_secret']);
+
+        $user = User::factory()->create(['is_admin' => false]);
+        $org = Organization::query()->create(['name' => 'Free Org', 'slug' => 'free-org']);
+        $org->users()->attach($user->id, ['role' => OrgRole::Owner->value]);
+        Subscription::query()->create([
+            'organization_id' => $org->id,
+            'status' => SubscriptionStatus::Trialing,
+            'trial_ends_at' => now()->addDay(),
+        ]);
+
+        $plan = Plan::query()->create([
+            'name' => 'Free',
+            'slug' => 'free',
+            'amount' => 0,
+            'currency' => 'NGN',
+            'interval' => 'monthly',
+            'limits' => ['max_streams' => 1],
+            'is_active' => true,
+            'sort_order' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('billing.checkout', $plan))
+            ->assertRedirect(route('creator.home'));
+
+        $this->assertDatabaseHas('subscriptions', [
+            'organization_id' => $org->id,
+            'plan_id' => $plan->id,
+            'status' => SubscriptionStatus::Active->value,
+        ]);
+        $this->assertTrue($org->fresh()->allowsBroadcast());
     }
 
     public function test_middleware_blocks_stream_create_when_subscription_cancelled(): void

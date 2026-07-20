@@ -10,6 +10,23 @@ class PlanSeeder extends Seeder
     public function run(): void
     {
         Plan::query()->updateOrCreate(
+            ['slug' => 'free'],
+            [
+                'name' => 'Free',
+                'paystack_plan_code' => null,
+                'amount' => 0,
+                'currency' => env('PAYSTACK_CURRENCY', 'NGN'),
+                'interval' => 'monthly',
+                'limits' => [
+                    'max_streams' => 1,
+                    'gallery' => true,
+                ],
+                'is_active' => true,
+                'sort_order' => 0,
+            ],
+        );
+
+        Plan::query()->updateOrCreate(
             ['slug' => 'starter'],
             [
                 'name' => 'Starter',

@@ -66,6 +66,13 @@ class BillingController extends Controller
 
         $user = $request->user();
 
+        if ($plan->isFree()) {
+            $this->activateSubscription($organization, $plan);
+
+            return redirect()->route('creator.home')
+                ->with('status', __('You’re on the Free plan — open Studio anytime to test the platform.'));
+        }
+
         if (! $paystack->enabled()) {
             return $this->activateWithoutPaystack($organization, $plan);
         }

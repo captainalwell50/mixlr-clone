@@ -7,6 +7,7 @@ use App\Enums\OrgRole;
 use App\Enums\StreamStatus;
 use App\Enums\SubscriptionStatus;
 use App\Models\Organization;
+use App\Models\Plan;
 use App\Models\Stream;
 use App\Models\Subscription;
 use Illuminate\Http\RedirectResponse;
@@ -99,7 +100,24 @@ class OnboardingController extends Controller
 
         $theme = $validated['theme_color'] ?? '#3d9b7a';
 
-        DB::transaction(function () use ($user, $validated, $slug, $theme, $type): void {
+        $freePlan = Plan::query()->firstOrCreate(
+            ['slug' => 'free'],
+            [
+                'name' => 'Free',
+                'paystack_plan_code' => null,
+                'amount' => 0,
+                'currency' => env('PAYSTACK_CURRENCY', 'NGN'),
+                'interval' => 'monthly',
+                'limits' => [
+                    'max_streams' => 1,
+                    'gallery' => true,
+                ],
+                'is_active' => true,
+                'sort_order' => 0,
+            ],
+        );
+
+        DB::transaction(function () use ($user, $validated, $slug, $theme, $type, $freePlan): void {
             $organization = Organization::query()->create([
                 'name' => $validated['name'],
                 'slug' => $slug,
@@ -126,15 +144,15 @@ class OnboardingController extends Controller
 
             Subscription::query()->create([
                 'organization_id' => $organization->id,
-                'plan_id' => null,
-                'status' => SubscriptionStatus::Trialing,
-                'trial_ends_at' => now()->addDays(7),
+                'plan_id' => $freePlan->id,
+                'status' => SubscriptionStatus::Active,
+                'trial_ends_at' => null,
             ]);
         });
 
         session()->forget('onboarding.creator_type');
 
-        return redirect()->route('billing.plans')
-            ->with('status', __('Channel created. Choose a plan or continue on your 7-day trial.'));
+        return redirect()->route('creator.home')
+            ->with('status', __('Channel created on the Free plan. Open Studio to test, or upgrade anytime from billing.'));
     }
 }

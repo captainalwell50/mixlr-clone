@@ -33,8 +33,17 @@ class Plan extends Model
         return $this->hasMany(Subscription::class);
     }
 
+    public function isFree(): bool
+    {
+        return $this->amount === 0 || $this->slug === 'free';
+    }
+
     public function amountLabel(): string
     {
+        if ($this->isFree()) {
+            return 'Free';
+        }
+
         $major = $this->amount / 100;
 
         return $this->currency.' '.number_format($major, 0);

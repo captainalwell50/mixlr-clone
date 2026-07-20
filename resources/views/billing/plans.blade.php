@@ -3,12 +3,11 @@
 @section('title', 'Choose a plan')
 
 @section('content')
-    <div class="mx-auto max-w-3xl">
+    <div class="mx-auto max-w-4xl">
         <p class="site-section-label">Billing</p>
         <h1 class="console-title mt-2">Choose how you’ll broadcast</h1>
         <p class="console-lead">
-            {{ $organization->name }} already has a 7-day trial.
-            Subscribe with Paystack anytime — or continue on trial and open Studio now.
+            Start on Free to test Studio and your channel, or subscribe when you’re ready for a paid plan.
         </p>
 
         @if (session('error'))
@@ -22,38 +21,57 @@
             <p class="mt-6 text-sm text-[var(--stage-muted)]">
                 Current status:
                 <span class="text-[var(--stage-text)]">{{ $subscription->status->label() }}</span>
+                @if ($subscription->plan)
+                    · {{ $subscription->plan->name }}
+                @endif
                 @if ($subscription->trial_ends_at && $subscription->status->value === 'trialing')
                     · trial ends {{ $subscription->trial_ends_at->toFormattedDateString() }}
                 @endif
             </p>
         @endif
 
-        <div class="mt-8 grid gap-4 sm:grid-cols-2">
+        <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             @foreach ($plans as $plan)
-                <div class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6">
+                <div class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6 {{ $plan->isFree() ? 'ring-1 ring-[var(--stage-accent)]/40' : '' }}">
                     <h2 class="text-lg font-semibold text-[var(--stage-text)]">{{ $plan->name }}</h2>
-                    <p class="mt-2 text-2xl font-semibold tabular-nums">{{ $plan->amountLabel() }}<span class="text-sm font-normal text-[var(--stage-muted)]"> / {{ $plan->interval }}</span></p>
+                    <p class="mt-2 text-2xl font-semibold tabular-nums">
+                        {{ $plan->amountLabel() }}
+                        @unless ($plan->isFree())
+                            <span class="text-sm font-normal text-[var(--stage-muted)]"> / {{ $plan->interval }}</span>
+                        @endunless
+                    </p>
                     <ul class="mt-4 space-y-1 text-sm text-[var(--stage-muted)]">
-                        <li>Up to {{ $plan->maxStreams() }} stream{{ $plan->maxStreams() === 1 ? '' : 's' }}</li>
-                        @if (data_get($plan->limits, 'gallery'))
-                            <li>Event gallery &amp; video reels</li>
+                        @if ($plan->isFree())
+                            <li>Test Studio go-live &amp; listen</li>
+                            <li>1 channel stream</li>
+                            <li>Upgrade anytime</li>
+                        @else
+                            <li>Up to {{ $plan->maxStreams() }} stream{{ $plan->maxStreams() === 1 ? '' : 's' }}</li>
+                            @if (data_get($plan->limits, 'gallery'))
+                                <li>Event gallery &amp; video reels</li>
+                            @endif
+                            <li>Studio go-live + Recorded Audio</li>
                         @endif
-                        <li>Studio go-live + Recorded Audio</li>
                     </ul>
                     <form method="POST" action="{{ route('billing.checkout', $plan) }}" class="mt-6">
                         @csrf
-                        <button type="submit" class="console-btn console-btn-primary w-full">
-                            {{ $paystackEnabled ? 'Subscribe with Paystack' : 'Activate plan' }}
+                        <button type="submit" class="console-btn {{ $plan->isFree() ? 'console-btn-primary' : 'console-btn-ghost' }} w-full">
+                            @if ($plan->isFree())
+                                Start free
+                            @elseif ($paystackEnabled)
+                                Subscribe with Paystack
+                            @else
+                                Activate plan
+                            @endif
                         </button>
                     </form>
                 </div>
             @endforeach
         </div>
 
-        <form method="POST" action="{{ route('billing.trial') }}" class="mt-8">
-            @csrf
-            <button type="submit" class="console-btn console-btn-ghost">Continue on 7-day trial</button>
-            <a href="{{ route('creator.home') }}" class="console-link ml-4 text-sm">Skip to creator home</a>
-        </form>
+        <p class="mt-8 text-sm text-[var(--stage-muted)]">
+            Already set up?
+            <a href="{{ route('creator.home') }}" class="console-link">Go to creator home</a>
+        </p>
     </div>
 @endsection

@@ -20,7 +20,7 @@ Broadcaster (Studio WHIP or OBS RTMP) --> MediaMTX --HLS (+ optional CDN)--> Lis
 - Installable PWA (manifest + service worker) for creator and listener
 - CDN: set `MEDIAMTX_HLS_CDN_BASE` (see [deploy/azure/CDN.md](deploy/azure/CDN.md))
 - Registration is off by default (`REGISTRATION_ENABLED=false`)
-- **SaaS mode:** enable registration, creator onboarding (church / radio / event), Paystack subscriptions, and creator home at `/home`
+- **SaaS mode:** enable registration, creator onboarding (church / radio / event), Free plan for testing, Paystack paid plans, and creator home at `/home`
 
 ## Requirements
 
