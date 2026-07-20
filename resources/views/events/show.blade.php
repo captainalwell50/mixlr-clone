@@ -171,7 +171,7 @@
                 <aside class="portal-side stage-rise-delay-2" aria-label="Gallery and chat">
                     <section class="portal-gallery" aria-label="Service gallery">
                         <div class="portal-section-head portal-section-head--side">
-                            <h2>Gallery</h2>
+                            <h2>Live Gallery - Happening Now</h2>
                             <p>Tap a photo to open</p>
                         </div>
                         <div class="portal-gallery-grid" id="gallery-grid">
