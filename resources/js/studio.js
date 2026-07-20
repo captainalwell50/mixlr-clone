@@ -71,6 +71,9 @@ let mixDest = null;
 let cueDest = null;
 /** @type {GainNode|null} */
 let masterGain = null;
+/** Post-fader cue bus — follows Master so headphones match broadcast level. */
+/** @type {GainNode|null} */
+let cueMasterGain = null;
 /** @type {GainNode|null} */
 let micGain = null;
 /** @type {GainNode|null} */
@@ -259,8 +262,12 @@ function applyPlaylistGain() {
 }
 
 function applyMasterGain() {
+    const g = faderGain(masterFaderEl);
     if (masterGain) {
-        masterGain.gain.value = faderGain(masterFaderEl);
+        masterGain.gain.value = g;
+    }
+    if (cueMasterGain) {
+        cueMasterGain.gain.value = g;
     }
 }
 
@@ -595,6 +602,22 @@ async function applyMaxAudioBitrate(peer) {
 
 async function ensureMixer() {
     if (audioCtx && mixDest && micGain && playlistGain && masterGain && cueDest) {
+        // Migrate older graphs that tapped cue pre-master.
+        if (!cueMasterGain && micCueGain && auxCueGain && playlistCueGain) {
+            cueMasterGain = audioCtx.createGain();
+            try {
+                micCueGain.disconnect();
+                auxCueGain.disconnect();
+                playlistCueGain.disconnect();
+            } catch {
+                /* ignore */
+            }
+            micCueGain.connect(cueMasterGain);
+            auxCueGain.connect(cueMasterGain);
+            playlistCueGain.connect(cueMasterGain);
+            cueMasterGain.connect(cueDest);
+            applyMasterGain();
+        }
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
@@ -621,6 +644,7 @@ async function ensureMixer() {
     }
 
     masterGain = audioCtx.createGain();
+    cueMasterGain = audioCtx.createGain();
     micGain = audioCtx.createGain();
     auxGain = audioCtx.createGain();
     playlistGain = audioCtx.createGain();
@@ -640,20 +664,21 @@ async function ensureMixer() {
     playlistAnalyser = audioCtx.createAnalyser();
     playlistAnalyser.fftSize = 256;
 
-    // Channel → master bus → publish. Cue stays pre-master.
+    // Channel → master bus → publish + meters.
     micGain.connect(masterGain);
     auxGain.connect(masterGain);
     playlistGain.connect(masterGain);
     masterGain.connect(mixDest);
     masterGain.connect(masterAnalyser);
 
-    // Cue taps (gain 0 until headphones buttons are enabled).
+    // Per-channel cue selects → Master → headphones (same level as broadcast bus).
     micGain.connect(micCueGain);
     auxGain.connect(auxCueGain);
     playlistGain.connect(playlistCueGain);
-    micCueGain.connect(cueDest);
-    auxCueGain.connect(cueDest);
-    playlistCueGain.connect(cueDest);
+    micCueGain.connect(cueMasterGain);
+    auxCueGain.connect(cueMasterGain);
+    playlistCueGain.connect(cueMasterGain);
+    cueMasterGain.connect(cueDest);
 
     micGain.connect(micAnalyser);
     auxGain.connect(auxAnalyser);
@@ -1555,6 +1580,7 @@ window.addEventListener('pagehide', () => {
         mixDest = null;
         cueDest = null;
         masterGain = null;
+        cueMasterGain = null;
         micGain = null;
         auxGain = null;
         playlistGain = null;
