@@ -1582,8 +1582,18 @@ async function uploadFilesToLibrary(files, queueAfterUpload) {
                 body,
             });
             if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                const msg = err?.message || err?.errors?.audio?.[0] || `Upload failed (${res.status})`;
+                const raw = await res.text();
+                let msg = `Upload failed (${res.status})`;
+                try {
+                    const err = JSON.parse(raw);
+                    msg = err?.message || err?.errors?.audio?.[0] || msg;
+                } catch {
+                    if (/POST data is too large|Content Too Large|413/i.test(raw) || res.status === 413) {
+                        msg = 'File is too large for the server (max about 50 MB). Try a smaller file or compress it.';
+                    } else if (raw.trim()) {
+                        msg = raw.trim().slice(0, 160);
+                    }
+                }
                 throw new Error(msg);
             }
             const data = await res.json();

@@ -14,6 +14,10 @@
 
 stream.example.org {
 	encode gzip zstd
+	# Studio audio library + gallery reels (match deploy/php/99-uploads.ini)
+	request_body {
+		max_size 72MB
+	}
 
 	handle /hls/* {
 		uri strip_prefix /hls

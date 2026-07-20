@@ -66,6 +66,21 @@ fi
 
 cd "$APP_DIR"
 
+echo "==> PHP upload limits (studio audio / gallery reels)"
+if [[ -f deploy/php/99-uploads.ini ]]; then
+  sudo cp deploy/php/99-uploads.ini /etc/php/8.4/fpm/conf.d/99-uploads.ini
+  sudo cp deploy/php/99-uploads.ini /etc/php/8.4/cli/conf.d/99-uploads.ini
+else
+  sudo tee /etc/php/8.4/fpm/conf.d/99-uploads.ini >/dev/null <<'INI'
+upload_max_filesize = 64M
+post_max_size = 72M
+memory_limit = 256M
+max_file_uploads = 20
+INI
+  sudo cp /etc/php/8.4/fpm/conf.d/99-uploads.ini /etc/php/8.4/cli/conf.d/99-uploads.ini
+fi
+sudo systemctl reload php8.4-fpm || true
+
 WEBHOOK_SECRET="$(openssl rand -hex 32)"
 PUBLISH_SECRET="$(openssl rand -hex 24)"
 APP_URL="https://${APP_HOST}"
@@ -205,6 +220,9 @@ echo "==> Configuring Caddy"
 sudo tee /etc/caddy/Caddyfile >/dev/null <<EOF
 ${APP_HOST} {
 	encode gzip zstd
+	request_body {
+		max_size 72MB
+	}
 
 	handle /hls/* {
 		uri strip_prefix /hls
