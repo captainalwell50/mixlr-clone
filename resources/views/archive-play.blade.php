@@ -105,26 +105,13 @@
                     <section class="portal-card portal-gallery archive-gallery-card" aria-label="Service gallery">
                         <div class="portal-section-head portal-section-head--side">
                             <h2>Live Gallery - Happening Now</h2>
-                            <p>Tap a photo to open</p>
+                            <p>Photos & video reels · tap to open</p>
                         </div>
                         <div class="portal-gallery-grid" id="gallery-grid">
-                            @forelse ($galleryImages as $image)
-                                <button
-                                    type="button"
-                                    class="portal-gallery-item"
-                                    data-id="{{ $image->id }}"
-                                    data-url="{{ $image->url() }}"
-                                    data-caption="{{ $image->caption }}"
-                                    aria-label="Open gallery photo"
-                                >
-                                    <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Service photo' }}" loading="lazy">
-                                    @if ($image->caption)
-                                        <span class="portal-gallery-caption">{{ $image->caption }}</span>
-                                    @endif
-                                </button>
-                            @empty
-                                <p class="portal-empty" id="gallery-empty">No photos yet from this service.</p>
-                            @endforelse
+                            @include('partials.gallery-items', [
+                                'galleryImages' => $galleryImages,
+                                'emptyMessage' => 'No photos or video reels yet from this service.',
+                            ])
                         </div>
                     </section>
                 </aside>

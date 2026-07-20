@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\GalleryImage;
 use App\Models\Stream;
+use App\Services\VideoReel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -18,12 +19,7 @@ class GalleryController extends Controller
             ->latest('id')
             ->limit(40)
             ->get()
-            ->map(fn (GalleryImage $image) => [
-                'id' => $image->id,
-                'url' => $image->url(),
-                'caption' => $image->caption,
-                'created_at' => $image->created_at?->toIso8601String(),
-            ]);
+            ->map(fn (GalleryImage $image) => $image->toGalleryPayload());
 
         return response()->json(['images' => $images]);
     }
@@ -31,6 +27,10 @@ class GalleryController extends Controller
     public function store(Request $request, Stream $stream): JsonResponse
     {
         $this->authorizeUpload($request, $stream);
+
+        if ($request->hasFile('video')) {
+            return $this->storeVideoReel($request, $stream);
+        }
 
         $validated = $request->validate([
             'image' => ['required', 'image', 'max:10240'],
@@ -45,16 +45,13 @@ class GalleryController extends Controller
             'event_id' => $stream->events()->where('status', 'live')->latest('id')->value('id'),
             'uploaded_by' => $request->user()?->id,
             'path' => $path,
+            'media_type' => 'image',
             'caption' => $validated['caption'] ?? null,
             'sort_order' => 0,
         ]);
 
         return response()->json([
-            'image' => [
-                'id' => $image->id,
-                'url' => $image->url(),
-                'caption' => $image->caption,
-            ],
+            'image' => $image->toGalleryPayload(),
         ], 201);
     }
 
@@ -64,6 +61,9 @@ class GalleryController extends Controller
         abort_unless($image->stream_id === $stream->id, 404);
 
         Storage::disk('public')->delete($image->path);
+        if (is_string($image->poster_path) && $image->poster_path !== '') {
+            Storage::disk('public')->delete($image->poster_path);
+        }
         $image->delete();
 
         return response()->json(['ok' => true]);
@@ -89,6 +89,27 @@ class GalleryController extends Controller
         return response()->json([
             'background_url' => $stream->listenBackgroundUrl(),
         ]);
+    }
+
+    private function storeVideoReel(Request $request, Stream $stream): JsonResponse
+    {
+        $validated = $request->validate([
+            'video' => ['required', 'file', 'max:51200', 'mimetypes:video/mp4,video/webm,video/quicktime'],
+            'caption' => ['nullable', 'string', 'max:500'],
+            'duration_seconds' => ['nullable', 'numeric', 'min:1', 'max:'.VideoReel::MAX_DURATION_SECONDS],
+        ]);
+
+        $reel = app(VideoReel::class)->store(
+            $stream,
+            $validated['video'],
+            $validated['caption'] ?? null,
+            isset($validated['duration_seconds']) ? (float) $validated['duration_seconds'] : null,
+            $request->user()?->id,
+        );
+
+        return response()->json([
+            'image' => $reel->toGalleryPayload(),
+        ], 201);
     }
 
     private function authorizeListen(Request $request, Stream $stream): void

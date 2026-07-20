@@ -1,8 +1,8 @@
 /**
- * Listener gallery: paged viewport (4 desktop / 1 mobile) + auto-scroll + lightbox.
+ * Listener gallery: photos + video reels, paged viewport, auto-scroll, lightbox.
  */
 
-/** @type {{ id: string, url: string, caption: string }[]} */
+/** @type {{ id: string, url: string, caption: string, type: 'image'|'video', duration_seconds: number|null, poster_url: string|null }[]} */
 let galleryItems = [];
 let lightboxIndex = 0;
 let pageIndex = 0;
@@ -28,6 +28,17 @@ function pageCount() {
     return Math.max(1, Math.ceil(galleryItems.length / size));
 }
 
+function normalizeItem(raw) {
+    return {
+        id: String(raw.id),
+        url: raw.url,
+        caption: raw.caption || '',
+        type: raw.type === 'video' ? 'video' : 'image',
+        duration_seconds: raw.duration_seconds != null ? Number(raw.duration_seconds) : null,
+        poster_url: raw.poster_url || null,
+    };
+}
+
 function ensureLightbox() {
     let root = document.getElementById('gallery-lightbox');
     if (root) {
@@ -42,6 +53,7 @@ function ensureLightbox() {
         <button type="button" class="gallery-lightbox-nav is-prev" aria-label="Previous">‹</button>
         <figure class="gallery-lightbox-frame">
             <img id="gallery-lightbox-img" alt="">
+            <video id="gallery-lightbox-video" class="gallery-lightbox-video" controls playsinline></video>
             <figcaption id="gallery-lightbox-caption"></figcaption>
         </figure>
         <button type="button" class="gallery-lightbox-nav is-next" aria-label="Next">›</button>
@@ -73,21 +85,53 @@ function ensureLightbox() {
     return root;
 }
 
+function stopLightboxVideo() {
+    const video = document.getElementById('gallery-lightbox-video');
+    if (!video) {
+        return;
+    }
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    video.hidden = true;
+}
+
 function renderLightbox() {
     const item = galleryItems[lightboxIndex];
     if (!item) {
         return;
     }
     const img = document.getElementById('gallery-lightbox-img');
+    const video = document.getElementById('gallery-lightbox-video');
     const caption = document.getElementById('gallery-lightbox-caption');
     const count = document.getElementById('gallery-lightbox-count');
-    if (img) {
-        img.src = item.url;
-        img.alt = item.caption || 'Service photo';
+
+    if (item.type === 'video') {
+        if (img) {
+            img.hidden = true;
+            img.removeAttribute('src');
+        }
+        if (video) {
+            video.hidden = false;
+            video.poster = item.poster_url || '';
+            video.src = item.url;
+            void video.play().catch(() => {});
+        }
+    } else {
+        stopLightboxVideo();
+        if (img) {
+            img.hidden = false;
+            img.src = item.url;
+            img.alt = item.caption || 'Service photo';
+        }
     }
+
     if (caption) {
-        caption.textContent = item.caption || '';
-        caption.hidden = !item.caption;
+        const label = item.type === 'video'
+            ? (item.caption || 'Video reel')
+            : (item.caption || '');
+        caption.textContent = label;
+        caption.hidden = !label;
     }
     if (count) {
         count.textContent = `${lightboxIndex + 1} / ${galleryItems.length}`;
@@ -107,6 +151,7 @@ export function openLightbox(index) {
 }
 
 export function closeLightbox() {
+    stopLightboxVideo();
     const root = document.getElementById('gallery-lightbox');
     if (root) {
         root.hidden = true;
@@ -119,6 +164,7 @@ function stepLightbox(delta) {
     if (!galleryItems.length) {
         return;
     }
+    stopLightboxVideo();
     lightboxIndex = (lightboxIndex + delta + galleryItems.length) % galleryItems.length;
     renderLightbox();
 }
@@ -157,8 +203,26 @@ function applyPage() {
     }
 }
 
+function thumbMarkup(item, globalIndex) {
+    if (item.type === 'video') {
+        return `
+            <button type="button" class="portal-gallery-item is-video" data-id="${escapeHtml(item.id)}" data-index="${globalIndex}" aria-label="Open video reel">
+                <video src="${escapeHtml(item.url)}" ${item.poster_url ? `poster="${escapeHtml(item.poster_url)}"` : ''} muted playsinline preload="metadata"></video>
+                <span class="portal-gallery-reel-badge" aria-hidden="true">Reel</span>
+                ${item.duration_seconds ? `<span class="portal-gallery-duration">${escapeHtml(String(item.duration_seconds))}s</span>` : ''}
+                ${item.caption ? `<span class="portal-gallery-caption">${escapeHtml(item.caption)}</span>` : ''}
+            </button>`;
+    }
+
+    return `
+        <button type="button" class="portal-gallery-item" data-id="${escapeHtml(item.id)}" data-index="${globalIndex}" aria-label="Open photo">
+            <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.caption || 'Service photo')}" loading="lazy">
+            ${item.caption ? `<span class="portal-gallery-caption">${escapeHtml(item.caption)}</span>` : ''}
+        </button>`;
+}
+
 /**
- * @param {{ id: string|number, url: string, caption?: string }[]} images
+ * @param {{ id: string|number, url: string, caption?: string, type?: string, duration_seconds?: number|null, poster_url?: string|null }[]} images
  */
 export function renderGalleryGrid(images) {
     const host = document.getElementById('gallery-grid');
@@ -166,15 +230,11 @@ export function renderGalleryGrid(images) {
         return;
     }
 
-    galleryItems = images.map((image) => ({
-        id: String(image.id),
-        url: image.url,
-        caption: image.caption || '',
-    }));
+    galleryItems = images.map(normalizeItem);
 
     if (galleryItems.length === 0) {
         pauseAutoScroll();
-        host.innerHTML = '<p class="portal-empty" id="gallery-empty">No photos yet — they’ll appear here when the studio posts them.</p>';
+        host.innerHTML = '<p class="portal-empty" id="gallery-empty">No photos or video reels yet — they’ll appear here when the studio posts them.</p>';
         return;
     }
 
@@ -189,14 +249,7 @@ export function renderGalleryGrid(images) {
             <div class="portal-gallery-track" id="gallery-track">
                 ${pages.map((page, pIndex) => `
                     <div class="portal-gallery-page" data-page="${pIndex}">
-                        ${page.map((image, i) => {
-                            const globalIndex = pIndex * size + i;
-                            return `
-                            <button type="button" class="portal-gallery-item" data-id="${escapeHtml(image.id)}" data-index="${globalIndex}" aria-label="Open photo">
-                                <img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.caption || 'Service photo')}" loading="lazy">
-                                ${image.caption ? `<span class="portal-gallery-caption">${escapeHtml(image.caption)}</span>` : ''}
-                            </button>`;
-                        }).join('')}
+                        ${page.map((image, i) => thumbMarkup(image, pIndex * size + i)).join('')}
                     </div>
                 `).join('')}
             </div>
@@ -268,9 +321,9 @@ export async function refreshGalleryFromUrl(url) {
         }
         const data = await res.json();
         const images = Array.isArray(data.images) ? data.images : [];
-        const nextIds = images.map((i) => String(i.id)).join(',');
-        const prevIds = galleryItems.map((i) => i.id).join(',');
-        if (nextIds === prevIds && galleryItems.length > 0) {
+        const nextKey = images.map((i) => `${i.id}:${i.type || 'image'}`).join(',');
+        const prevKey = galleryItems.map((i) => `${i.id}:${i.type}`).join(',');
+        if (nextKey === prevKey && galleryItems.length > 0) {
             return;
         }
         renderGalleryGrid(images);
@@ -292,5 +345,8 @@ export function bindInitialGalleryFromDom() {
         id: el.getAttribute('data-id'),
         url: el.getAttribute('data-url'),
         caption: el.getAttribute('data-caption') || '',
+        type: el.getAttribute('data-type') || 'image',
+        duration_seconds: el.getAttribute('data-duration') ? Number(el.getAttribute('data-duration')) : null,
+        poster_url: el.getAttribute('data-poster') || null,
     })));
 }

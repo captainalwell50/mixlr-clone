@@ -1230,6 +1230,8 @@ async function teardownLive() {
 
 const btnAddGallery = document.getElementById('btn-add-gallery');
 const galleryInput = document.getElementById('gallery-input');
+const btnAddReel = document.getElementById('btn-add-reel');
+const reelInput = document.getElementById('reel-input');
 const btnAddBackground = document.getElementById('btn-add-background');
 const backgroundInput = document.getElementById('background-input');
 const studioBgPreview = document.getElementById('studio-bg-preview');
@@ -1238,8 +1240,47 @@ const galleryUploadUrl = root?.dataset.galleryUploadUrl;
 const backgroundUploadUrl = root?.dataset.backgroundUploadUrl;
 const galleryCsrf = root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content;
 
+const REEL_MAX_SECONDS = 60;
+
+function readVideoDuration(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+            const duration = video.duration;
+            URL.revokeObjectURL(url);
+            resolve(duration);
+        };
+        video.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Could not read video'));
+        };
+        video.src = url;
+    });
+}
+
+function appendGalleryThumb(payload) {
+    if (!studioGalleryList || !payload?.url) {
+        return;
+    }
+    const figure = document.createElement('figure');
+    figure.className = `mixer-gallery-thumb ${payload.type === 'video' ? 'is-video' : ''}`;
+    figure.dataset.id = String(payload.id || '');
+    if (payload.type === 'video') {
+        figure.innerHTML = `<video src="${payload.url}" muted playsinline preload="metadata"></video><span class="mixer-reel-badge">Reel</span>`;
+    } else {
+        figure.innerHTML = `<img src="${payload.url}" alt="${payload.caption || 'Gallery photo'}">`;
+    }
+    studioGalleryList.prepend(figure);
+}
+
 btnAddGallery?.addEventListener('click', () => {
     galleryInput?.click();
+});
+
+btnAddReel?.addEventListener('click', () => {
+    reelInput?.click();
 });
 
 btnAddBackground?.addEventListener('click', () => {
@@ -1303,20 +1344,58 @@ galleryInput?.addEventListener('change', async () => {
                 continue;
             }
             const data = await res.json();
-            const image = data.image;
-            if (image && studioGalleryList) {
-                const figure = document.createElement('figure');
-                figure.className = 'mixer-gallery-thumb';
-                figure.dataset.id = String(image.id);
-                figure.innerHTML = `<img src="${image.url}" alt="${image.caption || 'Gallery photo'}">`;
-                studioGalleryList.prepend(figure);
-            }
+            appendGalleryThumb(data.image);
             setStatus('Photo posted to the listener gallery.');
         } catch {
             setStatus('Could not upload photo.');
         }
     }
     galleryInput.value = '';
+});
+
+reelInput?.addEventListener('change', async () => {
+    const file = reelInput.files?.[0];
+    if (!galleryUploadUrl || !file) {
+        return;
+    }
+    try {
+        const duration = await readVideoDuration(file);
+        if (!Number.isFinite(duration) || duration > REEL_MAX_SECONDS + 0.5) {
+            setStatus('Video reels must be 60 seconds or shorter (30s or 1 min).');
+            reelInput.value = '';
+            return;
+        }
+        if (duration < 1) {
+            setStatus('That video is too short for a reel.');
+            reelInput.value = '';
+            return;
+        }
+        setStatus('Uploading video reel…');
+        const body = new FormData();
+        body.append('video', file);
+        body.append('duration_seconds', String(Math.round(duration)));
+        const res = await fetch(galleryUploadUrl, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body,
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            setStatus(err.message || err.errors?.video?.[0] || 'Could not upload video reel.');
+            return;
+        }
+        const data = await res.json();
+        appendGalleryThumb(data.image);
+        setStatus('Video reel posted to the listener gallery.');
+    } catch {
+        setStatus('Could not upload video reel.');
+    } finally {
+        reelInput.value = '';
+    }
 });
 
 const studioRecordings = document.getElementById('studio-recordings');

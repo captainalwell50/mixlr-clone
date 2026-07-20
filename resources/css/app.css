@@ -887,12 +887,87 @@ a.stage-platform:hover {
 .portal-gallery-item:hover {
     border-color: color-mix(in srgb, var(--stage-cream) 28%, transparent);
 }
-.portal-gallery-item img {
+.portal-gallery-item img,
+.portal-gallery-item video {
     display: block;
     width: 100%;
     aspect-ratio: 1;
     object-fit: cover;
     pointer-events: none;
+    background: #111;
+}
+
+.portal-gallery-item.is-video {
+    position: relative;
+}
+
+.portal-gallery-reel-badge,
+.portal-gallery-duration {
+    position: absolute;
+    z-index: 1;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+.portal-gallery-reel-badge {
+    top: 0.4rem;
+    left: 0.4rem;
+    padding: 0.2rem 0.45rem;
+    background: color-mix(in srgb, var(--stage-accent) 88%, #000);
+    color: white;
+}
+
+.portal-gallery-duration {
+    top: 0.4rem;
+    right: 0.4rem;
+    padding: 0.2rem 0.4rem;
+    background: rgba(0, 0, 0, 0.65);
+    color: white;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.gallery-lightbox-video {
+    display: block;
+    max-width: min(92vw, 28rem);
+    max-height: 70dvh;
+    margin: 0 auto;
+    border-radius: 0.5rem;
+    background: #000;
+}
+
+.gallery-lightbox-video[hidden],
+#gallery-lightbox-img[hidden] {
+    display: none !important;
+}
+
+.mixer-gallery-thumb.is-video {
+    position: relative;
+}
+
+.mixer-gallery-thumb video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+}
+
+.mixer-reel-badge {
+    position: absolute;
+    top: 0.3rem;
+    left: 0.3rem;
+    padding: 0.15rem 0.35rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--mixer-accent, var(--stage-accent)) 90%, #000);
+    color: white;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 .portal-gallery-caption {
     display: block;

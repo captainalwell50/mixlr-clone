@@ -182,15 +182,22 @@
                     <div class="mixer-playlist-head" style="margin-top: 1rem">
                         <h2>Service gallery</h2>
                     </div>
-                    <p class="mixer-hint">Post photos for listeners while you’re on air.</p>
+                    <p class="mixer-hint">Post photos or short video reels (30s–60s) for listeners.</p>
                     <div class="mixer-gallery-actions">
                         <button type="button" id="btn-add-gallery" class="mixer-add-sounds">+ Add photo</button>
+                        <button type="button" id="btn-add-reel" class="mixer-add-sounds">+ Video reel</button>
                         <input id="gallery-input" type="file" accept="image/*" class="hidden" multiple>
+                        <input id="reel-input" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" class="hidden">
                     </div>
                     <div class="mixer-gallery-list" id="studio-gallery-list">
                         @foreach ($galleryImages as $image)
-                            <figure class="mixer-gallery-thumb" data-id="{{ $image->id }}">
-                                <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Gallery photo' }}">
+                            <figure class="mixer-gallery-thumb {{ $image->isVideo() ? 'is-video' : '' }}" data-id="{{ $image->id }}">
+                                @if ($image->isVideo())
+                                    <video src="{{ $image->url() }}" muted playsinline preload="metadata"></video>
+                                    <span class="mixer-reel-badge">Reel</span>
+                                @else
+                                    <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Gallery photo' }}">
+                                @endif
                             </figure>
                         @endforeach
                     </div>
