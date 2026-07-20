@@ -4076,7 +4076,9 @@ a.stage-platform:hover {
     --mixer-text: #f2f2f4;
     --mixer-muted: rgba(242, 242, 244, 0.55);
     --mixer-danger: #e11d3a;
-    min-height: 100dvh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     background: var(--mixer-bg);
@@ -4197,12 +4199,14 @@ a.stage-platform:hover {
     grid-template-columns: minmax(22rem, 1.15fr) minmax(16rem, 0.95fr);
     gap: 0;
     min-height: 0;
+    overflow: hidden;
     border-top: 1px solid var(--mixer-line);
 }
 
-/* Hardware-style mixing console (left bay) */
+/* Hardware-style mixing console (left bay) — fixed height, does not grow with page */
 .mixer-deck {
     display: flex;
+    align-items: flex-start;
     min-height: 0;
     padding: 0.85rem;
     overflow: auto;
@@ -4216,7 +4220,9 @@ a.stage-platform:hover {
     display: flex;
     flex-direction: column;
     width: 100%;
-    min-height: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: 100%;
     border-radius: 0.65rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background:
@@ -4251,11 +4257,10 @@ a.stage-platform:hover {
 }
 
 .mixer-strips {
-    flex: 1;
+    flex: 0 0 auto;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(6.5rem, 0.95fr);
     gap: 0;
-    min-height: 22rem;
     padding: 0.35rem;
 }
 
@@ -4354,12 +4359,13 @@ a.stage-platform:hover {
 }
 
 .mixer-fader-well {
-    flex: 1;
+    flex: 0 0 auto;
     display: flex;
     align-items: stretch;
     justify-content: center;
     gap: 0.35rem;
-    min-height: 12rem;
+    height: 10.5rem;
+    min-height: 10.5rem;
     padding: 0.35rem 0.15rem;
     border-radius: 0.35rem;
     background:
@@ -4387,8 +4393,8 @@ a.stage-platform:hover {
     writing-mode: vertical-lr;
     direction: rtl;
     width: 1.7rem;
-    height: 100%;
-    min-height: 11.5rem;
+    height: 9.75rem;
+    min-height: 9.75rem;
     background: transparent;
     cursor: pointer;
 }
@@ -4489,17 +4495,20 @@ a.stage-platform:hover {
 }
 
 .mixer-out-tools {
-    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: stretch;
     justify-content: center;
-    gap: 0.45rem;
-    min-height: 12rem;
-    padding: 0.45rem 0.25rem;
+    gap: 0.35rem;
+    padding: 0.35rem 0.25rem;
     border-radius: 0.35rem;
     background: linear-gradient(180deg, #0d0f14, #181c24);
     border: 1px solid rgba(0, 0, 0, 0.55);
+}
+
+.mixer-out-tools--compact {
+    flex: 0 0 auto;
+    min-height: 0;
 }
 
 .mixer-sq {
@@ -4541,6 +4550,9 @@ a.stage-platform:hover {
     padding: 1rem 1.1rem 1.25rem;
     background: #101218;
     min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .mixer-playlist-head {

@@ -131,7 +131,7 @@
                                     <div class="mixer-strip-meter-fill" id="level-meter"></div>
                                 </div>
                             </div>
-                            <div class="mixer-out-tools">
+                            <div class="mixer-out-tools mixer-out-tools--compact">
                                 <label class="mixer-sq" title="Output layout">
                                     <span>Layout</span>
                                     <select id="audio-layout" aria-label="Output layout">
@@ -140,6 +140,12 @@
                                     </select>
                                 </label>
                                 <span class="mixer-rec" id="meter-label" title="Mix level">—</span>
+                            </div>
+                            <div class="mixer-fader-well">
+                                <div class="mixer-fader-scale" aria-hidden="true">
+                                    <span>+6</span><span>0</span><span>-10</span><span>-20</span><span>-∞</span>
+                                </div>
+                                <input id="master-fader" class="mixer-fader" type="range" min="0" max="150" value="100" step="1" orient="vertical" aria-label="Master level">
                             </div>
                             <label class="sr-only" for="audio-output">Monitor output</label>
                             <select id="audio-output" class="mixer-source">

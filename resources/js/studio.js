@@ -32,6 +32,7 @@ const playlistCountEl = document.getElementById('playlist-count');
 const micFaderEl = document.getElementById('mic-fader');
 const auxFaderEl = document.getElementById('aux-fader');
 const playlistFaderEl = document.getElementById('playlist-fader');
+const masterFaderEl = document.getElementById('master-fader');
 const micCueBtn = document.getElementById('mic-cue');
 const auxCueBtn = document.getElementById('aux-cue');
 const playlistCueBtn = document.getElementById('playlist-cue');
@@ -68,6 +69,8 @@ let mixDest = null;
 /** Local cue bus — played only via #cue-audio when a cue button is on. */
 /** @type {MediaStreamAudioDestinationNode|null} */
 let cueDest = null;
+/** @type {GainNode|null} */
+let masterGain = null;
 /** @type {GainNode|null} */
 let micGain = null;
 /** @type {GainNode|null} */
@@ -255,6 +258,12 @@ function applyPlaylistGain() {
     }
 }
 
+function applyMasterGain() {
+    if (masterGain) {
+        masterGain.gain.value = faderGain(masterFaderEl);
+    }
+}
+
 function anyCueOn() {
     return micCueOn || auxCueOn || playlistCueOn;
 }
@@ -357,6 +366,7 @@ copyBtn?.addEventListener('click', async () => {
 micFaderEl?.addEventListener('input', applyMicGain);
 auxFaderEl?.addEventListener('input', applyAuxGain);
 playlistFaderEl?.addEventListener('input', applyPlaylistGain);
+masterFaderEl?.addEventListener('input', applyMasterGain);
 
 micMuteBtn?.addEventListener('click', () => {
     micMuted = !micMuted;
@@ -584,7 +594,7 @@ async function applyMaxAudioBitrate(peer) {
 }
 
 async function ensureMixer() {
-    if (audioCtx && mixDest && micGain && playlistGain && cueDest) {
+    if (audioCtx && mixDest && micGain && playlistGain && masterGain && cueDest) {
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
@@ -610,6 +620,7 @@ async function ensureMixer() {
         /* optional */
     }
 
+    masterGain = audioCtx.createGain();
     micGain = audioCtx.createGain();
     auxGain = audioCtx.createGain();
     playlistGain = audioCtx.createGain();
@@ -629,13 +640,12 @@ async function ensureMixer() {
     playlistAnalyser = audioCtx.createAnalyser();
     playlistAnalyser.fftSize = 256;
 
-    // Publish path only — never audioCtx.destination.
-    micGain.connect(mixDest);
-    auxGain.connect(mixDest);
-    playlistGain.connect(mixDest);
-    micGain.connect(masterAnalyser);
-    auxGain.connect(masterAnalyser);
-    playlistGain.connect(masterAnalyser);
+    // Channel → master bus → publish. Cue stays pre-master.
+    micGain.connect(masterGain);
+    auxGain.connect(masterGain);
+    playlistGain.connect(masterGain);
+    masterGain.connect(mixDest);
+    masterGain.connect(masterAnalyser);
 
     // Cue taps (gain 0 until headphones buttons are enabled).
     micGain.connect(micCueGain);
@@ -652,6 +662,7 @@ async function ensureMixer() {
     applyMicGain();
     applyAuxGain();
     applyPlaylistGain();
+    applyMasterGain();
     startMeters();
 }
 
@@ -1468,6 +1479,7 @@ window.addEventListener('pagehide', () => {
         audioCtx = null;
         mixDest = null;
         cueDest = null;
+        masterGain = null;
         micGain = null;
         auxGain = null;
         playlistGain = null;
