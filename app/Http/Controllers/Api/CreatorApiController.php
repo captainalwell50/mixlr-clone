@@ -40,6 +40,7 @@ class CreatorApiController extends Controller
                 'creator_type' => $organization->creator_type?->value,
                 'theme_color' => $organization->themeColor(),
                 'artwork_url' => $organization->artworkUrl(),
+                'channel_url' => route('channels.show', $organization),
             ],
             'stream' => $stream ? $this->streamSummary($stream) : null,
             'streams' => $organization->streams->map(fn (Stream $s) => $this->streamSummary($s))->values(),

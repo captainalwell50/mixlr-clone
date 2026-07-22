@@ -5046,8 +5046,15 @@ a.stage-platform:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.7rem;
-    color: var(--mixer-muted);
+    font-size: 0.78rem;
+    color: var(--mixer-text);
+    margin-bottom: 0.5rem;
+}
+
+.mixer-share-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .mixer-bar {

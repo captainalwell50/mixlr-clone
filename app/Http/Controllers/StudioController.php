@@ -21,11 +21,16 @@ class StudioController extends Controller
             ? route('events.show', $liveEvent)
             : route('listen.stream', $stream);
 
+        $channelUrl = $stream->organization
+            ? route('channels.show', $stream->organization)
+            : $listenUrl;
+
         return view('studio', [
             'stream' => $stream,
             'whipUrl' => $stream->whipUrl(),
             'organization' => $stream->organization,
             'listenUrl' => $listenUrl,
+            'channelUrl' => $channelUrl,
             'broadcastAllowed' => $stream->organization?->allowsBroadcast() ?? true,
             'billingUrl' => route('billing.plans'),
             'galleryUploadUrl' => URL::temporarySignedRoute(

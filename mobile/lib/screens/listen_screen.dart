@@ -71,36 +71,57 @@ class _ListenScreenState extends State<ListenScreen> {
     try {
       final api = context.read<AuthState>().api;
       final payload = await api.listen(widget.streamUuid);
+      if (!mounted) return;
       setState(() => _payload = payload);
 
       if (payload.hlsUrl != null && payload.hlsUrl!.isNotEmpty) {
         await _player.setUrl(payload.hlsUrl!);
         await _player.play();
         _listenStartedAt = DateTime.now();
-        setState(() => _playing = true);
+        if (!mounted) return;
+        setState(() {
+          _playing = true;
+          _loading = false; // show player as soon as audio is up
+        });
+      } else if (mounted) {
+        setState(() => _loading = false);
       }
 
-      await _pingPresence();
+      // Presence must never block the listen UI.
+      unawaited(_pingPresence());
+      _presenceTimer?.cancel();
       _presenceTimer = Timer.periodic(
         const Duration(seconds: 20),
-        (_) => _pingPresence(),
+        (_) => unawaited(_pingPresence()),
       );
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _pingPresence() async {
-    if (!context.read<NetworkStatus>().hasLink) return;
+    if (!mounted || !context.read<NetworkStatus>().hasLink) return;
     try {
-      final data = await context.read<AuthState>().api.presence(
+      final data = await context
+          .read<AuthState>()
+          .api
+          .presence(
             widget.streamUuid,
             sessionKey: _sessionKey,
-          );
+          )
+          .timeout(const Duration(seconds: 8));
       if (!mounted) return;
       setState(() {
         _listeners = data['listeners'] as int? ?? _listeners;
@@ -122,14 +143,13 @@ class _ListenScreenState extends State<ListenScreen> {
 
   Future<void> _like() async {
     final auth = context.read<AuthState>();
+    final net = context.read<NetworkStatus>();
     if (!auth.isLoggedIn) {
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
-      if (!auth.isLoggedIn) return;
+      if (!mounted || !auth.isLoggedIn) return;
     }
-    if (!auth.isLoggedIn) return;
-    final net = context.read<NetworkStatus>();
     if (!net.hasLink) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

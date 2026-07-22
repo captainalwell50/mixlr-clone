@@ -2,6 +2,8 @@
 
 One Flutter app with **Listen** and **Studio** modes.
 
+API host: **https://soundmix.live**
+
 ## Features
 
 - Branded splash + first-run welcome
@@ -15,11 +17,11 @@ One Flutter app with **Listen** and **Studio** modes.
 ```bash
 cd mobile
 flutter pub get
-flutter run --dart-define=API_BASE=https://20.120.113.129.sslip.io
+flutter run --dart-define=API_BASE=https://soundmix.live
 ```
 
 Release APK:
 
 ```bash
-flutter build apk --release --dart-define=API_BASE=https://20.120.113.129.sslip.io
+flutter build apk --release --dart-define=API_BASE=https://soundmix.live
 ```

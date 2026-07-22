@@ -24,7 +24,7 @@
             <div class="mixer-topbar-right">
                 <span class="mixer-user">{{ $organization->name }}</span>
                 <a href="{{ route('dashboard') }}" class="mixer-top-link">Dashboard</a>
-                <button type="button" class="mixer-top-link mixer-top-copy" id="btn-copy-listen" title="Copy listen link">Copy link</button>
+                <button type="button" class="mixer-top-link mixer-top-copy" id="btn-share-channel" title="Share your channel page">Share channel</button>
                 <button type="button" class="mixer-btn-refresh" id="btn-refresh-studio" title="Reload Studio">Refresh</button>
             </div>
         </header>
@@ -295,7 +295,13 @@
                 </p>
                 <p id="studio-status" class="mixer-status" role="status">Allow microphone access when prompted.</p>
                 <div class="mixer-listen-row">
-                    <code id="listen-url" title="{{ $listenUrl }}">{{ $listenUrl }}</code>
+                    <p class="mixer-hint" style="margin: 0 0 0.35rem">Your channel link</p>
+                    <code id="channel-url" title="{{ $channelUrl }}">{{ $channelUrl }}</code>
+                    <div class="mixer-share-actions">
+                        <button type="button" class="mixer-add-sounds" id="btn-share-channel-main">Share</button>
+                        <button type="button" class="mixer-add-sounds" id="btn-copy-channel">Copy</button>
+                    </div>
+                    <code id="listen-url" class="hidden" title="{{ $listenUrl }}">{{ $listenUrl }}</code>
                 </div>
             </div>
             </div>
@@ -327,6 +333,8 @@
             data-library-list-url="{{ $libraryListUrl }}"
             data-library-upload-url="{{ $libraryUploadUrl }}"
             data-library-import-drive-url="{{ $libraryImportDriveUrl }}"
+            data-channel-url="{{ $channelUrl }}"
+            data-channel-name="{{ $organization->name }}"
             data-csrf="{{ csrf_token() }}"
             class="hidden"
         ></div>

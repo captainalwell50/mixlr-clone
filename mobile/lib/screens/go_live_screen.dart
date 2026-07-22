@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../services/api_client.dart';
@@ -15,9 +16,10 @@ import '../widgets/network_banner.dart';
 import '../widgets/signal_meter.dart';
 
 class GoLiveScreen extends StatefulWidget {
-  const GoLiveScreen({super.key, required this.stream});
+  const GoLiveScreen({super.key, required this.stream, this.organization});
 
   final StreamSummary stream;
+  final OrgSummary? organization;
 
   @override
   State<GoLiveScreen> createState() => _GoLiveScreenState();
@@ -149,11 +151,19 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
       PublishLink.idle => LiveMixTheme.mute,
     };
 
+    final org = widget.organization;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.stream.title),
-        actions: const [
-          Padding(
+        actions: [
+          if (org != null)
+            IconButton(
+              tooltip: 'Share channel',
+              onPressed: () => _shareChannel(org),
+              icon: const Icon(Icons.ios_share_rounded),
+            ),
+          const Padding(
             padding: EdgeInsets.only(right: 12),
             child: NetworkPill(),
           ),
@@ -281,6 +291,22 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    if (org != null) ...[
+                      OutlinedButton.icon(
+                        onPressed: () => _shareChannel(org),
+                        icon: const Icon(Icons.ios_share_rounded),
+                        label: const Text('Share channel link'),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        org.publicChannelUrl,
+                        style: const TextStyle(
+                          color: LiveMixTheme.mute,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     if (!_onAir)
                       FilledButton.icon(
                         onPressed: _busy ? null : _goLive,
@@ -304,6 +330,13 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _shareChannel(OrgSummary org) async {
+    await Share.share(
+      'Listen live on ${org.name}: ${org.publicChannelUrl}',
+      subject: org.name,
     );
   }
 }

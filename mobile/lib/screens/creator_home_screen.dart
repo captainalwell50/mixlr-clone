@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../brand.dart';
 import '../models/models.dart';
@@ -181,7 +183,57 @@ class _CreatorHomeScreenState extends State<CreatorHomeScreen> {
                   auth.user?.email ?? '',
                   style: const TextStyle(color: LiveMixTheme.mute),
                 ),
-                const SizedBox(height: 28),
+                if (org != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: LiveMixTheme.panel,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'CHANNEL LINK',
+                          style: TextStyle(
+                            color: LiveMixTheme.mute,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          org.publicChannelUrl,
+                          style: GoogleFonts.outfit(
+                            color: LiveMixTheme.mist,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: () => _shareChannel(org),
+                                icon: const Icon(Icons.ios_share_rounded),
+                                label: const Text('Share channel'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            OutlinedButton(
+                              onPressed: () => _copyChannel(org),
+                              child: const Text('Copy'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
                 Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
@@ -239,7 +291,10 @@ class _CreatorHomeScreenState extends State<CreatorHomeScreen> {
                             }
                             await Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => GoLiveScreen(stream: stream),
+                                builder: (_) => GoLiveScreen(
+                                  stream: stream,
+                                  organization: org,
+                                ),
                               ),
                             );
                             if (mounted) await _refresh();
@@ -279,7 +334,10 @@ class _CreatorHomeScreenState extends State<CreatorHomeScreen> {
                               ? () async {
                                   await Navigator.of(context).push(
                                     MaterialPageRoute(
-                                      builder: (_) => GoLiveScreen(stream: s),
+                                      builder: (_) => GoLiveScreen(
+                                        stream: s,
+                                        organization: org,
+                                      ),
                                     ),
                                   );
                                   if (mounted) await _refresh();
@@ -293,6 +351,22 @@ class _CreatorHomeScreenState extends State<CreatorHomeScreen> {
           );
         },
       ),
+    );
+  }
+
+  Future<void> _shareChannel(OrgSummary org) async {
+    final url = org.publicChannelUrl;
+    await Share.share(
+      'Listen live on ${org.name}: $url',
+      subject: org.name,
+    );
+  }
+
+  Future<void> _copyChannel(OrgSummary org) async {
+    await Clipboard.setData(ClipboardData(text: org.publicChannelUrl));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Channel link copied')),
     );
   }
 }

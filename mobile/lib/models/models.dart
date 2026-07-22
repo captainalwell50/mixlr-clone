@@ -1,3 +1,5 @@
+import '../config.dart';
+
 class AppUser {
   AppUser({
     required this.id,
@@ -34,6 +36,7 @@ class OrgSummary {
     required this.slug,
     this.themeColor,
     this.artworkUrl,
+    this.channelUrl,
     this.canBroadcast = false,
   });
 
@@ -42,7 +45,17 @@ class OrgSummary {
   final String slug;
   final String? themeColor;
   final String? artworkUrl;
+  final String? channelUrl;
   final bool canBroadcast;
+
+  /// Clear public channel page, e.g. https://soundmix.live/c/my-church
+  String get publicChannelUrl {
+    if (channelUrl != null && channelUrl!.isNotEmpty) {
+      return channelUrl!;
+    }
+    // Fallback when API is older than channel_url field.
+    return '${AppConfig.apiBase}/c/$slug';
+  }
 
   factory OrgSummary.fromJson(Map<String, dynamic> json) {
     return OrgSummary(
@@ -51,6 +64,7 @@ class OrgSummary {
       slug: json['slug'] as String? ?? '',
       themeColor: json['theme_color'] as String?,
       artworkUrl: json['artwork_url'] as String?,
+      channelUrl: json['channel_url'] as String?,
       canBroadcast: json['can_broadcast'] as bool? ?? false,
     );
   }

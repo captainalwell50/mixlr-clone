@@ -24,8 +24,13 @@ const modeMobileEl = document.getElementById('studio-mode-mobile');
 const airLabel = document.getElementById('studio-air-label');
 const heroHint = document.getElementById('studio-hero-hint');
 const timerEl = document.getElementById('studio-timer');
-const copyBtn = document.getElementById('btn-copy-listen');
+const shareChannelBtn = document.getElementById('btn-share-channel');
+const shareChannelMainBtn = document.getElementById('btn-share-channel-main');
+const copyChannelBtn = document.getElementById('btn-copy-channel');
+const channelUrlEl = document.getElementById('channel-url');
 const listenUrlEl = document.getElementById('listen-url');
+const channelShareUrl = root?.dataset.channelUrl || channelUrlEl?.textContent?.trim() || '';
+const channelShareName = root?.dataset.channelName || 'Live Mix';
 const audioLayoutSelect = document.getElementById('audio-layout');
 const cueAudio = document.getElementById('cue-audio');
 const playlistCountEl = document.getElementById('playlist-count');
@@ -399,17 +404,50 @@ if (audioLayoutSelect) {
     });
 }
 
-copyBtn?.addEventListener('click', async () => {
-    const text = listenUrlEl?.textContent?.trim();
+async function copyChannelLink() {
+    const text = channelShareUrl || channelUrlEl?.textContent?.trim();
     if (!text) {
         return;
     }
     try {
         await navigator.clipboard.writeText(text);
-        setStatus('Listen link copied.');
+        setStatus('Channel link copied — share soundmix.live/c/… with your audience.');
     } catch {
-        setStatus('Could not copy listen link.');
+        setStatus('Could not copy channel link.');
     }
+}
+
+async function shareChannelLink() {
+    const text = channelShareUrl || channelUrlEl?.textContent?.trim();
+    if (!text) {
+        return;
+    }
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: channelShareName,
+                text: `Listen live on ${channelShareName}`,
+                url: text,
+            });
+            setStatus('Channel link shared.');
+            return;
+        } catch (e) {
+            if (e?.name === 'AbortError') {
+                return;
+            }
+        }
+    }
+    await copyChannelLink();
+}
+
+shareChannelBtn?.addEventListener('click', () => {
+    void shareChannelLink();
+});
+shareChannelMainBtn?.addEventListener('click', () => {
+    void shareChannelLink();
+});
+copyChannelBtn?.addEventListener('click', () => {
+    void copyChannelLink();
 });
 
 document.getElementById('btn-refresh-studio')?.addEventListener('click', () => {

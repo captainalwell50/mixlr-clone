@@ -3,7 +3,7 @@
 class AppConfig {
   static const String apiBase = String.fromEnvironment(
     'API_BASE',
-    defaultValue: 'https://20.120.113.129.sslip.io',
+    defaultValue: 'https://soundmix.live',
   );
 
   static String get apiV1 => '$apiBase/api/v1';
