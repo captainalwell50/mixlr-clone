@@ -96,6 +96,16 @@ class Organization extends Model
             ->withTimestamps();
     }
 
+    public function driveConnection(): HasOne
+    {
+        return $this->hasOne(OrganizationDriveConnection::class);
+    }
+
+    public function studioAudioAssets(): HasMany
+    {
+        return $this->hasMany(StudioAudioAsset::class);
+    }
+
     public function getRouteKeyName(): string
     {
         return 'slug';

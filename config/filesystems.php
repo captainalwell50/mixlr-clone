@@ -54,18 +54,30 @@ return [
             'report' => false,
         ],
 
+        /*
+         * Platform archive / studio audio (Cloudflare R2, AWS S3, or GCS S3-interop).
+         * R2 example:
+         *   AWS_ACCESS_KEY_ID=...
+         *   AWS_SECRET_ACCESS_KEY=...
+         *   AWS_DEFAULT_REGION=auto
+         *   AWS_BUCKET=live-mix
+         *   AWS_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
+         *   AWS_USE_PATH_STYLE_ENDPOINT=true
+         */
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),
             'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION'),
+            'region' => env('AWS_DEFAULT_REGION', 'auto'),
             'bucket' => env('AWS_BUCKET'),
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', true),
+            'visibility' => 'private',
             'throw' => false,
             'report' => false,
         ],
+
 
     ],
 

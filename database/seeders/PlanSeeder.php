@@ -20,6 +20,8 @@ class PlanSeeder extends Seeder
                 'limits' => [
                     'max_streams' => 1,
                     'gallery' => true,
+                    // Platform-hosted storage (recordings + library). Drive BYO does not count.
+                    'storage_bytes' => 2 * 1024 * 1024 * 1024, // 2 GB
                 ],
                 'is_active' => true,
                 'sort_order' => 0,
@@ -37,6 +39,7 @@ class PlanSeeder extends Seeder
                 'limits' => [
                     'max_streams' => 1,
                     'gallery' => true,
+                    'storage_bytes' => 25 * 1024 * 1024 * 1024, // 25 GB
                 ],
                 'is_active' => true,
                 'sort_order' => 1,
@@ -54,6 +57,7 @@ class PlanSeeder extends Seeder
                 'limits' => [
                     'max_streams' => 5,
                     'gallery' => true,
+                    'storage_bytes' => 100 * 1024 * 1024 * 1024, // 100 GB
                 ],
                 'is_active' => true,
                 'sort_order' => 2,

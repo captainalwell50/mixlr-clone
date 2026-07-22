@@ -196,11 +196,21 @@
                 <div class="mixer-playlist-head">
                     <h2>Audio library</h2>
                 </div>
-                <p class="mixer-hint mixer-hint--desktop">Saved on this stream — search and queue into the session playlist. Uploads survive refresh.</p>
+                <p class="mixer-hint mixer-hint--desktop">Saved on this stream — search and queue into the session playlist. Use platform storage (counts toward your plan) or Google Drive (your quota).</p>
+                <p class="mixer-hint" id="library-storage-meter">Platform storage: …</p>
+                <p class="mixer-hint" id="library-drive-status">Google Drive: checking…</p>
                 <div class="mixer-library-toolbar">
                     <label class="sr-only" for="library-search">Search library</label>
                     <input id="library-search" class="mixer-library-search" type="search" placeholder="Search songs…" autocomplete="off">
+                    <label class="sr-only" for="library-destination">Save to</label>
+                    <select id="library-destination" class="mixer-library-search" title="Where to save uploads" style="max-width: 9.5rem">
+                        <option value="platform">Platform</option>
+                        <option value="drive">Google Drive</option>
+                        <option value="local">Server disk</option>
+                    </select>
                     <button type="button" id="btn-upload-library" class="mixer-add-sounds">+ Upload</button>
+                    <button type="button" id="btn-drive-connect" class="mixer-add-sounds" hidden>Connect Drive</button>
+                    <button type="button" id="btn-drive-browse" class="mixer-add-sounds" hidden>Import Drive</button>
                     <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
                 </div>
                 <div class="mixer-library-list" id="library-list" role="list"></div>
@@ -316,6 +326,7 @@
             data-gallery-list-url="{{ $galleryListUrl }}"
             data-library-list-url="{{ $libraryListUrl }}"
             data-library-upload-url="{{ $libraryUploadUrl }}"
+            data-library-import-drive-url="{{ $libraryImportDriveUrl }}"
             data-csrf="{{ csrf_token() }}"
             class="hidden"
         ></div>

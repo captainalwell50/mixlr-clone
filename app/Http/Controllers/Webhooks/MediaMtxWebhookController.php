@@ -6,6 +6,7 @@ use App\Enums\EventStatus;
 use App\Enums\StreamStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Event;
+use App\Jobs\SyncRecordingToObjectStorage;
 use App\Models\Recording;
 use App\Models\Stream;
 use App\Services\EventBroadcastService;
@@ -127,6 +128,10 @@ class MediaMtxWebhookController extends Controller
 
         $stream->archive_path = $validated['segment_relative'];
         $stream->save();
+
+        if (config('object_storage.enabled')) {
+            SyncRecordingToObjectStorage::dispatch($recording->id);
+        }
 
         return response()->noContent();
     }

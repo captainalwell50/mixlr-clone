@@ -4,23 +4,23 @@ namespace App\Http\Controllers;
 
 use App\Models\Recording;
 use App\Models\Stream;
+use App\Services\RecordingStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class RecordingController extends Controller
 {
-    public function destroy(Request $request, Stream $stream, Recording $recording): JsonResponse|RedirectResponse
-    {
+    public function destroy(
+        Request $request,
+        Stream $stream,
+        Recording $recording,
+        RecordingStorageService $storage,
+    ): JsonResponse|RedirectResponse {
         abort_unless($recording->stream_id === $stream->id, 404);
         $this->authorizeManage($request, $stream);
 
-        $disk = Storage::disk('mediamtx_recordings');
-        if (is_string($recording->relative_path) && $recording->relative_path !== '' && $disk->exists($recording->relative_path)) {
-            $disk->delete($recording->relative_path);
-        }
-
+        $storage->deleteFiles($recording);
         $recording->delete();
 
         if ($request->expectsJson()) {

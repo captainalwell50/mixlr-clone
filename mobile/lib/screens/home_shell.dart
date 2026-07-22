@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/network_banner.dart';
 import 'creator_home_screen.dart';
 import 'discover_screen.dart';
 
@@ -16,12 +17,22 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: const [
-          DiscoverScreen(),
-          CreatorHomeScreen(),
-        ],
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            const NetworkBanner(),
+            Expanded(
+              child: IndexedStack(
+                index: _index,
+                children: const [
+                  DiscoverScreen(),
+                  CreatorHomeScreen(),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,

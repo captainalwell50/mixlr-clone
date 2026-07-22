@@ -9,6 +9,12 @@ use Illuminate\Support\Facades\URL;
 
 class StudioAudioAsset extends Model
 {
+    public const PROVIDER_LOCAL = 'local';
+
+    public const PROVIDER_PLATFORM = 'platform';
+
+    public const PROVIDER_DRIVE = 'drive';
+
     protected $fillable = [
         'organization_id',
         'stream_id',
@@ -16,6 +22,8 @@ class StudioAudioAsset extends Model
         'title',
         'original_filename',
         'path',
+        'storage_provider',
+        'external_id',
         'mime_type',
         'size_bytes',
         'duration_seconds',
@@ -44,23 +52,42 @@ class StudioAudioAsset extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
-    public function url(): string
+    public function isDrive(): bool
     {
+        return $this->storage_provider === self::PROVIDER_DRIVE;
+    }
+
+    public function countsAgainstQuota(): bool
+    {
+        return in_array($this->storage_provider, [self::PROVIDER_LOCAL, self::PROVIDER_PLATFORM], true);
+    }
+
+    public function url(?Stream $stream = null): string
+    {
+        $stream ??= $this->stream;
+
+        if ($this->isDrive()) {
+            return URL::temporarySignedRoute(
+                'studio.library.file',
+                now()->addHours(12),
+                ['stream' => $stream, 'asset' => $this],
+            );
+        }
+
+        if ($this->storage_provider === self::PROVIDER_PLATFORM && config('object_storage.enabled')) {
+            try {
+                return Storage::disk((string) config('object_storage.disk', 's3'))
+                    ->temporaryUrl($this->path, now()->addHours(6));
+            } catch (\Throwable) {
+                // fall through
+            }
+        }
+
         return Storage::disk('public')->url($this->path);
     }
 
     /**
-     * @return array{
-     *     id:int,
-     *     title:string,
-     *     original_filename:string,
-     *     url:string,
-     *     mime_type:?string,
-     *     size_bytes:int,
-     *     duration_seconds:?int,
-     *     delete_url:string,
-     *     created_at:?string
-     * }
+     * @return array<string, mixed>
      */
     public function toLibraryPayload(?Stream $stream = null): array
     {
@@ -70,10 +97,11 @@ class StudioAudioAsset extends Model
             'id' => $this->id,
             'title' => $this->title,
             'original_filename' => $this->original_filename,
-            'url' => $this->url(),
+            'url' => $this->url($stream),
             'mime_type' => $this->mime_type,
             'size_bytes' => (int) $this->size_bytes,
             'duration_seconds' => $this->duration_seconds,
+            'storage_provider' => $this->storage_provider,
             'delete_url' => URL::temporarySignedRoute(
                 'studio.library.destroy',
                 now()->addHours(12),

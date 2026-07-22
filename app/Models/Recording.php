@@ -10,6 +10,10 @@ class Recording extends Model
     protected $fillable = [
         'stream_id',
         'relative_path',
+        'storage_disk',
+        'object_key',
+        'synced_at',
+        'local_deleted_at',
         'duration_raw',
         'size_bytes',
         'completed_at',
@@ -19,12 +23,19 @@ class Recording extends Model
     {
         return [
             'completed_at' => 'datetime',
+            'synced_at' => 'datetime',
+            'local_deleted_at' => 'datetime',
         ];
     }
 
     public function stream(): BelongsTo
     {
         return $this->belongsTo(Stream::class);
+    }
+
+    public function isCloudSynced(): bool
+    {
+        return $this->synced_at !== null && filled($this->object_key);
     }
 
     public function durationLabel(): string

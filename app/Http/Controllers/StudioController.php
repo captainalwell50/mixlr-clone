@@ -49,6 +49,11 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
+            'libraryImportDriveUrl' => URL::temporarySignedRoute(
+                'studio.library.import-drive',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
             'galleryImages' => $stream->galleryImages()->limit(20)->get(),
             'listenBackgroundUrl' => $stream->listenBackgroundUrl(),
             'recordings' => $stream->recordings()->latest('completed_at')->limit(30)->get(),

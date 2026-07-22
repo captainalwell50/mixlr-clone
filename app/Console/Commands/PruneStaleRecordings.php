@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Recording;
+use App\Services\RecordingStorageService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Storage;
 
 class PruneStaleRecordings extends Command
 {
@@ -12,7 +12,7 @@ class PruneStaleRecordings extends Command
 
     protected $description = 'Delete recording files and DB rows older than RECORDING_RETENTION_DAYS';
 
-    public function handle(): int
+    public function handle(RecordingStorageService $storage): int
     {
         $days = max(1, (int) config('streaming.mediamtx.recording_retention_days', 365));
         $cutoff = now()->subDays($days);
@@ -35,12 +35,9 @@ class PruneStaleRecordings extends Command
             return self::SUCCESS;
         }
 
-        $disk = Storage::disk('mediamtx_recordings');
-        $query->chunk(100, function ($recordings) use ($disk): void {
+        $query->chunk(100, function ($recordings) use ($storage): void {
             foreach ($recordings as $recording) {
-                if ($recording->relative_path !== '' && $disk->exists($recording->relative_path)) {
-                    $disk->delete($recording->relative_path);
-                }
+                $storage->deleteFiles($recording);
                 $recording->delete();
             }
         });

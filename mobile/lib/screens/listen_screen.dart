@@ -1,14 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../brand.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
+import '../services/network_status.dart';
 import '../theme.dart';
+import '../widgets/network_banner.dart';
+import '../widgets/signal_meter.dart';
 import 'login_screen.dart';
 
 class ListenScreen extends StatefulWidget {
@@ -30,16 +35,30 @@ class _ListenScreenState extends State<ListenScreen> {
   int _listeners = 0;
   int _likes = 0;
   Timer? _presenceTimer;
+  Timer? _listenTick;
+  DateTime? _listenStartedAt;
+  Duration _listened = Duration.zero;
+  double _pulse = 0.2;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _listenTick = Timer.periodic(const Duration(milliseconds: 120), (_) {
+      if (!mounted || !_playing) return;
+      setState(() {
+        _pulse = 0.15 + (DateTime.now().millisecond % 700) / 1000;
+        if (_listenStartedAt != null) {
+          _listened = DateTime.now().difference(_listenStartedAt!);
+        }
+      });
+    });
   }
 
   @override
   void dispose() {
     _presenceTimer?.cancel();
+    _listenTick?.cancel();
     _player.dispose();
     super.dispose();
   }
@@ -57,6 +76,7 @@ class _ListenScreenState extends State<ListenScreen> {
       if (payload.hlsUrl != null && payload.hlsUrl!.isNotEmpty) {
         await _player.setUrl(payload.hlsUrl!);
         await _player.play();
+        _listenStartedAt = DateTime.now();
         setState(() => _playing = true);
       }
 
@@ -75,6 +95,7 @@ class _ListenScreenState extends State<ListenScreen> {
   }
 
   Future<void> _pingPresence() async {
+    if (!context.read<NetworkStatus>().hasLink) return;
     try {
       final data = await context.read<AuthState>().api.presence(
             widget.streamUuid,
@@ -91,10 +112,12 @@ class _ListenScreenState extends State<ListenScreen> {
   Future<void> _togglePlay() async {
     if (_playing) {
       await _player.pause();
+      setState(() => _playing = false);
     } else {
       await _player.play();
+      _listenStartedAt ??= DateTime.now();
+      setState(() => _playing = true);
     }
-    setState(() => _playing = !_playing);
   }
 
   Future<void> _like() async {
@@ -105,8 +128,18 @@ class _ListenScreenState extends State<ListenScreen> {
       );
       if (!auth.isLoggedIn) return;
     }
+    if (!auth.isLoggedIn) return;
+    final net = context.read<NetworkStatus>();
+    if (!net.hasLink) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You’re offline — likes need a connection.')),
+      );
+      return;
+    }
     try {
       final likes = await auth.api.like(widget.streamUuid);
+      if (!mounted) return;
       setState(() => _likes = likes);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -118,94 +151,164 @@ class _ListenScreenState extends State<ListenScreen> {
   Widget build(BuildContext context) {
     final p = _payload;
     return Scaffold(
-      appBar: AppBar(title: Text(p?.title ?? 'Listen')),
-      body: SafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        AspectRatio(
-                          aspectRatio: 1,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: LiveMixTheme.panel,
-                              borderRadius: BorderRadius.circular(20),
-                              image: p?.artworkUrl != null
-                                  ? DecorationImage(
-                                      image: NetworkImage(p!.artworkUrl!),
-                                      fit: BoxFit.cover,
-                                    )
-                                  : null,
+      appBar: AppBar(
+        title: Text(p?.title ?? 'Listen'),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: NetworkPill(),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          const NetworkBanner(),
+          Expanded(
+            child: SafeArea(
+              top: false,
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _error!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: LiveMixTheme.bad),
+                                ),
+                                const SizedBox(height: 16),
+                                OutlinedButton(
+                                  onPressed: _load,
+                                  child: const Text('Retry'),
+                                ),
+                              ],
                             ),
-                            child: p?.artworkUrl == null
-                                ? const Center(
-                                    child: Icon(
-                                      Icons.graphic_eq,
-                                      size: 72,
+                          ),
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              AspectRatio(
+                                aspectRatio: 1,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: LiveMixTheme.panel,
+                                    borderRadius: BorderRadius.circular(24),
+                                    gradient: p?.artworkUrl == null
+                                        ? const LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [
+                                              Color(0xFF242933),
+                                              Color(0xFF151820),
+                                            ],
+                                          )
+                                        : null,
+                                    image: p?.artworkUrl != null
+                                        ? DecorationImage(
+                                            image: NetworkImage(p!.artworkUrl!),
+                                            fit: BoxFit.cover,
+                                          )
+                                        : null,
+                                  ),
+                                  child: p?.artworkUrl == null
+                                      ? Center(
+                                          child: Icon(
+                                            Icons.graphic_eq_rounded,
+                                            size: 84,
+                                            color: LiveMixTheme.gold
+                                                .withOpacity(0.55 + _pulse * 0.4),
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 22),
+                              Text(
+                                p?.orgName ?? Brand.name,
+                                style: const TextStyle(color: LiveMixTheme.mute),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                p?.title ?? '',
+                                style: GoogleFonts.outfit(
+                                  color: LiveMixTheme.mist,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  const Text(
+                                    'LISTENING',
+                                    style: TextStyle(
+                                      color: LiveMixTheme.mute,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1.1,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  LiveDurationText(elapsed: _listened, fontSize: 22),
+                                ],
+                              ),
+                              const Spacer(),
+                              Row(
+                                children: [
+                                  Text(
+                                    '$_listeners listening',
+                                    style: const TextStyle(color: LiveMixTheme.mute),
+                                  ),
+                                  const Spacer(),
+                                  TextButton.icon(
+                                    onPressed: _like,
+                                    icon: const Icon(
+                                      Icons.favorite_rounded,
                                       color: LiveMixTheme.gold,
                                     ),
-                                  )
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          p?.orgName ?? 'Live Mix',
-                          style: const TextStyle(color: LiveMixTheme.mute),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          p?.title ?? '',
-                          style: const TextStyle(
-                            color: LiveMixTheme.mist,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        if (p?.description != null && p!.description!.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            p.description!,
-                            style: const TextStyle(color: LiveMixTheme.mute, height: 1.4),
-                          ),
-                        ],
-                        const Spacer(),
-                        Row(
-                          children: [
-                            Text(
-                              '$_listeners listening',
-                              style: const TextStyle(color: LiveMixTheme.mute),
-                            ),
-                            const Spacer(),
-                            TextButton.icon(
-                              onPressed: _like,
-                              icon: const Icon(Icons.favorite, color: LiveMixTheme.gold),
-                              label: Text(
-                                '$_likes',
-                                style: const TextStyle(color: LiveMixTheme.mist),
+                                    label: Text(
+                                      '$_likes',
+                                      style: const TextStyle(color: LiveMixTheme.mist),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 10,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(99),
+                                  child: LinearProgressIndicator(
+                                    value: _playing ? _pulse.clamp(0.12, 0.95) : 0.05,
+                                    backgroundColor: LiveMixTheme.panelHi,
+                                    color: _playing
+                                        ? LiveMixTheme.good
+                                        : LiveMixTheme.mute,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              FilledButton.icon(
+                                onPressed: _togglePlay,
+                                icon: Icon(
+                                  _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                ),
+                                label: Text(_playing ? 'Pause' : 'Play'),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          onPressed: _togglePlay,
-                          icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
-                          label: Text(_playing ? 'Pause' : 'Play'),
-                        ),
-                      ],
-                    ),
-                  ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -18,6 +18,7 @@ use App\Http\Controllers\DiscoverController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventEngageController;
 use App\Http\Controllers\GalleryController;
+use App\Http\Controllers\GoogleDriveController;
 use App\Http\Controllers\ListenController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PaystackWebhookController;
@@ -118,6 +119,12 @@ Route::get('/studio/{stream}/library', [StudioAudioLibraryController::class, 'in
 Route::post('/studio/{stream}/library', [StudioAudioLibraryController::class, 'store'])
     ->middleware('throttle:30,1')
     ->name('studio.library.store');
+Route::post('/studio/{stream}/library/import-drive', [StudioAudioLibraryController::class, 'importDrive'])
+    ->middleware('throttle:30,1')
+    ->name('studio.library.import-drive');
+Route::get('/studio/{stream}/library/{asset}/file', [StudioAudioLibraryController::class, 'file'])
+    ->middleware('throttle:120,1')
+    ->name('studio.library.file');
 Route::delete('/studio/{stream}/library/{asset}', [StudioAudioLibraryController::class, 'destroy'])
     ->middleware('throttle:30,1')
     ->name('studio.library.destroy');
@@ -140,6 +147,17 @@ Route::middleware('auth')->group(function (): void {
         Route::post('/billing/trial', [BillingController::class, 'startTrial'])->name('billing.trial');
         Route::post('/billing/checkout/{plan}', [BillingController::class, 'checkout'])->name('billing.checkout');
         Route::get('/billing/callback', [BillingController::class, 'callback'])->name('billing.callback');
+
+        Route::get('/integrations/google-drive/callback', [GoogleDriveController::class, 'callback'])
+            ->name('integrations.google-drive.callback');
+        Route::get('/integrations/google-drive/{organization}/connect', [GoogleDriveController::class, 'redirect'])
+            ->name('integrations.google-drive.redirect');
+        Route::get('/integrations/google-drive/{organization}/status', [GoogleDriveController::class, 'status'])
+            ->name('integrations.google-drive.status');
+        Route::delete('/integrations/google-drive/{organization}', [GoogleDriveController::class, 'disconnect'])
+            ->name('integrations.google-drive.disconnect');
+        Route::get('/integrations/google-drive/{organization}/files', [GoogleDriveController::class, 'files'])
+            ->name('integrations.google-drive.files');
     });
 });
 

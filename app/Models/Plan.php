@@ -53,4 +53,10 @@ class Plan extends Model
     {
         return (int) data_get($this->limits, 'max_streams', 1);
     }
+
+    /** Platform object-storage + local library quota (bytes). Drive BYO does not count. */
+    public function storageBytes(): int
+    {
+        return (int) data_get($this->limits, 'storage_bytes', 2 * 1024 * 1024 * 1024);
+    }
 }

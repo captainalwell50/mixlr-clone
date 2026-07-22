@@ -1572,11 +1572,18 @@ async function teardownLive() {
 
 const libraryListEl = document.getElementById('library-list');
 const librarySearchEl = document.getElementById('library-search');
+const libraryDestinationEl = document.getElementById('library-destination');
+const libraryStorageMeterEl = document.getElementById('library-storage-meter');
+const libraryDriveStatusEl = document.getElementById('library-drive-status');
+const btnDriveConnect = document.getElementById('btn-drive-connect');
+const btnDriveBrowse = document.getElementById('btn-drive-browse');
 const libraryListUrl = root?.dataset.libraryListUrl;
 const libraryUploadUrl = root?.dataset.libraryUploadUrl;
+const libraryImportDriveUrl = root?.dataset.libraryImportDriveUrl;
 /** @type {Array<Record<string, any>>} */
 let libraryAssets = [];
 let librarySearchTimer = 0;
+let libraryDrive = { connected: false, connect_url: null, email: null };
 
 const btnAddGallery = document.getElementById('btn-add-gallery');
 const galleryInput = document.getElementById('gallery-input');
@@ -1637,7 +1644,13 @@ function renderLibraryList(assets = filteredLibraryAssets()) {
             </div>
         `;
         row.querySelector('.mixer-library-title').textContent = asset.title || asset.original_filename || 'Audio';
-        row.querySelector('.mixer-library-meta').textContent = meta;
+        const provider =
+            asset.storage_provider === 'drive'
+                ? 'Drive'
+                : asset.storage_provider === 'platform'
+                  ? 'Platform'
+                  : 'Server';
+        row.querySelector('.mixer-library-meta').textContent = `${meta} · ${provider}`;
 
         row.querySelector('[data-queue]')?.addEventListener('click', () => {
             queueLibraryAsset(asset);
@@ -1691,11 +1704,78 @@ async function refreshLibrary() {
         }
         const data = await res.json();
         libraryAssets = Array.isArray(data.assets) ? data.assets : [];
+        if (data.storage && libraryStorageMeterEl) {
+            libraryStorageMeterEl.textContent = `Platform storage: ${data.storage.used_label} of ${data.storage.limit_label}`;
+        }
+        if (data.drive) {
+            libraryDrive = data.drive;
+            updateDriveUi();
+        }
         renderLibraryList();
     } catch {
         if (libraryListEl) {
             libraryListEl.innerHTML = '<p class="mixer-hint">Could not load audio library.</p>';
         }
+    }
+}
+
+function updateDriveUi() {
+    if (libraryDriveStatusEl) {
+        libraryDriveStatusEl.textContent = libraryDrive.connected
+            ? `Google Drive: connected${libraryDrive.email ? ` (${libraryDrive.email})` : ''}`
+            : 'Google Drive: not connected — uploads to Drive need Connect Drive (login).';
+    }
+    if (btnDriveConnect) {
+        btnDriveConnect.hidden = !libraryDrive.connect_url || libraryDrive.connected;
+        btnDriveConnect.onclick = () => {
+            if (libraryDrive.connect_url) {
+                window.location.href = libraryDrive.connect_url;
+            }
+        };
+    }
+    if (btnDriveBrowse) {
+        btnDriveBrowse.hidden = !libraryDrive.connected;
+        btnDriveBrowse.onclick = () => {
+            void importDriveFilePrompt();
+        };
+    }
+    if (libraryDestinationEl && libraryDrive.connected === false && libraryDestinationEl.value === 'drive') {
+        libraryDestinationEl.value = 'platform';
+    }
+}
+
+async function importDriveFilePrompt() {
+    if (!libraryImportDriveUrl || !libraryDrive.connected) {
+        setStatus('Connect Google Drive first.');
+        return;
+    }
+    const fileId = window.prompt('Paste a Google Drive file ID from your “Live Mix Audio” folder:');
+    if (!fileId || !fileId.trim()) {
+        return;
+    }
+    try {
+        const res = await fetch(libraryImportDriveUrl, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ file_id: fileId.trim() }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || 'Import failed');
+        }
+        const data = await res.json();
+        if (data.asset) {
+            libraryAssets = [data.asset, ...libraryAssets.filter((a) => a.id !== data.asset.id)];
+            renderLibraryList();
+            setStatus('Imported from Google Drive.');
+        }
+    } catch (e) {
+        setStatus(e instanceof Error ? e.message : 'Could not import from Drive.');
     }
 }
 
@@ -1725,6 +1805,7 @@ async function uploadFilesToLibrary(files, queueAfterUpload) {
             const body = new FormData();
             body.append('audio', file);
             body.append('title', file.name.replace(/\.[^.]+$/, '') || file.name);
+            body.append('destination', libraryDestinationEl?.value || 'platform');
             if (duration != null) {
                 body.append('duration_seconds', String(Math.round(duration)));
             }
@@ -1743,7 +1824,11 @@ async function uploadFilesToLibrary(files, queueAfterUpload) {
                 let msg = `Upload failed (${res.status})`;
                 try {
                     const err = JSON.parse(raw);
-                    msg = err?.message || err?.errors?.audio?.[0] || msg;
+                    msg =
+                        err?.message ||
+                        err?.errors?.storage?.[0] ||
+                        err?.errors?.audio?.[0] ||
+                        msg;
                 } catch {
                     if (/POST data is too large|Content Too Large|413/i.test(raw) || res.status === 413) {
                         msg = 'File is too large for the server (max about 50 MB). Try a smaller file or compress it.';
