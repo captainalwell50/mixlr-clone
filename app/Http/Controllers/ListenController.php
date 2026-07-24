@@ -42,7 +42,7 @@ class ListenController extends Controller
             : false;
         $listenerCount = $stream->activeListenerCount();
         $isFollowing = $request->user()?->followsChannel($organization) ?? false;
-        $galleryImages = $stream->galleryImages()->limit(24)->get();
+        $galleryImages = $stream->serviceGalleryImages()->limit(24)->get();
 
         return view('listen', [
             'stream' => $stream,

@@ -138,6 +138,15 @@ class ApiClient {
     );
   }
 
+  Future<StreamSummary> pauseStream(String streamUuid) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/pause'),
+      headers: _headers(auth: true),
+    );
+    final data = await _json(response, fallback: 'Could not pause');
+    return StreamSummary.fromJson(data['stream'] as Map<String, dynamic>);
+  }
+
   Future<StreamSummary> endStream(String streamUuid) async {
     final response = await _client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/end'),
@@ -191,5 +200,37 @@ class ApiClient {
     );
     final data = await _json(response, fallback: 'Like failed');
     return data['likes'] as int? ?? 0;
+  }
+
+  /// Public listen-portal scripture poll (same as web `/listen/{uuid}/scripture`).
+  Future<({bool enabled, ScriptureCue? cue})> scripture(String streamUuid) async {
+    final response = await _client.get(
+      Uri.parse('${AppConfig.apiBase}/listen/$streamUuid/scripture'),
+      headers: _headers(auth: _token != null),
+    );
+    final data = await _json(response, fallback: 'Could not load scripture');
+    final enabled = data['enabled'] as bool? ?? false;
+    final raw = data['scripture'];
+    if (raw is! Map<String, dynamic>) {
+      return (enabled: enabled, cue: null);
+    }
+    final cue = ScriptureCue.fromJson(raw);
+    if (cue.ref.isEmpty || cue.text.isEmpty) {
+      return (enabled: enabled, cue: null);
+    }
+    return (enabled: enabled, cue: cue);
+  }
+
+  /// Public listen-portal gallery (same as web `/listen/{uuid}/gallery`).
+  Future<List<GalleryItem>> gallery(String streamUuid) async {
+    final response = await _client.get(
+      Uri.parse('${AppConfig.apiBase}/listen/$streamUuid/gallery'),
+      headers: _headers(auth: _token != null),
+    );
+    final data = await _json(response, fallback: 'Could not load gallery');
+    final images = data['images'] as List<dynamic>? ?? [];
+    return images
+        .map((e) => GalleryItem.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 }

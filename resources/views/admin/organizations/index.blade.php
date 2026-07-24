@@ -29,7 +29,7 @@
                         <td class="text-[var(--stage-cream)]">{{ $org->name }}</td>
                         <td class="text-[var(--stage-muted)]">{{ $org->slug }}</td>
                         <td class="text-right whitespace-nowrap">
-                            <a href="{{ route('channels.show', $org) }}" class="console-muted-link" target="_blank">Page</a>
+                            <a href="{{ $org->channelUrl() }}" class="console-muted-link" target="_blank">Page</a>
                             <span class="text-[var(--stage-muted)]">·</span>
                             <a href="{{ route('admin.organizations.members', $org) }}" class="console-muted-link">Members</a>
                             <span class="text-[var(--stage-muted)]">·</span>

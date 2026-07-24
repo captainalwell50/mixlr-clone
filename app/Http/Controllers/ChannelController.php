@@ -38,6 +38,7 @@ class ChannelController extends Controller
             ->get();
 
         $recordings = Recording::query()
+            ->publicArchive()
             ->whereHas('stream', fn ($q) => $q->where('organization_id', $organization->id))
             ->with('stream')
             ->latest('completed_at')

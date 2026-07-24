@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>How it works — {{ config('app.name', 'Live Mix Audio') }}</title>
+    <title>How it works — {{ config('app.name', 'Sound Mix Live') }}</title>
     <meta name="description" content="Schedule an event, go live from Studio, share one link, and let listeners join with chat and hearts.">
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=fraunces:500,600,700|source-sans-3:400,500,600,700" rel="stylesheet" />
@@ -12,31 +12,9 @@
 <body class="stage-body marketing-body">
     <header class="mkt-header">
         <div class="mkt-header-inner">
-            <a href="{{ url('/') }}" class="mkt-logo" aria-label="{{ config('app.name', 'Live Mix Audio') }} home">
-                <span class="mkt-logo-mark" aria-hidden="true">
-                    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect width="40" height="40" rx="10" fill="#0c1210"/>
-                        <path d="M12 26V14c0-1.1.9-2 2-2h1.2c.4 0 .8.2 1 .6l8.6 14.8c.3.5.9.6 1.4.3.3-.2.5-.5.5-.9V14c0-1.1.9-2 2-2s2 .9 2 2v12c0 1.1-.9 2-2 2h-1.2c-.4 0-.8-.2-1-.6L15.9 12.6c-.3-.5-.9-.6-1.4-.3-.3.2-.5.5-.5.9V26c0 1.1-.9 2-2 2s-2-.9-2-2Z" fill="#3d9b7a"/>
-                        <circle cx="20" cy="32.5" r="1.6" fill="#3d9b7a" opacity=".85"/>
-                    </svg>
-                </span>
-                <span class="mkt-logo-word">
-                    <span class="mkt-logo-primary">Live Mix</span>
-                    <span class="mkt-logo-secondary">Audio</span>
-                </span>
-            </a>
+            @include('partials.brand-logo')
 
-            <nav class="mkt-nav" aria-label="Primary">
-                <a href="{{ route('how-it-works') }}" aria-current="page">How it works</a>
-                <a href="{{ route('discover') }}">Discover</a>
-                <a href="{{ route('archive.index') }}">Recorded Audio</a>
-                @auth
-                    <a href="{{ url('/dashboard') }}">Dashboard</a>
-                @else
-                    <a href="{{ route('login') }}">Log in</a>
-                @endauth
-                <a href="{{ route('discover') }}" class="mkt-nav-cta">Discover live</a>
-            </nav>
+            @include('partials.marketing-nav', ['current' => 'how-it-works'])
         </div>
     </header>
 
@@ -71,7 +49,7 @@
                 <li>
                     <span class="mkt-step-num">04</span>
                     <h2>Listen with chat &amp; hearts</h2>
-                    <p>People join from any phone, send hearts, and chat in real time. Later, recordings land in Recorded Audio for midweek catch-up.</p>
+                    <p>People join from any phone, send hearts, and chat in real time. Later, recordings land in Podcasts for midweek catch-up.</p>
                 </li>
             </ol>
             <div class="mkt-cta mkt-page-cta">
@@ -99,7 +77,7 @@
                 </p>
                 <div class="mkt-cta">
                     <a href="{{ route('discover') }}" class="site-btn site-btn-primary">Browse channels</a>
-                    <a href="{{ route('archive.index') }}" class="site-btn site-btn-ghost">Recorded Audio</a>
+                    <a href="{{ route('archive.index') }}" class="site-btn site-btn-ghost">Podcasts</a>
                 </div>
             </div>
             <ul class="mkt-points">
@@ -121,24 +99,13 @@
 
     <footer class="mkt-footer">
         <div class="mkt-footer-inner">
-            <a href="{{ url('/') }}" class="mkt-logo mkt-logo-compact">
-                <span class="mkt-logo-mark" aria-hidden="true">
-                    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect width="40" height="40" rx="10" fill="#141c18"/>
-                        <path d="M12 26V14c0-1.1.9-2 2-2h1.2c.4 0 .8.2 1 .6l8.6 14.8c.3.5.9.6 1.4.3.3-.2.5-.5.5-.9V14c0-1.1.9-2 2-2s2 .9 2 2v12c0 1.1-.9 2-2 2h-1.2c-.4 0-.8-.2-1-.6L15.9 12.6c-.3-.5-.9-.6-1.4-.3-.3.2-.5.5-.5.9V26c0 1.1-.9 2-2 2s-2-.9-2-2Z" fill="#3d9b7a"/>
-                        <circle cx="20" cy="32.5" r="1.6" fill="#3d9b7a" opacity=".85"/>
-                    </svg>
-                </span>
-                <span class="mkt-logo-word">
-                    <span class="mkt-logo-primary">Live Mix</span>
-                    <span class="mkt-logo-secondary">Audio</span>
-                </span>
-            </a>
+            @include('partials.brand-logo', ['compact' => true, 'onDark' => true])
             <p>Channels, events, and a stage made for listening.</p>
             <nav aria-label="Footer">
                 <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
-                <a href="{{ route('archive.index') }}">Recorded Audio</a>
+                <a href="{{ route('downloads') }}">Download</a>
+                <a href="{{ route('archive.index') }}">Podcasts</a>
                 @auth
                     <a href="{{ url('/dashboard') }}">Dashboard</a>
                 @else

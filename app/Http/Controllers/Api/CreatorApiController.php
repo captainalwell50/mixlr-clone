@@ -4,12 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\StreamStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Event;
 use App\Models\Stream;
+use App\Services\EventBroadcastService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CreatorApiController extends Controller
 {
+    public function __construct(private EventBroadcastService $broadcast) {}
+
     public function home(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -40,7 +44,7 @@ class CreatorApiController extends Controller
                 'creator_type' => $organization->creator_type?->value,
                 'theme_color' => $organization->themeColor(),
                 'artwork_url' => $organization->artworkUrl(),
-                'channel_url' => route('channels.show', $organization),
+                'channel_url' => $organization->channelUrl(),
             ],
             'stream' => $stream ? $this->streamSummary($stream) : null,
             'streams' => $organization->streams->map(fn (Stream $s) => $this->streamSummary($s))->values(),
@@ -80,19 +84,47 @@ class CreatorApiController extends Controller
         abort_unless($user->canManageStream($stream), 403);
         abort_unless($stream->organization?->allowsBroadcast() ?? false, 402);
 
-        $stream->forceFill([
-            'status' => StreamStatus::Live,
-            'started_at' => $stream->started_at ?? now(),
-            'ended_at' => null,
-        ])->save();
+        $validated = $request->validate([
+            'title' => ['nullable', 'string', 'max:255'],
+            'event_id' => ['nullable', 'integer', 'exists:events,id'],
+        ]);
+
+        $event = null;
+        if (! empty($validated['event_id'])) {
+            $event = Event::query()->findOrFail($validated['event_id']);
+        }
+
+        $liveEvent = $this->broadcast->goLiveOnStream(
+            $stream,
+            $validated['title'] ?? null,
+            $event,
+        );
 
         return response()->json([
             'stream' => $this->streamSummary($stream->fresh()),
+            'event' => $this->broadcast->eventPayload($liveEvent),
             'publish' => [
                 'whip_url' => $stream->whipUrl(),
                 'whep_url' => $stream->whepUrl(),
                 'hls_url' => $stream->hlsPlaylistUrl(),
             ],
+        ]);
+    }
+
+    public function pause(Request $request, Stream $stream): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 401);
+        abort_unless($user->canManageStream($stream), 403);
+
+        $open = $this->broadcast->openEventForStream($stream);
+        abort_unless($open !== null, 422, 'No open event to pause.');
+
+        $this->broadcast->markPaused($open);
+
+        return response()->json([
+            'stream' => $this->streamSummary($stream->fresh()),
+            'event' => $this->broadcast->eventPayload($open->fresh()),
         ]);
     }
 
@@ -102,13 +134,19 @@ class CreatorApiController extends Controller
         abort_unless($user !== null, 401);
         abort_unless($user->canManageStream($stream), 403);
 
-        $stream->forceFill([
-            'status' => StreamStatus::Offline,
-            'ended_at' => now(),
-        ])->save();
+        $open = $this->broadcast->openEventForStream($stream);
+        if ($open) {
+            $this->broadcast->markEnded($open);
+        } else {
+            $stream->forceFill([
+                'status' => StreamStatus::Offline,
+                'ended_at' => now(),
+            ])->save();
+        }
 
         return response()->json([
             'stream' => $this->streamSummary($stream->fresh()),
+            'event' => $open ? $this->broadcast->eventPayload($open->fresh()) : null,
         ]);
     }
 

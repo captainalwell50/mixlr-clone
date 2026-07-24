@@ -16,11 +16,14 @@ class NetworkStatus extends ChangeNotifier {
 
   StreamSubscription<List<ConnectivityResult>>? _sub;
   Timer? _pingTimer;
+  Timer? _offlineDebounce;
+  int _failStreak = 0;
 
   NetHealth health = NetHealth.online;
   String label = 'Checking…';
   DateTime? lastOkAt;
   bool _bootstrapped = false;
+  bool _evaluating = false;
 
   bool get isOnline => health == NetHealth.online;
   bool get hasLink => health != NetHealth.offline;
@@ -31,38 +34,77 @@ class NetworkStatus extends ChangeNotifier {
 
     _sub = _connectivity.onConnectivityChanged.listen((_) => _evaluate());
     await _evaluate();
-    _pingTimer = Timer.periodic(const Duration(seconds: 12), (_) => _evaluate());
+    _pingTimer = Timer.periodic(const Duration(seconds: 25), (_) => _evaluate());
   }
 
-  Future<void> refresh() => _evaluate();
+  Future<void> refresh() => _evaluate(force: true);
 
-  Future<void> _evaluate() async {
-    final results = await _connectivity.checkConnectivity();
-    final link = results.any(
-      (r) =>
-          r == ConnectivityResult.mobile ||
-          r == ConnectivityResult.wifi ||
-          r == ConnectivityResult.ethernet ||
-          r == ConnectivityResult.vpn,
-    );
-
-    if (!link) {
-      _set(NetHealth.offline, 'Offline');
-      return;
-    }
-
+  Future<void> _evaluate({bool force = false}) async {
+    if (_evaluating && !force) return;
+    _evaluating = true;
     try {
-      final response = await _client
-          .get(Uri.parse('${AppConfig.apiBase}/up'))
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode >= 200 && response.statusCode < 500) {
+      // Reachability to our API is source of truth. connectivity_plus alone
+      // often blips to "none" while Wi‑Fi is fine, which used to flash Offline
+      // while listen UI kept showing Pause/LISTENING.
+      final probeOk = await _probeApi();
+      if (probeOk) {
+        _failStreak = 0;
+        _offlineDebounce?.cancel();
+        _offlineDebounce = null;
         lastOkAt = DateTime.now();
         _set(NetHealth.online, 'Online');
         return;
       }
-      _set(NetHealth.degraded, 'Server unreachable');
+
+      _failStreak += 1;
+      final results = await _connectivity.checkConnectivity();
+      final link = results.any(_looksLikeLink);
+
+      if (link) {
+        _offlineDebounce?.cancel();
+        _offlineDebounce = null;
+        _set(NetHealth.degraded, 'No server');
+        return;
+      }
+
+      // No OS link + failed probe: debounce before Offline so brief
+      // connectivity_plus glitches don't contradict an active listen session.
+      if (force || _failStreak >= 2) {
+        _commitOffline();
+      } else {
+        _offlineDebounce?.cancel();
+        _offlineDebounce = Timer(const Duration(seconds: 4), _commitOffline);
+        if (health == NetHealth.online) {
+          _set(NetHealth.degraded, 'Reconnecting…');
+        }
+      }
+    } finally {
+      _evaluating = false;
+    }
+  }
+
+  void _commitOffline() {
+    _offlineDebounce = null;
+    _set(NetHealth.offline, 'Offline');
+  }
+
+  bool _looksLikeLink(ConnectivityResult r) {
+    return r == ConnectivityResult.mobile ||
+        r == ConnectivityResult.wifi ||
+        r == ConnectivityResult.ethernet ||
+        r == ConnectivityResult.vpn ||
+        r == ConnectivityResult.other ||
+        r == ConnectivityResult.bluetooth;
+  }
+
+  Future<bool> _probeApi() async {
+    try {
+      final response = await _client
+          .get(Uri.parse('${AppConfig.apiBase}/up'))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode >= 200 && response.statusCode < 500;
     } catch (_) {
-      _set(NetHealth.degraded, 'No server');
+      return false;
     }
   }
 
@@ -77,6 +119,7 @@ class NetworkStatus extends ChangeNotifier {
   void dispose() {
     _sub?.cancel();
     _pingTimer?.cancel();
+    _offlineDebounce?.cancel();
     super.dispose();
   }
 }

@@ -18,10 +18,12 @@ webrtcAddress: :8889
 webrtcEncryption: false
 webrtcAllowOrigins: ['*']
 webrtcLocalUDPAddress: :8189
+# TCP ICE fallback when UDP 8189 is blocked (home/CGNAT). Compose already maps 8189/tcp.
+webrtcLocalTCPAddress: :8189
 # Docker advertises bridge IPs if true — break ICE from browsers. Prefer false + public hosts.
 webrtcIPsFromInterfaces: false
 # Local: leave empty. Production Azure VM: list public IP and hostname.
-webrtcAdditionalHosts: []
+webrtcAdditionalHosts: ['soundmix.live', 'www.soundmix.live', '20.120.113.129']
 
 hls: true
 hlsAddress: :8888
@@ -42,6 +44,7 @@ rtmpEncryption: "no"
 pathDefaults:
   source: publisher
   overridePublisher: true
+  # Server archive for desktop + crash safety. Laravel ignores short reconnect junk.
   record: true
   recordFormat: fmp4
   recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f

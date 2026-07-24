@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', $organization->name.' · '.config('app.name', 'Live Mix Audio'))
+@section('title', $organization->name.' · '.config('app.name', 'Sound Mix Live'))
 @section('main_class', 'w-full')
 
 @php
@@ -68,7 +68,7 @@
                         </a>
                     @endauth
 
-                    @if ($organization->support_url)
+                    @if ($organization->support_url && $organization->hasFeature('donations'))
                         <a href="{{ $organization->support_url }}" target="_blank" rel="noopener"
                             class="site-btn site-btn-ghost">Support</a>
                     @endif
@@ -133,15 +133,15 @@
             </section>
 
             <section class="mt-12">
-                <h2 class="site-section-label">Recordings</h2>
+                <h2 class="site-section-label">Podcasts</h2>
                 @if ($recordings->isEmpty())
-                    <p class="site-empty">No recordings yet.</p>
+                    <p class="site-empty">No podcasts yet.</p>
                 @else
                     <div class="art-grid">
                         @foreach ($recordings as $recording)
                             @include('partials.art-tile', [
                                 'href' => route('archive.play', $recording),
-                                'title' => $recording->stream->title,
+                                'title' => $recording->displayTitle(),
                                 'subtitle' => $recording->completed_at->format('M j, Y'),
                                 'artwork' => $organization->artworkUrl(),
                                 'accent' => $theme,

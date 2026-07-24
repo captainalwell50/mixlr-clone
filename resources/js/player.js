@@ -65,10 +65,20 @@ function connectAnalyser(audio) {
     const stream = audio.srcObject instanceof MediaStream ? audio.srcObject : null;
     const mode = stream ? 'stream' : 'element';
     if (sourceNode && sourceMode === mode) {
-        return;
+        // Rebind when WHEP replaces the MediaStream after a reconnect.
+        if (mode !== 'stream' || sourceNode.mediaStream === stream) {
+            return;
+        }
+        try {
+            sourceNode.disconnect();
+        } catch {
+            /* ignore */
+        }
+        sourceNode = null;
     }
     try {
-        audioCtx = audioCtx || new AudioContext();
+        // Prefer playback buffering over interactive latency — fewer audible underruns.
+        audioCtx = audioCtx || new AudioContext({ latencyHint: 'playback' });
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 128;
         if (stream) {

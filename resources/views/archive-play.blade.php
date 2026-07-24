@@ -1,6 +1,6 @@
 @extends('layouts.stream')
 
-@section('title', $stream->title.' · Recorded Audio')
+@section('title', $recording->displayTitle().' · Podcasts')
 
 @section('vite')
     @vite(['resources/js/archive-player.js'])
@@ -20,7 +20,7 @@
         <div class="stage-shell">
             <header class="portal-bar stage-rise">
                 <div class="portal-brand">
-                    <a href="{{ route('channels.show', $organization) }}" class="portal-channel-link">
+                    <a href="{{ $organization->channelUrl() }}" class="portal-channel-link">
                         @if ($artwork)
                             <img src="{{ $artwork }}" alt="" class="portal-avatar">
                         @else
@@ -30,15 +30,15 @@
                     </a>
                 </div>
                 <nav class="portal-bar-links">
-                    <a href="{{ route('archive.index') }}" class="stage-top-link">Recorded Audio</a>
+                    <a href="{{ route('archive.index') }}" class="stage-top-link">Podcasts</a>
                     <a href="{{ route('discover') }}" class="stage-top-link">Discover</a>
                 </nav>
             </header>
 
             <div class="portal-layout archive-play-layout">
                 <div class="portal-below archive-play-main">
-                    <p class="site-section-label">Recording</p>
-                    <h1 class="portal-title stage-rise-delay">{{ $stream->title }}</h1>
+                    <p class="site-section-label">Podcast</p>
+                    <h1 class="portal-title stage-rise-delay">{{ $recording->displayTitle() }}</h1>
                     <p class="archive-play-channel">{{ $organization->name }}</p>
                     <p class="stage-meta">
                         {{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }}
@@ -61,7 +61,7 @@
                                 aria-label="Seek in recording"
                                 disabled
                             >
-                            <span id="archive-time-duration" class="archive-time">0:00</span>
+                            <span id="archive-time-duration" class="archive-time">{{ $recording->durationLabel() !== '—' ? $recording->durationLabel() : '0:00' }}</span>
                         </div>
 
                         <div class="stage-transport archive-transport">
@@ -98,7 +98,15 @@
                         <audio id="stream-audio" class="sr-only" playsinline preload="metadata"></audio>
                         <p id="stream-status" class="stage-status-line">Press play to listen</p>
                     </div>
-                    <div id="archive-root" data-src="{{ $fileUrl }}" data-gallery-url="{{ route('gallery.index', $stream) }}" class="hidden"></div>
+                    <div
+                        id="archive-root"
+                        data-src="{{ $fileUrl }}"
+                        data-gallery-url="{{ $recording->event_id ? route('gallery.index', ['stream' => $stream, 'event_id' => $recording->event_id]) : route('gallery.index', $stream) }}"
+                        @if ($recording->durationSeconds() !== null)
+                            data-duration-seconds="{{ $recording->durationSeconds() }}"
+                        @endif
+                        class="hidden"
+                    ></div>
                 </div>
 
                 <aside class="archive-play-gallery stage-rise-delay-2" aria-label="Live gallery">

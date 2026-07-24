@@ -10,6 +10,7 @@ export default defineConfig({
                 'resources/js/app.js',
                 'resources/js/listen.js',
                 'resources/js/studio.js',
+                'resources/js/desktop-mixer.js',
                 'resources/js/archive-player.js',
                 'resources/js/chat.js',
                 'resources/js/event-engage.js',

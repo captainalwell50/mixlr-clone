@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Live Mix Audio'),
+    'name' => env('APP_NAME', 'Sound Mix Live'),
 
     /*
     |--------------------------------------------------------------------------
@@ -53,6 +53,27 @@ return [
     */
 
     'url' => env('APP_URL', 'http://localhost'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Channel subdomains (Mixlr-style: https://{slug}.soundmix.live)
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, public channel pages live on subdomains. Path URLs /c/{slug}
+    | permanently redirect to the subdomain. Requires wildcard DNS (*.domain)
+    | and reverse-proxy TLS for those hosts (see deploy/Caddyfile.example).
+    |
+    */
+
+    'channel_subdomains' => (bool) env('CHANNEL_SUBDOMAINS', false),
+
+    'channel_domain' => env('CHANNEL_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST) ?: 'localhost'),
+
+    'channel_reserved_subdomains' => [
+        'www', 'api', 'app', 'admin', 'mail', 'ftp', 'cdn', 'static', 'assets',
+        'hls', 'rtc', 'media', 'status', 'support', 'billing', 'dashboard',
+        'studio', 'listen', 'embed', 'archive', 'discover',
+    ],
 
     /*
     |--------------------------------------------------------------------------

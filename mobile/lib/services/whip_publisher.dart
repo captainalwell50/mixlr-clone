@@ -5,6 +5,9 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 
+import '../platform_info.dart';
+import 'whep_listener.dart';
+
 enum PublishLink { idle, connecting, connected, failed }
 
 /// Publishes microphone audio to MediaMTX via WHIP, with local level metering.
@@ -31,16 +34,23 @@ class WhipPublisher extends ChangeNotifier {
   Future<void> startPreview() async {
     if (_local != null) return;
 
-    final mic = await Permission.microphone.request();
-    if (!mic.isGranted) {
-      throw Exception('Microphone permission is required.');
+    // Keep media ADM attributes if listen already initialized WebRTC.
+    await WhepListener.ensureWebRtcInitialized();
+
+    if (PlatformInfo.usesPermissionHandlerForMic) {
+      final mic = await Permission.microphone.request();
+      if (!mic.isGranted) {
+        throw Exception('Microphone permission is required.');
+      }
     }
 
+    // Desktop: OS prompts via getUserMedia. Prefer clean capture on macOS/Windows.
+    final useCleanAudio = PlatformInfo.isDesktop;
     _local = await navigator.mediaDevices.getUserMedia({
       'audio': {
-        'echoCancellation': true,
-        'noiseSuppression': true,
-        'autoGainControl': true,
+        'echoCancellation': !useCleanAudio,
+        'noiseSuppression': !useCleanAudio,
+        'autoGainControl': !useCleanAudio,
       },
       'video': false,
     });

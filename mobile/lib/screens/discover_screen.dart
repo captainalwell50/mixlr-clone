@@ -8,6 +8,7 @@ import '../services/api_client.dart';
 import '../services/auth_state.dart';
 import '../services/cache_store.dart';
 import '../services/network_status.dart';
+import '../services/selected_channel.dart';
 import '../theme.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/network_banner.dart';
@@ -198,6 +199,12 @@ class _StreamTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () {
+          context.read<SelectedChannel>().select(
+                uuid: card.uuid,
+                title: card.title,
+                organization: card.organization,
+                artworkUrl: card.artworkUrl,
+              );
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => ListenScreen(streamUuid: card.uuid),

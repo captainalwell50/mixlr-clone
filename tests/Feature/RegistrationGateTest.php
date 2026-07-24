@@ -20,11 +20,14 @@ class RegistrationGateTest extends TestCase
     {
         config(['app.registration_enabled' => false]);
 
+        config(['registration.min_form_seconds' => 0]);
+
         $this->post('/register', [
             'name' => 'Bot',
             'email' => 'bot@example.org',
             'password' => 'Password1!xx',
             'password_confirmation' => 'Password1!xx',
+            'website' => '',
         ])->assertNotFound();
     }
 

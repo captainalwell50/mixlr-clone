@@ -40,18 +40,12 @@
                             <span class="text-sm font-normal text-[var(--stage-muted)]"> / {{ $plan->interval }}</span>
                         @endunless
                     </p>
-                    <ul class="mt-4 space-y-1 text-sm text-[var(--stage-muted)]">
-                        @if ($plan->isFree())
-                            <li>Test Studio go-live &amp; listen</li>
-                            <li>1 channel stream</li>
-                            <li>Upgrade anytime</li>
-                        @else
-                            <li>Up to {{ $plan->maxStreams() }} stream{{ $plan->maxStreams() === 1 ? '' : 's' }}</li>
-                            @if (data_get($plan->limits, 'gallery'))
-                                <li>Event gallery &amp; video reels</li>
-                            @endif
-                            <li>Studio go-live + Recorded Audio</li>
-                        @endif
+                    <ul class="mt-4 space-y-1.5 text-sm text-[var(--stage-muted)]">
+                        @forelse ($plan->featureBullets() as $bullet)
+                            <li>{{ $bullet }}</li>
+                        @empty
+                            <li>Studio go-live + Podcasts</li>
+                        @endforelse
                     </ul>
                     <form method="POST" action="{{ route('billing.checkout', $plan) }}" class="mt-6">
                         @csrf

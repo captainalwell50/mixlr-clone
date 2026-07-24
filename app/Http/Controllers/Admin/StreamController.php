@@ -51,6 +51,13 @@ class StreamController extends Controller
             abort(403);
         }
 
+        $maxStreams = (int) $org->planLimit('max_streams', 1);
+        if ($maxStreams > 0 && $org->streams()->count() >= $maxStreams) {
+            return back()
+                ->withInput()
+                ->with('error', __('This plan allows :max stream(s). Upgrade to add more.', ['max' => $maxStreams]));
+        }
+
         Stream::query()->create([
             'organization_id' => $validated['organization_id'],
             'uuid' => (string) Str::uuid(),

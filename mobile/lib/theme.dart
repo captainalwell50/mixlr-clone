@@ -2,27 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class LiveMixTheme {
-  static const ink = Color(0xFF0E1014);
-  static const panel = Color(0xFF1A1E27);
-  static const panelHi = Color(0xFF242933);
-  static const gold = Color(0xFFD4A24C);
-  static const goldSoft = Color(0x33D4A24C);
-  static const mist = Color(0xFFF0EBE3);
-  static const mute = Color(0xFF8B909A);
+  static const ink = Color(0xFF0C1210);
+  static const panel = Color(0xFF141C19);
+  static const panelHi = Color(0xFF1C2824);
+  /// Brand teal (matches web / SM mark).
+  static const accent = Color(0xFF14B8A6);
+  static const accentSoft = Color(0x3314B8A6);
+  static const accentBright = Color(0xFF2DD4BF);
+  static const mist = Color(0xFFF0F4F2);
+  static const mute = Color(0xFF8A9691);
   static const live = Color(0xFFFF5C5C);
   static const liveSoft = Color(0x33FF5C5C);
   static const good = Color(0xFF3DDC97);
   static const warn = Color(0xFFF0B429);
   static const bad = Color(0xFFFF5C5C);
 
+  /// @Deprecated — use [accent]. Kept so older call sites compile during rename.
+  static const gold = accent;
+  static const goldSoft = accentSoft;
+
   static ThemeData dark() {
-    final textTheme = GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme);
+    // Fall back to the platform dark theme if Outfit cannot be resolved
+    // (offline first launch with empty font cache).
+    TextTheme textTheme;
+    try {
+      textTheme = GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme);
+    } catch (_) {
+      textTheme = ThemeData.dark().textTheme;
+    }
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: const ColorScheme.dark(
-        primary: gold,
+        primary: accent,
         onPrimary: ink,
         surface: panel,
         onSurface: mist,
@@ -56,7 +69,7 @@ class LiveMixTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: gold,
+          backgroundColor: accent,
           foregroundColor: ink,
           textStyle: GoogleFonts.outfit(
             fontWeight: FontWeight.w700,
@@ -69,7 +82,7 @@ class LiveMixTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: mist,
-          side: const BorderSide(color: Color(0x44E8E4DC)),
+          side: BorderSide(color: mist.withOpacity(0.28)),
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 16),
@@ -77,10 +90,21 @@ class LiveMixTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: panel,
-        indicatorColor: goldSoft,
+        indicatorColor: accentSoft,
         labelTextStyle: WidgetStatePropertyAll(
           GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w600),
         ),
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: panel,
+        selectedIconTheme: const IconThemeData(color: accentBright),
+        selectedLabelTextStyle: GoogleFonts.outfit(
+          color: mist,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+        unselectedIconTheme: IconThemeData(color: mute.withOpacity(0.9)),
+        indicatorColor: accentSoft,
       ),
     );
   }

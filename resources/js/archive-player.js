@@ -15,6 +15,11 @@ const volumeBtn = document.getElementById('btn-volume');
 
 let seeking = false;
 let lastVolume = 1;
+/** Server-known length — WebM/Opus from MediaRecorder often reports Infinity until fully buffered. */
+const knownDurationSec = (() => {
+    const raw = Number(root?.dataset.durationSeconds);
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+})();
 
 function formatTime(seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) {
@@ -28,6 +33,14 @@ function formatTime(seconds) {
         return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
     return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function mediaDuration() {
+    const d = audio?.duration;
+    if (Number.isFinite(d) && d > 0) {
+        return d;
+    }
+    return knownDurationSec;
 }
 
 function setRangeFill(el, pct) {
@@ -55,26 +68,34 @@ function syncTimes() {
     if (!audio) {
         return;
     }
-    const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    const duration = mediaDuration();
     const current = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
     if (timeCurrentEl) {
         timeCurrentEl.textContent = formatTime(current);
     }
     if (timeDurationEl) {
-        timeDurationEl.textContent = formatTime(duration);
+        timeDurationEl.textContent = duration > 0 ? formatTime(duration) : '0:00';
     }
     if (seekEl && !seeking) {
         seekEl.max = String(duration || 0);
-        seekEl.value = String(current || 0);
+        seekEl.value = String(Math.min(current, duration || current) || 0);
         setRangeFill(seekEl, duration > 0 ? (current / duration) * 100 : 0);
+        if (duration > 0) {
+            seekEl.disabled = false;
+        }
     }
 }
 
 function seekBy(delta) {
-    if (!audio || !Number.isFinite(audio.duration)) {
+    if (!audio) {
         return;
     }
-    audio.currentTime = Math.min(Math.max(0, audio.currentTime + delta), audio.duration || 0);
+    const duration = mediaDuration();
+    if (!(duration > 0) && !Number.isFinite(audio.duration)) {
+        return;
+    }
+    const max = duration > 0 ? duration : audio.duration || 0;
+    audio.currentTime = Math.min(Math.max(0, audio.currentTime + delta), max);
     syncTimes();
 }
 
@@ -106,10 +127,17 @@ if (root && audio) {
         audio.src = src;
         player.enable();
 
+        // Paint known length immediately (WebM often keeps duration === Infinity).
+        if (knownDurationSec > 0 && seekEl) {
+            seekEl.disabled = false;
+            seekEl.max = String(knownDurationSec);
+        }
+        syncTimes();
+
         audio.addEventListener('loadedmetadata', () => {
             if (seekEl) {
                 seekEl.disabled = false;
-                seekEl.max = String(audio.duration || 0);
+                seekEl.max = String(mediaDuration() || 0);
             }
             syncTimes();
         });
@@ -145,7 +173,7 @@ if (root && audio) {
             if (!Number.isFinite(value)) {
                 return;
             }
-            const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+            const duration = mediaDuration();
             setRangeFill(seekEl, duration > 0 ? (value / duration) * 100 : 0);
             if (timeCurrentEl) {
                 timeCurrentEl.textContent = formatTime(value);

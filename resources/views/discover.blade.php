@@ -1,13 +1,13 @@
 @extends('layouts.app')
 
-@section('title', 'Discover · '.config('app.name', 'Live Mix Audio'))
+@section('title', 'Discover · '.config('app.name', 'Sound Mix Live'))
 @section('main_class', 'w-full')
 
 @section('content')
     <div class="discover-page site-page">
         <div class="discover-head stage-rise">
             <div>
-                <p class="site-section-label is-live">Live Mix Audio</p>
+                <p class="site-section-label is-live">Sound Mix Live</p>
                 <h1 class="mt-2">Discover</h1>
                 <p class="mt-2 max-w-md text-sm text-[var(--stage-muted)]">
                     What’s on air now — and what’s coming up.

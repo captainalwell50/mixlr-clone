@@ -1,16 +1,21 @@
 <?php
 
+use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\EventController as AdminEventController;
 use App\Http\Controllers\Admin\OrganizationController;
 use App\Http\Controllers\Admin\OrganizationMemberController;
+use App\Http\Controllers\Admin\PlanController;
 use App\Http\Controllers\Admin\RecordingDestroyController;
 use App\Http\Controllers\Admin\RecordingDownloadController;
 use App\Http\Controllers\Admin\StreamController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\ArchiveController;
 use App\Http\Controllers\BillingController;
+use App\Http\Controllers\CaddyOnDemandController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ChannelFollowController;
+use App\Models\Organization;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\CreatorHomeController;
 use App\Http\Controllers\DashboardController;
@@ -24,8 +29,11 @@ use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PaystackWebhookController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlayController;
+use App\Http\Controllers\ScriptureController;
+use App\Http\Controllers\StudioSessionController;
 use App\Http\Controllers\StreamEngageController;
 use App\Http\Controllers\StudioAudioLibraryController;
+use App\Http\Controllers\StudioDesktopMixerController;
 use App\Http\Controllers\StudioController;
 use Illuminate\Support\Facades\Route;
 
@@ -37,57 +45,91 @@ Route::get('/how-it-works', function () {
     return view('how-it-works');
 })->name('how-it-works');
 
+Route::get('/downloads', function () {
+    return view('downloads', [
+        'platforms' => config('downloads'),
+    ]);
+})->name('downloads');
+
 Route::get('/discover', [DiscoverController::class, 'index'])->name('discover');
 
-Route::get('/c/{organization}', [ChannelController::class, 'show'])->name('channels.show');
-Route::post('/c/{organization}/follow', [ChannelFollowController::class, 'store'])
-    ->middleware('auth')
-    ->name('channels.follow');
-Route::delete('/c/{organization}/follow', [ChannelFollowController::class, 'destroy'])
-    ->middleware('auth')
-    ->name('channels.unfollow');
+// Caddy on-demand TLS ask (localhost only in practice).
+Route::get('/internal/caddy-ask', CaddyOnDemandController::class)
+    ->middleware('throttle:120,1')
+    ->name('internal.caddy-ask');
+
+if (config('app.channel_subdomains') && filled(config('app.channel_domain'))) {
+    Route::domain('{organization}.'.config('app.channel_domain'))
+        ->middleware(\App\Http\Middleware\EnsureChannelSubdomain::class)
+        ->group(function (): void {
+            Route::get('/', [ChannelController::class, 'show'])->name('channels.show');
+            Route::post('/follow', [ChannelFollowController::class, 'store'])
+                ->middleware('auth')
+                ->name('channels.follow');
+            Route::delete('/follow', [ChannelFollowController::class, 'destroy'])
+                ->middleware('auth')
+                ->name('channels.unfollow');
+        });
+
+    // Legacy Mixlr-clone path → subdomain (e.g. /c/alwell → https://alwell.soundmix.live)
+    Route::get('/c/{organization}', function (Organization $organization) {
+        return redirect()->away($organization->channelUrl(), 301);
+    })->name('channels.show.path');
+} else {
+    Route::get('/c/{organization}', [ChannelController::class, 'show'])->name('channels.show');
+    Route::post('/c/{organization}/follow', [ChannelFollowController::class, 'store'])
+        ->middleware('auth')
+        ->name('channels.follow');
+    Route::delete('/c/{organization}/follow', [ChannelFollowController::class, 'destroy'])
+        ->middleware('auth')
+        ->name('channels.unfollow');
+}
 
 Route::get('/e/{event}', [EventController::class, 'show'])->name('events.show');
 Route::get('/e/{event}/status', [EventController::class, 'status'])
-    ->middleware('throttle:120,1')
+    ->middleware('throttle:listen-poll')
     ->name('events.status');
 Route::post('/e/{event}/unlock', [EventController::class, 'unlock'])->name('events.unlock');
 Route::get('/embed/e/{event}', [EventController::class, 'embed'])->name('events.embed');
 
 Route::post('/e/{event}/presence', [EventEngageController::class, 'presence'])
-    ->middleware('throttle:120,1')
+    ->middleware('throttle:listen-poll')
     ->name('events.presence');
 Route::post('/e/{event}/heart', [EventEngageController::class, 'heart'])
     ->middleware(['auth', 'throttle:60,1'])
     ->name('events.heart');
 
 Route::get('/e/{event}/chat', [ChatController::class, 'indexForEvent'])
-    ->middleware('throttle:120,1')
+    ->middleware('throttle:listen-poll')
     ->name('events.chat.index');
 Route::post('/e/{event}/chat', [ChatController::class, 'storeForEvent'])
     ->middleware(['auth', 'throttle:30,1'])
     ->name('events.chat.store');
 
 Route::get('/archive', [ArchiveController::class, 'index'])->name('archive.index');
+Route::get('/archive/c/{organization}', [ArchiveController::class, 'channel'])->name('archive.channel');
 Route::get('/archive/{recording}/play', [RecordingPlayController::class, 'show'])->name('archive.play');
 Route::get('/archive/{recording}/file', [RecordingPlayController::class, 'file'])->name('archive.file');
 
 Route::get('/listen/{stream}', [ListenController::class, 'show'])->name('listen.stream');
 Route::get('/listen/{stream}/status', [ListenController::class, 'status'])
-    ->middleware('throttle:120,1')
+    ->middleware('throttle:listen-poll')
     ->name('listen.status');
 Route::get('/embed/{stream}', [ListenController::class, 'embed'])->name('embed.stream');
 
 Route::post('/listen/{stream}/presence', [StreamEngageController::class, 'presence'])
-    ->middleware('throttle:120,1')
+    ->middleware('throttle:listen-poll')
     ->name('listen.presence');
 Route::post('/listen/{stream}/like', [StreamEngageController::class, 'like'])
     ->middleware(['auth', 'throttle:60,1'])
     ->name('listen.like');
 
 Route::get('/listen/{stream}/gallery', [GalleryController::class, 'index'])
-    ->middleware('throttle:120,1')
+    ->middleware('throttle:listen-poll')
     ->name('gallery.index');
+Route::get('/listen/{stream}/scripture', [ScriptureController::class, 'show'])
+    ->middleware('throttle:listen-poll')
+    ->name('scripture.show');
 Route::post('/listen/{stream}/gallery', [GalleryController::class, 'store'])
     ->middleware('throttle:30,1')
     ->name('gallery.store');
@@ -99,12 +141,18 @@ Route::delete('/listen/{stream}/gallery/{image}', [GalleryController::class, 'de
     ->name('gallery.destroy');
 
 Route::get('/listen/{stream}/chat', [ChatController::class, 'index'])
-    ->middleware('throttle:120,1')
+    ->middleware('throttle:listen-poll')
     ->name('chat.index');
 Route::post('/listen/{stream}/chat', [ChatController::class, 'store'])
     ->middleware(['auth', 'throttle:30,1'])
     ->name('chat.store');
 
+Route::post('/listen/{stream}/recordings', [RecordingController::class, 'store'])
+    ->middleware('throttle:20,1')
+    ->name('recordings.store');
+Route::patch('/listen/{stream}/recordings/{recording}', [RecordingController::class, 'update'])
+    ->middleware('throttle:30,1')
+    ->name('recordings.update');
 Route::delete('/listen/{stream}/recordings/{recording}', [RecordingController::class, 'destroy'])
     ->middleware('throttle:30,1')
     ->name('recordings.destroy');
@@ -112,6 +160,45 @@ Route::delete('/listen/{stream}/recordings/{recording}', [RecordingController::c
 Route::get('/studio/{stream}', [StudioController::class, 'show'])
     ->middleware('signed')
     ->name('studio.stream');
+
+Route::get('/studio/{stream}/session', [StudioSessionController::class, 'show'])
+    ->middleware('throttle:120,1')
+    ->name('studio.session.show');
+Route::post('/studio/{stream}/session/events', [StudioSessionController::class, 'createEvent'])
+    ->middleware('throttle:30,1')
+    ->name('studio.session.create-event');
+Route::post('/studio/{stream}/session/go-live', [StudioSessionController::class, 'goLive'])
+    ->middleware('throttle:30,1')
+    ->name('studio.session.go-live');
+Route::patch('/studio/{stream}/session/event', [StudioSessionController::class, 'renameEvent'])
+    ->middleware('throttle:30,1')
+    ->name('studio.session.rename-event');
+Route::post('/studio/{stream}/session/pause', [StudioSessionController::class, 'pause'])
+    ->middleware('throttle:30,1')
+    ->name('studio.session.pause');
+Route::post('/studio/{stream}/session/resume', [StudioSessionController::class, 'resume'])
+    ->middleware('throttle:30,1')
+    ->name('studio.session.resume');
+Route::post('/studio/{stream}/session/end', [StudioSessionController::class, 'end'])
+    ->middleware('throttle:30,1')
+    ->name('studio.session.end');
+
+Route::get('/studio/{stream}/scripture', [ScriptureController::class, 'show'])
+    ->middleware('throttle:listen-poll')
+    ->name('studio.scripture.show');
+Route::get('/studio/{stream}/scripture/suggest', [ScriptureController::class, 'suggest'])
+    ->middleware('throttle:60,1')
+    ->name('studio.scripture.suggest');
+Route::post('/studio/{stream}/scripture', [ScriptureController::class, 'store'])
+    ->middleware('throttle:60,1')
+    ->name('studio.scripture.store');
+Route::delete('/studio/{stream}/scripture', [ScriptureController::class, 'destroy'])
+    ->middleware('throttle:60,1')
+    ->name('studio.scripture.destroy');
+
+Route::get('/studio/{stream}/desktop-mixer', [StudioDesktopMixerController::class, 'show'])
+    ->middleware('throttle:60,1')
+    ->name('studio.desktop-mixer');
 
 Route::get('/studio/{stream}/library', [StudioAudioLibraryController::class, 'index'])
     ->middleware('throttle:120,1')
@@ -135,6 +222,8 @@ Route::post('/webhooks/paystack', PaystackWebhookController::class)
 
 Route::middleware('auth')->group(function (): void {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('/account', [AccountController::class, 'edit'])->name('account.edit');
+    Route::put('/account', [AccountController::class, 'update'])->name('account.update');
 
     Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding.show');
     Route::post('/onboarding/type', [OnboardingController::class, 'storeType'])->name('onboarding.type');
@@ -162,6 +251,20 @@ Route::middleware('auth')->group(function (): void {
 });
 
 Route::middleware(['auth', 'onboarded'])->prefix('admin')->name('admin.')->group(function (): void {
+    Route::get('users', [UserController::class, 'index'])->name('users.index');
+    Route::get('users/create', [UserController::class, 'create'])->name('users.create');
+    Route::post('users', [UserController::class, 'store'])->name('users.store');
+    Route::get('users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
+    Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
+    Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+
+    Route::get('plans', [PlanController::class, 'index'])->name('plans.index');
+    Route::get('plans/create', [PlanController::class, 'create'])->name('plans.create');
+    Route::post('plans', [PlanController::class, 'store'])->name('plans.store');
+    Route::get('plans/{plan}/edit', [PlanController::class, 'edit'])->name('plans.edit');
+    Route::put('plans/{plan}', [PlanController::class, 'update'])->name('plans.update');
+    Route::delete('plans/{plan}', [PlanController::class, 'destroy'])->name('plans.destroy');
+
     Route::get('organizations', [OrganizationController::class, 'index'])->name('organizations.index');
     Route::get('organizations/create', [OrganizationController::class, 'create'])->name('organizations.create');
     Route::post('organizations', [OrganizationController::class, 'store'])->name('organizations.store');

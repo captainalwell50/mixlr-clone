@@ -5,7 +5,7 @@
 @section('content')
     <p class="site-section-label">Operator</p>
     <h1 class="console-title mt-2">Dashboard</h1>
-    <p class="console-lead">Creator tools and listening shortcuts for Live Mix Audio.</p>
+    <p class="console-lead">Creator tools and listening shortcuts for Sound Mix Live.</p>
 
     <div class="console-actions mt-8">
         @if(auth()->user()->is_admin || auth()->user()->manageableOrganizations()->exists())
@@ -15,10 +15,13 @@
             <a href="{{ route('admin.streams.index') }}" class="console-btn console-btn-ghost">Streams</a>
         @endif
         <a href="{{ route('discover') }}" class="console-btn console-btn-ghost">Discover</a>
-        <a href="{{ route('archive.index') }}" class="console-btn console-btn-ghost">Recorded Audio</a>
+        <a href="{{ route('archive.index') }}" class="console-btn console-btn-ghost">Podcasts</a>
+        <a href="{{ route('downloads') }}" class="console-btn console-btn-ghost">Download apps</a>
     </div>
 
     <p class="mt-10 text-xs text-[var(--stage-muted)]">
-        Tip: install Live Mix Audio from your browser for a standalone creator / listener experience.
+        Tip:
+        <a href="{{ route('downloads') }}" class="console-link">Get the app</a>
+        on Google Play or the App Store.
     </p>
 @endsection

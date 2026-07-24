@@ -4,7 +4,7 @@
 
 @section('content')
     <div class="mx-auto max-w-md">
-        <p class="site-section-label">Live Mix Audio</p>
+        <p class="site-section-label">Sound Mix Live</p>
         <h1 class="console-title mt-2">Log in</h1>
         <p class="console-lead">Access your account or the operator console.</p>
 

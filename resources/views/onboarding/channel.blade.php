@@ -17,8 +17,13 @@
             <div>
                 <label for="slug">Public URL slug <span class="text-[var(--stage-muted)]">(optional)</span></label>
                 <div class="flex items-center gap-2">
-                    <span class="text-sm text-[var(--stage-muted)]">/c/</span>
-                    <input id="slug" type="text" name="slug" value="{{ old('slug') }}" maxlength="255" placeholder="your-church">
+                    @if (config('app.channel_subdomains') && filled(config('app.channel_domain')))
+                        <input id="slug" type="text" name="slug" value="{{ old('slug') }}" maxlength="255" placeholder="your-church" class="min-w-0 flex-1">
+                        <span class="shrink-0 text-sm text-[var(--stage-muted)]">.{{ config('app.channel_domain') }}</span>
+                    @else
+                        <span class="text-sm text-[var(--stage-muted)]">/c/</span>
+                        <input id="slug" type="text" name="slug" value="{{ old('slug') }}" maxlength="255" placeholder="your-church">
+                    @endif
                 </div>
             </div>
             <div>

@@ -54,38 +54,46 @@
         </dl>
     </div>
 
-    <div class="mt-6 space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
-        <div>
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">OBS / RTMP</h2>
-            <p class="mt-1 text-xs text-zinc-500">In OBS: Settings → Stream → Custom. Server = RTMP URL, Stream Key = the key below (includes pass).</p>
+    @if ($stream->organization?->hasFeature('rtmp_ingest') || auth()->user()?->isAdmin())
+        <div class="mt-6 space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+            <div>
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">OBS / RTMP</h2>
+                <p class="mt-1 text-xs text-zinc-500">In OBS: Settings → Stream → Custom. Server = RTMP URL, Stream Key = the key below (includes pass).</p>
+            </div>
+            <dl class="space-y-3 text-sm">
+                <div>
+                    <dt class="text-zinc-500">Server</dt>
+                    <dd class="mt-1 flex flex-col gap-2 sm:flex-row">
+                        <code id="rtmp-url" class="block flex-1 break-all rounded bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300">{{ $stream->rtmpUrl() }}</code>
+                        <button type="button" data-copy="rtmp-url" class="shrink-0 rounded-lg border border-zinc-600 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800">Copy</button>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-zinc-500">Stream key (secret)</dt>
+                    <dd class="mt-1 flex flex-col gap-2 sm:flex-row">
+                        <code id="rtmp-key" class="block flex-1 break-all rounded bg-zinc-950 px-2 py-1.5 text-xs text-amber-200/90">{{ $stream->rtmpStreamKeyForObs() }}</code>
+                        <button type="button" data-copy="rtmp-key" class="shrink-0 rounded-lg border border-amber-800/60 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-950/40">Copy</button>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-zinc-500">Raw stream key</dt>
+                    <dd class="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <code id="raw-key" class="block flex-1 break-all rounded bg-zinc-950 px-2 py-1.5 font-mono text-xs text-zinc-400">{{ $stream->stream_key }}</code>
+                        <form method="POST" action="{{ route('admin.streams.regenerate-key', $stream) }}" onsubmit="return confirm('Regenerate stream key? OBS and WHIP credentials will change.');">
+                            @csrf
+                            <button type="submit" class="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800">Regenerate</button>
+                        </form>
+                    </dd>
+                </div>
+            </dl>
         </div>
-        <dl class="space-y-3 text-sm">
-            <div>
-                <dt class="text-zinc-500">Server</dt>
-                <dd class="mt-1 flex flex-col gap-2 sm:flex-row">
-                    <code id="rtmp-url" class="block flex-1 break-all rounded bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300">{{ $stream->rtmpUrl() }}</code>
-                    <button type="button" data-copy="rtmp-url" class="shrink-0 rounded-lg border border-zinc-600 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800">Copy</button>
-                </dd>
-            </div>
-            <div>
-                <dt class="text-zinc-500">Stream key (secret)</dt>
-                <dd class="mt-1 flex flex-col gap-2 sm:flex-row">
-                    <code id="rtmp-key" class="block flex-1 break-all rounded bg-zinc-950 px-2 py-1.5 text-xs text-amber-200/90">{{ $stream->rtmpStreamKeyForObs() }}</code>
-                    <button type="button" data-copy="rtmp-key" class="shrink-0 rounded-lg border border-amber-800/60 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-950/40">Copy</button>
-                </dd>
-            </div>
-            <div>
-                <dt class="text-zinc-500">Raw stream key</dt>
-                <dd class="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <code id="raw-key" class="block flex-1 break-all rounded bg-zinc-950 px-2 py-1.5 font-mono text-xs text-zinc-400">{{ $stream->stream_key }}</code>
-                    <form method="POST" action="{{ route('admin.streams.regenerate-key', $stream) }}" onsubmit="return confirm('Regenerate stream key? OBS and WHIP credentials will change.');">
-                        @csrf
-                        <button type="submit" class="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800">Regenerate</button>
-                    </form>
-                </dd>
-            </div>
-        </dl>
-    </div>
+    @else
+        <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 text-sm text-zinc-400">
+            OBS / RTMP ingest is not included in your current package.
+            <a href="{{ route('billing.plans') }}" class="text-emerald-400 hover:text-emerald-300">Upgrade</a>
+            to unlock stream key access.
+        </div>
+    @endif
 
     <form method="POST" action="{{ route('admin.streams.update', $stream) }}" class="mt-10 max-w-2xl space-y-6">
         @csrf

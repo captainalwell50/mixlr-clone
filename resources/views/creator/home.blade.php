@@ -8,7 +8,7 @@
         <h1 class="console-title mt-2">{{ $organization->name }}</h1>
         <p class="console-lead">
             Your channel is live at
-            <a href="{{ route('channels.show', $organization) }}" class="console-link">/c/{{ $organization->slug }}</a>
+            <a href="{{ $organization->channelUrl() }}" class="console-link">{{ parse_url($organization->channelUrl(), PHP_URL_HOST) ?: '/c/'.$organization->slug }}</a>
         </p>
 
         @if (session('status'))
@@ -48,8 +48,8 @@
                 @endif
             @endif
             <a href="{{ route('admin.events.create') }}" class="console-btn console-btn-ghost">Schedule event</a>
-            <a href="{{ route('channels.show', $organization) }}" class="console-btn console-btn-ghost">Public channel</a>
-            <a href="{{ route('archive.index') }}" class="console-btn console-btn-ghost">Recorded Audio</a>
+            <a href="{{ $organization->channelUrl() }}" class="console-btn console-btn-ghost">Public channel</a>
+            <a href="{{ route('archive.index') }}" class="console-btn console-btn-ghost">Podcasts</a>
             <a href="{{ route('discover') }}" class="console-btn console-btn-ghost">Discover</a>
             @if ($stream)
                 <a href="{{ route('admin.streams.edit', $stream) }}" class="console-btn console-btn-ghost">Stream settings</a>

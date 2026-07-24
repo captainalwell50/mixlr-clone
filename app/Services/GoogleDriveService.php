@@ -10,7 +10,7 @@ use RuntimeException;
 
 class GoogleDriveService
 {
-    public const ROOT_FOLDER_NAME = 'Live Mix Audio';
+    public const ROOT_FOLDER_NAME = 'Sound Mix Live';
 
     public function http(OrganizationDriveConnection $connection): PendingRequest
     {
@@ -80,7 +80,7 @@ class GoogleDriveService
         ]);
 
         if (! $created->successful()) {
-            throw new RuntimeException('Could not create Live Mix folder in Google Drive.');
+            throw new RuntimeException('Could not create Sound Mix Live folder in Google Drive.');
         }
 
         $id = (string) $created->json('id');

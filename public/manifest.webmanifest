@@ -1,7 +1,7 @@
 {
-  "name": "Live Mix Audio",
-  "short_name": "Live Mix",
-  "description": "Live Mix Audio — listen and broadcast",
+  "name": "Sound Mix Live",
+  "short_name": "Sound Mix",
+  "description": "Sound Mix Live — listen and broadcast",
   "start_url": "/discover",
   "scope": "/",
   "display": "standalone",

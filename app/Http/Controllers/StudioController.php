@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CreatorType;
 use App\Enums\EventStatus;
 use App\Models\Stream;
 use Illuminate\Support\Facades\URL;
@@ -12,18 +13,25 @@ class StudioController extends Controller
     {
         $stream->loadMissing('organization');
 
-        $liveEvent = $stream->events()
-            ->where('status', EventStatus::Live)
-            ->latest('started_at')
-            ->first();
+        $openEvent = $stream->openServiceEvent();
+        $liveOrPaused = $openEvent && in_array($openEvent->status, [EventStatus::Live, EventStatus::Paused], true)
+            ? $openEvent
+            : $stream->events()
+                ->whereIn('status', [EventStatus::Live, EventStatus::Paused])
+                ->latest('id')
+                ->first();
 
-        $listenUrl = $liveEvent
-            ? route('events.show', $liveEvent)
+        $listenUrl = $liveOrPaused
+            ? route('events.show', $liveOrPaused)
             : route('listen.stream', $stream);
 
         $channelUrl = $stream->organization
-            ? route('channels.show', $stream->organization)
+            ? $stream->organization->channelUrl()
             : $listenUrl;
+
+        $galleryListUrl = $openEvent
+            ? route('gallery.index', ['stream' => $stream, 'event_id' => $openEvent->id])
+            : route('gallery.index', $stream);
 
         return view('studio', [
             'stream' => $stream,
@@ -43,7 +51,7 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
-            'galleryListUrl' => route('gallery.index', $stream),
+            'galleryListUrl' => $galleryListUrl,
             'libraryListUrl' => URL::temporarySignedRoute(
                 'studio.library.index',
                 now()->addHours(12),
@@ -59,9 +67,78 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
-            'galleryImages' => $stream->galleryImages()->limit(20)->get(),
+            'recordingUploadUrl' => URL::temporarySignedRoute(
+                'recordings.store',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'sessionShowUrl' => URL::temporarySignedRoute(
+                'studio.session.show',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'sessionCreateEventUrl' => URL::temporarySignedRoute(
+                'studio.session.create-event',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'sessionGoLiveUrl' => URL::temporarySignedRoute(
+                'studio.session.go-live',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'sessionPauseUrl' => URL::temporarySignedRoute(
+                'studio.session.pause',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'sessionResumeUrl' => URL::temporarySignedRoute(
+                'studio.session.resume',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'sessionEndUrl' => URL::temporarySignedRoute(
+                'studio.session.end',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'sessionRenameEventUrl' => URL::temporarySignedRoute(
+                'studio.session.rename-event',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'scriptureEnabled' => $stream->organization?->creator_type === CreatorType::Church,
+            'scriptureShowUrl' => URL::temporarySignedRoute(
+                'studio.scripture.show',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'scriptureStoreUrl' => URL::temporarySignedRoute(
+                'studio.scripture.store',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'scriptureDestroyUrl' => URL::temporarySignedRoute(
+                'studio.scripture.destroy',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'scriptureSuggestUrl' => URL::temporarySignedRoute(
+                'studio.scripture.suggest',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
             'listenBackgroundUrl' => $stream->listenBackgroundUrl(),
-            'recordings' => $stream->recordings()->latest('completed_at')->limit(30)->get(),
+            'recordings' => $stream->recordings()
+                ->with('event')
+                ->where('is_public', true)
+                ->latest('completed_at')
+                ->limit(30)
+                ->get(),
+            'openEvent' => $openEvent,
+            'galleryImages' => $openEvent
+                ? $stream->serviceGalleryImages($openEvent->id)->limit(20)->get()
+                : collect(),
         ]);
     }
 }

@@ -1,0 +1,3 @@
+PRODUCT_NAME = Sound Mix Live Studio
+PRODUCT_BUNDLE_IDENTIFIER = live.soundmix.studio.console
+PRODUCT_COPYRIGHT = Copyright © 2026 Sound Mix Live. All rights reserved.

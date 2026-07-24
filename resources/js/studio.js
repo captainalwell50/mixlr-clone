@@ -1,4 +1,5 @@
 import './bootstrap';
+import { bindScriptureStudio } from './scripture-studio';
 
 const root = document.getElementById('studio-root');
 const whipUrl = root?.dataset.whipUrl;
@@ -8,8 +9,35 @@ const audioSelect = document.getElementById('audio-input');
 const auxSelect = document.getElementById('aux-input');
 const outputSelect = document.getElementById('audio-output');
 const btnStart = document.getElementById('btn-start');
-const btnStop = document.getElementById('btn-stop');
+const btnStop = document.getElementById('btn-stop'); // legacy
+const btnPause = document.getElementById('btn-pause');
+const btnEnd = document.getElementById('btn-end');
+const btnCreateEvent = document.getElementById('btn-create-event');
 const btnAddFile = document.getElementById('btn-add-file');
+const eventTitleEl = document.getElementById('studio-event-title');
+const eventUrlEl = document.getElementById('event-url');
+const sessionGoLiveUrl = root?.dataset.sessionGoLiveUrl;
+const sessionPauseUrl = root?.dataset.sessionPauseUrl;
+const sessionResumeUrl = root?.dataset.sessionResumeUrl;
+const sessionEndUrl = root?.dataset.sessionEndUrl;
+const sessionCreateEventUrl = root?.dataset.sessionCreateEventUrl;
+const sessionRenameEventUrl = root?.dataset.sessionRenameEventUrl;
+const streamTitleDefault = root?.dataset.streamTitle || 'Sound Mix Live';
+const eventTitleInput = document.getElementById('event-title-input');
+const eventRenameWrap = document.getElementById('studio-event-rename');
+const btnSaveEventTitle = document.getElementById('btn-save-event-title');
+const localRecordingTitleInput = document.getElementById('local-recording-title');
+/** @type {{ id:number, uuid:string, title:string, status:string, url:string }|null} */
+let currentEvent = root?.dataset.openEventId
+    ? {
+        id: Number(root.dataset.openEventId),
+        uuid: '',
+        title: root.dataset.openEventTitle || streamTitleDefault,
+        status: root.dataset.openEventStatus || 'scheduled',
+        url: root.dataset.openEventUrl || '',
+    }
+    : null;
+let sessionPaused = currentEvent?.status === 'paused';
 const fileInput = document.getElementById('file-input');
 const channelsEl = document.getElementById('audio-channels');
 const statusEl = document.getElementById('studio-status');
@@ -30,7 +58,11 @@ const copyChannelBtn = document.getElementById('btn-copy-channel');
 const channelUrlEl = document.getElementById('channel-url');
 const listenUrlEl = document.getElementById('listen-url');
 const channelShareUrl = root?.dataset.channelUrl || channelUrlEl?.textContent?.trim() || '';
-const channelShareName = root?.dataset.channelName || 'Live Mix';
+const channelShareName = root?.dataset.channelName || 'Sound Mix Live';
+
+function activeShareUrl() {
+    return currentEvent?.url || eventUrlEl?.textContent?.trim() || channelShareUrl;
+}
 const audioLayoutSelect = document.getElementById('audio-layout');
 const cueAudio = document.getElementById('cue-audio');
 const playlistCountEl = document.getElementById('playlist-count');
@@ -145,6 +177,16 @@ let timerInterval = 0;
 /** @type {'mixer' | null} */
 let publishMode = null;
 
+/** @type {MediaRecorder|null} */
+let localRecorder = null;
+/** @type {Blob[]} */
+let localRecordChunks = [];
+/** @type {Blob|null} */
+let pendingLocalRecording = null;
+let pendingLocalDurationSec = 0;
+let pendingLocalMime = 'audio/webm';
+let localRecordStartedAt = 0;
+
 let micMuted = false;
 let auxMuted = true;
 let playlistMuted = false;
@@ -187,26 +229,17 @@ function updateTimer() {
 
 function setOnAir(live) {
     isLive = live;
-    stageEl?.classList.toggle('is-on-air', live);
-    if (modeEl) {
-        modeEl.textContent = live ? 'On the air' : 'Standby';
-    }
-    if (modeMobileEl) {
-        modeMobileEl.textContent = live ? 'ON AIR' : 'STANDBY';
-    }
-    if (airLabel) {
-        airLabel.textContent = live ? 'ON THE AIR' : 'STANDBY';
-    }
     if (heroHint) {
-        heroHint.textContent = live
-            ? 'You’re broadcasting — cue stays off unless you enable headphones'
-            : 'Hit Go on air when you’re ready';
-    }
-    if (btnStart) {
-        btnStart.textContent = live ? 'Broadcasting' : 'Go on air';
-        btnStart.disabled = live;
+        if (live) {
+            heroHint.textContent = 'You’re broadcasting — Pause keeps this event; End live closes it.';
+        } else if (sessionPaused) {
+            heroHint.textContent = 'Event paused — Resume to continue, or End live to close this event.';
+        } else {
+            heroHint.textContent = 'Create an event, or go live to start one automatically';
+        }
     }
     if (live) {
+        sessionPaused = false;
         liveStartedAt = Date.now();
         updateTimer();
         if (timerInterval) {
@@ -220,6 +253,7 @@ function setOnAir(live) {
         }
         updateTimer();
     }
+    refreshSessionButtons();
 }
 
 function httpsStudioUrl() {
@@ -405,31 +439,32 @@ if (audioLayoutSelect) {
 }
 
 async function copyChannelLink() {
-    const text = channelShareUrl || channelUrlEl?.textContent?.trim();
+    const text = activeShareUrl();
     if (!text) {
         return;
     }
     try {
         await navigator.clipboard.writeText(text);
-        setStatus('Channel link copied — share soundmix.live/c/… with your audience.');
+        setStatus(currentEvent?.url ? 'Event link copied.' : 'Channel link copied.');
     } catch {
-        setStatus('Could not copy channel link.');
+        setStatus('Could not copy link.');
     }
 }
 
 async function shareChannelLink() {
-    const text = channelShareUrl || channelUrlEl?.textContent?.trim();
+    const text = activeShareUrl();
     if (!text) {
         return;
     }
+    const title = currentEvent?.title || channelShareName;
     if (navigator.share) {
         try {
             await navigator.share({
-                title: channelShareName,
-                text: `Listen live on ${channelShareName}`,
+                title,
+                text: `Listen live: ${title}`,
                 url: text,
             });
-            setStatus('Channel link shared.');
+            setStatus('Link shared.');
             return;
         } catch (e) {
             if (e?.name === 'AbortError') {
@@ -438,6 +473,155 @@ async function shareChannelLink() {
         }
     }
     await copyChannelLink();
+}
+
+function applyEventToUi(event) {
+    const previousGalleryEventId = galleryScopedEventId();
+    currentEvent = event || null;
+    sessionPaused = event?.status === 'paused';
+    if (eventTitleEl) {
+        eventTitleEl.textContent = event?.title || streamTitleDefault;
+    }
+    if (eventTitleInput) {
+        eventTitleInput.value = event?.title || '';
+    }
+    if (eventRenameWrap) {
+        eventRenameWrap.hidden = !event;
+    }
+    if (eventUrlEl) {
+        if (event?.url) {
+            eventUrlEl.textContent = event.url;
+            eventUrlEl.title = event.url;
+        } else if (!event && channelShareUrl) {
+            eventUrlEl.textContent = channelShareUrl;
+            eventUrlEl.title = channelShareUrl;
+        }
+    }
+    refreshSessionButtons();
+    const nextGalleryEventId = galleryScopedEventId();
+    if (previousGalleryEventId !== nextGalleryEventId) {
+        void refreshStudioGallery();
+    }
+}
+
+async function sessionPatch(url, body = {}) {
+    if (!url) {
+        throw new Error('Session link missing — reopen Studio from your dashboard.');
+    }
+    const res = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content || '',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.message || Object.values(data.errors || {})[0]?.[0] || 'Could not save');
+    }
+    return data;
+}
+
+btnSaveEventTitle?.addEventListener('click', async () => {
+    const title = (eventTitleInput?.value || '').trim();
+    if (!title) {
+        setStatus('Enter an event name first.');
+        return;
+    }
+    if (!currentEvent?.id && !sessionRenameEventUrl) {
+        setStatus('Go live or create an event first, then save the name.');
+        return;
+    }
+    btnSaveEventTitle.disabled = true;
+    try {
+        const data = await sessionPatch(sessionRenameEventUrl, {
+            title,
+            event_id: currentEvent?.id || undefined,
+        });
+        applyEventToUi(data.event);
+        setStatus(`Event name saved: ${data.event.title}`);
+    } catch (e) {
+        setStatus(e instanceof Error ? e.message : 'Could not save event name.');
+    } finally {
+        btnSaveEventTitle.disabled = false;
+    }
+});
+
+eventTitleInput?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+        ev.preventDefault();
+        btnSaveEventTitle?.click();
+    }
+});
+
+function refreshSessionButtons() {
+    const live = isLive;
+    const paused = sessionPaused && !live;
+    // Server still has a live event after refresh / WHIP drop — reconnect before grace ends.
+    const needsReconnect = !live && !paused && currentEvent?.status === 'live';
+    if (btnCreateEvent) {
+        btnCreateEvent.hidden = live || paused || needsReconnect;
+        btnCreateEvent.disabled = !broadcastAllowed || live || paused || needsReconnect;
+    }
+    if (btnPause) {
+        btnPause.hidden = !live;
+        btnPause.disabled = !live;
+    }
+    if (btnEnd) {
+        btnEnd.hidden = !(live || paused || needsReconnect);
+        btnEnd.disabled = !(live || paused || needsReconnect);
+    }
+    if (btnStart) {
+        btnStart.hidden = false;
+        if (live) {
+            btnStart.textContent = 'On air';
+            btnStart.disabled = true;
+        } else if (paused) {
+            btnStart.textContent = 'Resume';
+            btnStart.disabled = !broadcastAllowed;
+        } else if (needsReconnect) {
+            btnStart.textContent = 'Reconnect';
+            btnStart.disabled = !broadcastAllowed;
+        } else {
+            btnStart.textContent = 'Go live';
+            btnStart.disabled = !broadcastAllowed;
+        }
+    }
+    if (airLabel) {
+        airLabel.textContent = live ? 'ON THE AIR' : paused ? 'PAUSED' : needsReconnect ? 'RECONNECT' : 'STANDBY';
+    }
+    if (modeEl) {
+        modeEl.textContent = live ? 'On the air' : paused ? 'Paused' : needsReconnect ? 'Reconnect' : 'Standby';
+    }
+    if (modeMobileEl) {
+        modeMobileEl.textContent = live ? 'ON AIR' : paused ? 'PAUSED' : needsReconnect ? 'RECONNECT' : 'STANDBY';
+    }
+    stageEl?.classList.toggle('is-on-air', live);
+    stageEl?.classList.toggle('is-paused', paused);
+}
+
+async function sessionPost(url, body = {}) {
+    if (!url) {
+        throw new Error('Session link missing — reopen Studio from your dashboard.');
+    }
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content || '',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.message || Object.values(data.errors || {})[0]?.[0] || 'Session request failed');
+    }
+    return data;
 }
 
 shareChannelBtn?.addEventListener('click', () => {
@@ -648,7 +832,8 @@ function preferHighQualityOpus(sdp) {
         return out;
     }
 
-    const fmtpValue = `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
+    // minptime=20 + FEC + no DTX: fewer packet-edge gaps that listeners hear as stutters.
+    const fmtpValue = `minptime=20;useinbandfec=1;usedtx=0;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
 
     for (const pt of opusPts) {
         const fmtpRe = new RegExp(`^a=fmtp:${pt} .*`, 'im');
@@ -1510,6 +1695,35 @@ if (navigator.mediaDevices && 'addEventListener' in navigator.mediaDevices) {
     navigator.mediaDevices.addEventListener('devicechange', loadDevices);
 }
 
+btnCreateEvent?.addEventListener('click', async () => {
+    if (!broadcastAllowed) {
+        setStatus('An active subscription is required to create an event.');
+        return;
+    }
+    const suggestedTitle = currentEvent?.title
+        || `Live from ${channelShareName} · Sound Mix Live`;
+    const title = window.prompt('Event title', suggestedTitle);
+    if (title === null) {
+        return;
+    }
+    const trimmed = title.trim();
+    if (!trimmed) {
+        setStatus('Event title is required.');
+        return;
+    }
+    btnCreateEvent.disabled = true;
+    setStatus('Creating event…');
+    try {
+        const data = await sessionPost(sessionCreateEventUrl, { title: trimmed });
+        applyEventToUi(data.event);
+        setStatus(`Event ready: ${data.event.title}. Hit Go live when you’re ready.`);
+    } catch (e) {
+        setStatus(e instanceof Error ? e.message : 'Could not create event.');
+    } finally {
+        refreshSessionButtons();
+    }
+});
+
 btnStart?.addEventListener('click', async () => {
     if (!broadcastAllowed) {
         setStatus('An active subscription is required to go on air.');
@@ -1527,13 +1741,31 @@ btnStart?.addEventListener('click', async () => {
         return;
     }
     btnStart.disabled = true;
-    setStatus('Going on air…');
+    const resuming = sessionPaused;
+    const reconnecting = !resuming && currentEvent?.status === 'live';
+    setStatus(
+        resuming
+            ? 'Resuming event…'
+            : reconnecting
+                ? 'Reconnecting broadcast…'
+                : 'Starting event & going live…',
+    );
 
     try {
+        const sessionData = resuming
+            ? await sessionPost(sessionResumeUrl)
+            : await sessionPost(sessionGoLiveUrl, {
+                title: currentEvent?.title || undefined,
+                event_id: currentEvent?.id || undefined,
+            });
+        if (sessionData.event) {
+            applyEventToUi(sessionData.event);
+        }
+
         if (!micPrimed) {
             const ok = await primeMicrophone({ interactive: true });
             if (!ok) {
-                btnStart.disabled = false;
+                refreshSessionButtons();
                 return;
             }
         }
@@ -1550,32 +1782,86 @@ btnStart?.addEventListener('click', async () => {
         setStatus(
             anyCueOn()
                 ? 'You’re broadcasting. Cue is on — use headphones to avoid feedback.'
-                : 'You’re broadcasting. Studio is silent (cue off). Monitor on the listen link or enable cue with headphones.',
+                : 'You’re broadcasting. Share the event link — Pause keeps this event open.',
         );
         setOnAir(true);
-        btnStop.disabled = false;
+        startLocalRecording();
     } catch (e) {
         console.error(e);
         setStatus(friendlyError(e));
-        btnStart.disabled = false;
         setOnAir(false);
         publishMode = null;
-        await teardownLive();
+        await teardownPublisher({ keepEvent: true });
+    }
+});
+
+btnPause?.addEventListener('click', async () => {
+    btnPause.disabled = true;
+    setStatus('Pausing — same event stays open…');
+    try {
+        const data = await sessionPost(sessionPauseUrl);
+        if (data.event) {
+            applyEventToUi(data.event);
+        }
+        sessionPaused = true;
+        await teardownPublisher({ keepEvent: true });
+        setOnAir(false);
+        setStatus('Paused. Resume to continue this event, or End live to close it.');
+    } catch (e) {
+        setStatus(e instanceof Error ? e.message : 'Could not pause.');
+        refreshSessionButtons();
+    }
+});
+
+btnEnd?.addEventListener('click', async () => {
+    if (!window.confirm('End this live event? The next Go live will create a new event.')) {
+        return;
+    }
+    btnEnd.disabled = true;
+    setStatus('Ending event…');
+    try {
+        const data = await sessionPost(sessionEndUrl);
+        const ended = data.event || currentEvent;
+        await teardownPublisher({ keepEvent: false });
+        sessionPaused = false;
+        currentEvent = null;
+        applyEventToUi(null);
+        setOnAir(false);
+        if (ended?.id) {
+            // Keep id so auto-upload still attaches to the ended event.
+            currentEvent = { ...ended, status: 'ended' };
+        }
+        if (pendingLocalRecording) {
+            setStatus('Event ended — uploading podcast…');
+            const uploaded = await uploadLocalRecording();
+            if (!uploaded) {
+                setStatus(
+                    ended?.url
+                        ? `Event ended. Upload failed — retry Upload, or open ${ended.url}`
+                        : 'Event ended. Upload failed — retry Upload when ready.',
+                );
+            }
+        } else {
+            setStatus(
+                ended?.url
+                    ? `Event ended — ${ended.url}`
+                    : 'Event ended.',
+            );
+        }
+    } catch (e) {
+        setStatus(e instanceof Error ? e.message : 'Could not end event.');
+        refreshSessionButtons();
     }
 });
 
 btnStop?.addEventListener('click', async () => {
-    btnStop.disabled = true;
-    setStatus('Ending broadcast…');
-    await teardownLive();
-    setStatus('Back on standby. Ready when you are.');
-    btnStart.disabled = false;
+    btnEnd?.click();
 });
 
-async function teardownLive() {
-    setOnAir(false);
+async function teardownPublisher({ keepEvent }) {
     publishMode = null;
     stopMeter();
+    await stopLocalRecording();
 
     micCueOn = false;
     auxCueOn = false;
@@ -1606,6 +1892,16 @@ async function teardownLive() {
     for (const channel of fileChannels.values()) {
         channel.audio.pause();
     }
+
+    if (!keepEvent) {
+        sessionPaused = false;
+    }
+}
+
+/** @deprecated use teardownPublisher */
+async function teardownLive() {
+    await teardownPublisher({ keepEvent: true });
+    setOnAir(false);
 }
 
 const libraryListEl = document.getElementById('library-list');
@@ -1632,8 +1928,59 @@ const backgroundInput = document.getElementById('background-input');
 const studioBgPreview = document.getElementById('studio-bg-preview');
 const studioGalleryList = document.getElementById('studio-gallery-list');
 const galleryUploadUrl = root?.dataset.galleryUploadUrl;
+const galleryListUrl = root?.dataset.galleryListUrl;
 const backgroundUploadUrl = root?.dataset.backgroundUploadUrl;
 const galleryCsrf = root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content;
+
+/** Open service event only — ended events must not keep prior photos in Studio. */
+function galleryScopedEventId() {
+    if (!currentEvent?.id) {
+        return null;
+    }
+    if (currentEvent.status === 'ended') {
+        return null;
+    }
+    return Number(currentEvent.id);
+}
+
+function renderStudioGallery(images) {
+    if (!studioGalleryList) {
+        return;
+    }
+    studioGalleryList.innerHTML = '';
+    // API returns newest first; prepend in reverse so the left edge stays newest.
+    for (const image of [...images].reverse()) {
+        appendGalleryThumb(image);
+    }
+}
+
+async function refreshStudioGallery() {
+    if (!studioGalleryList) {
+        return;
+    }
+    const eventId = galleryScopedEventId();
+    if (!eventId || !galleryListUrl) {
+        studioGalleryList.innerHTML = '';
+        return;
+    }
+    try {
+        const url = new URL(galleryListUrl, window.location.origin);
+        url.searchParams.set('event_id', String(eventId));
+        const res = await fetch(url.toString(), {
+            headers: { Accept: 'application/json' },
+            credentials: 'same-origin',
+            cache: 'no-store',
+        });
+        if (!res.ok) {
+            studioGalleryList.innerHTML = '';
+            return;
+        }
+        const data = await res.json();
+        renderStudioGallery(Array.isArray(data.images) ? data.images : []);
+    } catch {
+        studioGalleryList.innerHTML = '';
+    }
+}
 
 function filteredLibraryAssets() {
     const q = (librarySearchEl?.value || '').trim().toLowerCase();
@@ -1787,7 +2134,7 @@ async function importDriveFilePrompt() {
         setStatus('Connect Google Drive first.');
         return;
     }
-    const fileId = window.prompt('Paste a Google Drive file ID from your “Live Mix Audio” folder:');
+    const fileId = window.prompt('Paste a Google Drive file ID from your “Sound Mix Live” folder:');
     if (!fileId || !fileId.trim()) {
         return;
     }
@@ -1993,9 +2340,16 @@ galleryInput?.addEventListener('change', async () => {
     if (!galleryUploadUrl || files.length === 0) {
         return;
     }
+    const eventId = galleryScopedEventId();
+    if (!eventId) {
+        setStatus('Create an event or go live before posting to the service gallery.');
+        galleryInput.value = '';
+        return;
+    }
     for (const file of files) {
         const body = new FormData();
         body.append('image', file);
+        body.append('event_id', String(eventId));
         try {
             const res = await fetch(galleryUploadUrl, {
                 method: 'POST',
@@ -2007,7 +2361,8 @@ galleryInput?.addEventListener('change', async () => {
                 body,
             });
             if (!res.ok) {
-                setStatus('Could not upload photo. Try again.');
+                const err = await res.json().catch(() => ({}));
+                setStatus(err.message || err.errors?.event_id?.[0] || 'Could not upload photo. Try again.');
                 continue;
             }
             const data = await res.json();
@@ -2023,6 +2378,12 @@ galleryInput?.addEventListener('change', async () => {
 reelInput?.addEventListener('change', async () => {
     const file = reelInput.files?.[0];
     if (!galleryUploadUrl || !file) {
+        return;
+    }
+    const eventId = galleryScopedEventId();
+    if (!eventId) {
+        setStatus('Create an event or go live before posting a video reel.');
+        reelInput.value = '';
         return;
     }
     try {
@@ -2041,6 +2402,7 @@ reelInput?.addEventListener('change', async () => {
         const body = new FormData();
         body.append('video', file);
         body.append('duration_seconds', String(Math.round(duration)));
+        body.append('event_id', String(eventId));
         const res = await fetch(galleryUploadUrl, {
             method: 'POST',
             headers: {
@@ -2052,7 +2414,7 @@ reelInput?.addEventListener('change', async () => {
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            setStatus(err.message || err.errors?.video?.[0] || 'Could not upload video reel.');
+            setStatus(err.message || err.errors?.video?.[0] || err.errors?.event_id?.[0] || 'Could not upload video reel.');
             return;
         }
         const data = await res.json();
@@ -2065,9 +2427,329 @@ reelInput?.addEventListener('change', async () => {
     }
 });
 
+const recordingUploadUrl = root?.dataset.recordingUploadUrl;
+const localRecordingPanel = document.getElementById('studio-local-recording');
+const localRecordingLiveEl = document.getElementById('studio-local-recording-live');
+const localRecordingMetaEl = document.getElementById('studio-local-recording-meta');
+const btnUploadRecording = document.getElementById('btn-upload-recording');
+const btnDownloadRecording = document.getElementById('btn-download-recording');
+const btnDiscardRecording = document.getElementById('btn-discard-recording');
+
+function pickRecorderMime() {
+    const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'video/webm;codecs=opus',
+    ];
+    for (const type of candidates) {
+        if (window.MediaRecorder?.isTypeSupported?.(type)) {
+            return type;
+        }
+    }
+    return '';
+}
+
+function formatDurationLabel(totalSec) {
+    const total = Math.max(0, Math.round(totalSec));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) {
+        return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function refreshLocalRecordingUi() {
+    const recording = localRecorder?.state === 'recording';
+    if (localRecordingLiveEl) {
+        localRecordingLiveEl.hidden = !recording;
+    }
+    if (!localRecordingPanel) {
+        return;
+    }
+    if (!pendingLocalRecording) {
+        localRecordingPanel.hidden = true;
+        return;
+    }
+    localRecordingPanel.hidden = false;
+    if (localRecordingMetaEl) {
+        localRecordingMetaEl.textContent = `${formatDurationLabel(pendingLocalDurationSec)} · ${formatBytes(pendingLocalRecording.size)} · on this device only`;
+    }
+}
+
+function startLocalRecording() {
+    if (!mixDest?.stream || typeof MediaRecorder === 'undefined') {
+        setStatus('Live, but this browser can’t record locally. Use Chrome/Edge for archive uploads.');
+        return;
+    }
+    if (localRecorder && localRecorder.state !== 'inactive') {
+        return;
+    }
+    if (pendingLocalRecording) {
+        setStatus('Broadcast is live. Upload or discard your saved local recording to capture the next session.');
+        refreshLocalRecordingUi();
+        return;
+    }
+
+    const mime = pickRecorderMime();
+    try {
+        localRecordChunks = [];
+        localRecorder = mime
+            ? new MediaRecorder(mixDest.stream, { mimeType: mime, audioBitsPerSecond: 96_000 })
+            : new MediaRecorder(mixDest.stream, { audioBitsPerSecond: 96_000 });
+        pendingLocalMime = localRecorder.mimeType || mime || 'audio/webm';
+        localRecordStartedAt = Date.now();
+        localRecorder.ondataavailable = (ev) => {
+            if (ev.data && ev.data.size > 0) {
+                localRecordChunks.push(ev.data);
+            }
+        };
+        localRecorder.onerror = () => {
+            setStatus('Local recording error — broadcast continues, but this session may not be uploadable.');
+        };
+        localRecorder.start(2000);
+        refreshLocalRecordingUi();
+    } catch (e) {
+        console.error(e);
+        localRecorder = null;
+        setStatus('Could not start local recording. Broadcast is still live.');
+    }
+}
+
+function stopLocalRecording() {
+    return new Promise((resolve) => {
+        const rec = localRecorder;
+        if (!rec || rec.state === 'inactive') {
+            localRecorder = null;
+            refreshLocalRecordingUi();
+            resolve();
+            return;
+        }
+        rec.onstop = () => {
+            const durationSec = Math.max(1, (Date.now() - localRecordStartedAt) / 1000);
+            const blob = new Blob(localRecordChunks, { type: pendingLocalMime || 'audio/webm' });
+            localRecordChunks = [];
+            localRecorder = null;
+            if (blob.size > 0) {
+                pendingLocalRecording = blob;
+                pendingLocalDurationSec = durationSec;
+                setStatus('Local recording ready — Upload to Podcasts, Save locally, or Discard.');
+            }
+            refreshLocalRecordingUi();
+            resolve();
+        };
+        try {
+            rec.stop();
+        } catch {
+            localRecorder = null;
+            refreshLocalRecordingUi();
+            resolve();
+        }
+    });
+}
+
+function discardLocalRecording() {
+    pendingLocalRecording = null;
+    pendingLocalDurationSec = 0;
+    refreshLocalRecordingUi();
+    setStatus('Local recording discarded.');
+}
+
+function downloadLocalRecording() {
+    if (!pendingLocalRecording) {
+        return;
+    }
+    const ext = pendingLocalMime.includes('mp4') ? 'm4a' : 'webm';
+    const url = URL.createObjectURL(pendingLocalRecording);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `live-mix-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus('Saved a copy on this device.');
+}
+
+function prependStudioRecordingRow(payload) {
+    if (!studioRecordings || !payload) {
+        return;
+    }
+    document.getElementById('studio-recordings-empty')?.remove();
+    const row = document.createElement('div');
+    row.className = 'mixer-recording-row';
+    row.dataset.recordingId = String(payload.id);
+    row.innerHTML = `
+        <div class="mixer-recording-copy">
+            <p class="mixer-recording-title"></p>
+            <p class="mixer-recording-meta"></p>
+        </div>
+        <div class="mixer-recording-actions">
+            <a class="mixer-recording-link" target="_blank" rel="noopener">Play</a>
+            <button type="button" class="mixer-recording-link mixer-recording-rename">Rename</button>
+            <button type="button" class="mixer-recording-delete">Delete</button>
+        </div>
+    `;
+    row.querySelector('.mixer-recording-title').textContent = payload.title;
+    const when = payload.when ? `${payload.when} · ` : '';
+    row.querySelector('.mixer-recording-meta').textContent = `${when}${payload.meta || ''}`.trim();
+    const play = row.querySelector('a.mixer-recording-link');
+    if (play instanceof HTMLAnchorElement) {
+        play.href = payload.play_url;
+    }
+    const rename = row.querySelector('.mixer-recording-rename');
+    if (rename instanceof HTMLButtonElement) {
+        rename.dataset.updateUrl = payload.update_url || '';
+        rename.dataset.title = payload.title || '';
+    }
+    const del = row.querySelector('.mixer-recording-delete');
+    if (del instanceof HTMLButtonElement) {
+        del.dataset.deleteUrl = payload.delete_url;
+    }
+    studioRecordings.prepend(row);
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+async function uploadLocalRecording() {
+    if (!pendingLocalRecording) {
+        return false;
+    }
+    if (!recordingUploadUrl) {
+        setStatus('Upload link missing — reopen Studio from your dashboard.');
+        return false;
+    }
+    if (btnUploadRecording) {
+        btnUploadRecording.disabled = true;
+    }
+    setStatus('Uploading recording to Podcasts…');
+    try {
+        const ext = pendingLocalMime.includes('mp4') ? 'm4a' : 'webm';
+        const body = new FormData();
+        body.append('audio', pendingLocalRecording, `session.${ext}`);
+        body.append('duration_seconds', String(Math.round(pendingLocalDurationSec)));
+        if (currentEvent?.id) {
+            body.append('event_id', String(currentEvent.id));
+        }
+        const podcastTitle = (localRecordingTitleInput?.value || currentEvent?.title || '').trim();
+        if (podcastTitle) {
+            body.append('title', podcastTitle);
+        }
+        const res = await fetch(recordingUploadUrl, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data.message || data.errors?.audio?.[0] || data.errors?.storage?.[0] || 'Upload failed');
+        }
+        prependStudioRecordingRow(data.recording);
+        pendingLocalRecording = null;
+        pendingLocalDurationSec = 0;
+        if (localRecordingTitleInput) {
+            localRecordingTitleInput.value = '';
+        }
+        refreshLocalRecordingUi();
+        setStatus(
+            currentEvent?.url
+                ? 'Podcast uploaded to this event.'
+                : 'Podcast uploaded — it’s now in Podcasts.',
+        );
+        return true;
+    } catch (e) {
+        setStatus(e instanceof Error ? e.message : 'Could not upload recording.');
+        return false;
+    } finally {
+        if (btnUploadRecording) {
+            btnUploadRecording.disabled = false;
+        }
+    }
+}
+
+btnUploadRecording?.addEventListener('click', async () => {
+    await uploadLocalRecording();
+});
+
+refreshSessionButtons();
+bindScriptureStudio(root);
+if (currentEvent?.status === 'live' && !isLive) {
+    setStatus('Page refreshed — hit Reconnect to keep this live event on air.');
+} else if (sessionPaused) {
+    setStatus('Paused. Resume to continue this event, or End live to close it.');
+}
+
+btnDownloadRecording?.addEventListener('click', () => {
+    downloadLocalRecording();
+});
+
+btnDiscardRecording?.addEventListener('click', () => {
+    if (!pendingLocalRecording) {
+        return;
+    }
+    if (!window.confirm('Discard this local recording? It will not appear in Podcasts.')) {
+        return;
+    }
+    discardLocalRecording();
+});
+
 const studioRecordings = document.getElementById('studio-recordings');
 studioRecordings?.addEventListener('click', async (ev) => {
-    const btn = ev.target instanceof Element ? ev.target.closest('.mixer-recording-delete') : null;
+    const target = ev.target instanceof Element ? ev.target : null;
+    if (!target) {
+        return;
+    }
+
+    const renameBtn = target.closest('.mixer-recording-rename');
+    if (renameBtn instanceof HTMLButtonElement) {
+        const url = renameBtn.dataset.updateUrl;
+        const row = renameBtn.closest('.mixer-recording-row');
+        const titleEl = row?.querySelector('.mixer-recording-title');
+        if (!url || !row || !titleEl) {
+            return;
+        }
+        const next = window.prompt('Podcast title', renameBtn.dataset.title || titleEl.textContent || '');
+        if (next === null) {
+            return;
+        }
+        const trimmed = next.trim();
+        if (!trimmed) {
+            setStatus('Title cannot be empty.');
+            return;
+        }
+        renameBtn.disabled = true;
+        try {
+            const res = await fetch(url, {
+                method: 'PATCH',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': galleryCsrf || '',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ title: trimmed }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.message || 'rename failed');
+            }
+            titleEl.textContent = data.recording?.title || trimmed;
+            renameBtn.dataset.title = data.recording?.title || trimmed;
+            setStatus('Podcast title saved.');
+        } catch (e) {
+            setStatus(e instanceof Error ? e.message : 'Could not rename podcast.');
+        } finally {
+            renameBtn.disabled = false;
+        }
+        return;
+    }
+
+    const btn = target.closest('.mixer-recording-delete');
     if (!btn || !(btn instanceof HTMLButtonElement)) {
         return;
     }
@@ -2076,7 +2758,7 @@ studioRecordings?.addEventListener('click', async (ev) => {
     if (!url || !row) {
         return;
     }
-    if (!window.confirm('Delete this recording permanently?')) {
+    if (!window.confirm('Delete this podcast permanently?')) {
         return;
     }
     btn.disabled = true;
@@ -2097,13 +2779,13 @@ studioRecordings?.addEventListener('click', async (ev) => {
             const empty = document.createElement('p');
             empty.className = 'mixer-hint';
             empty.id = 'studio-recordings-empty';
-            empty.textContent = 'No recordings yet for this stream.';
+            empty.textContent = 'No uploaded recordings yet for this stream.';
             studioRecordings.appendChild(empty);
         }
-        setStatus('Recording deleted.');
+        setStatus('Podcast deleted.');
     } catch {
         btn.disabled = false;
-        setStatus('Could not delete recording.');
+        setStatus('Could not delete podcast.');
     }
 });
 

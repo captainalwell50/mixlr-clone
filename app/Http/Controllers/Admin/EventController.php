@@ -46,6 +46,10 @@ class EventController extends Controller
         $org = Organization::query()->findOrFail($validated['organization_id']);
         abort_unless($request->user()->canManageOrganization($org), 403);
 
+        if (($validated['access'] ?? null) === EventAccess::Private->value) {
+            $org->assertFeature('private_streams', 'Upgrade your plan to create private events.');
+        }
+
         $event = Event::query()->create([
             ...$validated,
             'status' => EventStatus::Scheduled,

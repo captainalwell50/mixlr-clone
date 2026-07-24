@@ -1,0 +1,31 @@
+appId: live.soundmix.studio
+productName: Sound Mix Live Studio
+copyright: Copyright © Sound Mix Live
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - main.js
+  - preload.js
+  - assets/**/*
+  - package.json
+
+mac:
+  category: public.app-category.music
+  icon: assets/icon.png
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+dmg:
+  title: Sound Mix Live Studio

@@ -1,0 +1,2 @@
+# Packaged Studio / mobile binaries are uploaded to the VM, not committed.
+# See studio_desktop/README.md and DOWNLOAD_*_URL in .env

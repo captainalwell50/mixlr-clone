@@ -5,7 +5,7 @@
 @section('content')
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="console-title">Channel branding</h1>
-        <a href="{{ route('channels.show', $organization) }}" target="_blank" class="text-sm text-emerald-400 hover:text-emerald-300">View channel →</a>
+        <a href="{{ $organization->channelUrl() }}" target="_blank" class="text-sm text-emerald-400 hover:text-emerald-300">View channel →</a>
     </div>
 
     <form method="POST" action="{{ route('admin.organizations.update', $organization) }}" class="mt-8 max-w-lg space-y-4">
@@ -20,7 +20,7 @@
             <label for="slug" class="block text-sm font-medium text-zinc-300">Slug (URL)</label>
             <input id="slug" type="text" name="slug" value="{{ old('slug', $organization->slug) }}" required
                 class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white">
-            <p class="mt-1 text-xs text-zinc-500">{{ url('/c/'.$organization->slug) }}</p>
+            <p class="mt-1 text-xs text-zinc-500">{{ $organization->channelUrl() }}</p>
         </div>
         <div>
             <label for="tagline" class="block text-sm font-medium text-zinc-300">Tagline</label>

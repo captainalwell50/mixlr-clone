@@ -16,6 +16,10 @@ class AnalyticsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
+        if (! $user->isAdmin()) {
+            $org = $user->manageableOrganizations()->with('subscription.plan')->first();
+            $org?->assertFeature('listener_analytics', 'Upgrade your plan to unlock listener analytics.');
+        }
         $days = (int) $request->query('days', 30);
         $days = in_array($days, [7, 30, 90], true) ? $days : 30;
         $since = now()->subDays($days);

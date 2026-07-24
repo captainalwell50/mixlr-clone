@@ -3,12 +3,15 @@
 namespace Database\Seeders;
 
 use App\Models\Plan;
+use App\Support\PlanFeatureCatalog;
 use Illuminate\Database\Seeder;
 
 class PlanSeeder extends Seeder
 {
     public function run(): void
     {
+        $base = PlanFeatureCatalog::defaultLimits();
+
         Plan::query()->updateOrCreate(
             ['slug' => 'free'],
             [
@@ -17,12 +20,30 @@ class PlanSeeder extends Seeder
                 'amount' => 0,
                 'currency' => env('PAYSTACK_CURRENCY', 'NGN'),
                 'interval' => 'monthly',
-                'limits' => [
+                'limits' => array_merge($base, [
                     'max_streams' => 1,
+                    'max_recordings' => 20,
+                    'storage_bytes' => 2 * 1024 * 1024 * 1024,
+                    'live_streaming' => true,
+                    'channel_page' => true,
+                    'followable_profile' => true,
+                    'listener_notifications' => false,
                     'gallery' => true,
-                    // Platform-hosted storage (recordings + library). Drive BYO does not count.
-                    'storage_bytes' => 2 * 1024 * 1024 * 1024, // 2 GB
-                ],
+                    'embed_player' => true,
+                    'embed_whitelist' => false,
+                    'listener_analytics' => false,
+                    'private_streams' => false,
+                    'donations' => false,
+                    'stream_fallback' => false,
+                    'advanced_scheduling' => false,
+                    'rtmp_ingest' => false,
+                    'radio_directory' => false,
+                    'priority_support' => false,
+                    'multi_channel' => false,
+                    'api_access' => false,
+                    'branded_apps' => false,
+                    'account_manager' => false,
+                ]),
                 'is_active' => true,
                 'sort_order' => 0,
             ],
@@ -36,11 +57,30 @@ class PlanSeeder extends Seeder
                 'amount' => (int) env('PAYSTACK_PLAN_STARTER_AMOUNT', 500000),
                 'currency' => env('PAYSTACK_CURRENCY', 'NGN'),
                 'interval' => 'monthly',
-                'limits' => [
+                'limits' => array_merge($base, [
                     'max_streams' => 1,
+                    'max_recordings' => 120,
+                    'storage_bytes' => 25 * 1024 * 1024 * 1024,
+                    'live_streaming' => true,
+                    'channel_page' => true,
+                    'followable_profile' => true,
+                    'listener_notifications' => true,
                     'gallery' => true,
-                    'storage_bytes' => 25 * 1024 * 1024 * 1024, // 25 GB
-                ],
+                    'embed_player' => true,
+                    'embed_whitelist' => false,
+                    'listener_analytics' => true,
+                    'private_streams' => true,
+                    'donations' => true,
+                    'stream_fallback' => false,
+                    'advanced_scheduling' => false,
+                    'rtmp_ingest' => false,
+                    'radio_directory' => false,
+                    'priority_support' => false,
+                    'multi_channel' => false,
+                    'api_access' => false,
+                    'branded_apps' => false,
+                    'account_manager' => false,
+                ]),
                 'is_active' => true,
                 'sort_order' => 1,
             ],
@@ -54,11 +94,30 @@ class PlanSeeder extends Seeder
                 'amount' => (int) env('PAYSTACK_PLAN_PRO_AMOUNT', 1500000),
                 'currency' => env('PAYSTACK_CURRENCY', 'NGN'),
                 'interval' => 'monthly',
-                'limits' => [
+                'limits' => array_merge($base, [
                     'max_streams' => 5,
+                    'max_recordings' => 240,
+                    'storage_bytes' => 100 * 1024 * 1024 * 1024,
+                    'live_streaming' => true,
+                    'channel_page' => true,
+                    'followable_profile' => true,
+                    'listener_notifications' => true,
                     'gallery' => true,
-                    'storage_bytes' => 100 * 1024 * 1024 * 1024, // 100 GB
-                ],
+                    'embed_player' => true,
+                    'embed_whitelist' => true,
+                    'listener_analytics' => true,
+                    'private_streams' => true,
+                    'donations' => true,
+                    'stream_fallback' => true,
+                    'advanced_scheduling' => true,
+                    'rtmp_ingest' => true,
+                    'radio_directory' => true,
+                    'priority_support' => true,
+                    'multi_channel' => true,
+                    'api_access' => false,
+                    'branded_apps' => false,
+                    'account_manager' => false,
+                ]),
                 'is_active' => true,
                 'sort_order' => 2,
             ],

@@ -25,8 +25,14 @@ class VideoReel
      *
      * @throws ValidationException
      */
-    public function store(Stream $stream, UploadedFile $video, ?string $caption = null, ?float $durationSeconds = null, ?int $uploadedBy = null): GalleryImage
-    {
+    public function store(
+        Stream $stream,
+        UploadedFile $video,
+        ?string $caption = null,
+        ?float $durationSeconds = null,
+        ?int $uploadedBy = null,
+        ?int $eventId = null,
+    ): GalleryImage {
         if ($video->getSize() > self::MAX_BYTES) {
             throw ValidationException::withMessages([
                 'video' => 'Video reel must be 50 MB or smaller.',
@@ -47,12 +53,19 @@ class VideoReel
             ]);
         }
 
+        $resolvedEventId = $eventId ?? $stream->openServiceEvent()?->id;
+        if ($resolvedEventId === null) {
+            throw ValidationException::withMessages([
+                'event_id' => 'Create or go live to an event before posting a video reel.',
+            ]);
+        }
+
         $path = $video->store('gallery/'.$stream->uuid.'/reels', 'public');
 
         return GalleryImage::query()->create([
             'organization_id' => $stream->organization_id,
             'stream_id' => $stream->id,
-            'event_id' => $stream->events()->where('status', 'live')->latest('id')->value('id'),
+            'event_id' => $resolvedEventId,
             'uploaded_by' => $uploadedBy,
             'path' => $path,
             'media_type' => 'video',

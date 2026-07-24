@@ -1,23 +1,42 @@
-# Azure VM / single-host: Laravel + MediaMTX behind one HTTPS hostname.
-# Replace stream.example.org and the PHP-FPM socket. Point DNS A record at the VM.
+# Azure VM / single-host: Laravel + MediaMTX behind HTTPS.
+# Apex + Mixlr-style channel subdomains: https://{slug}.soundmix.live
+#
+# DNS (Namecheap / your registrar):
+#   A     @                 → VM public IP
+#   A     www               → VM public IP
+#   A     *                 → VM public IP   (wildcard for channel subdomains)
 #
 # Laravel .env:
-#   APP_URL=https://stream.example.org
-#   MEDIAMTX_HLS_PUBLIC_BASE=https://stream.example.org/hls
-#   MEDIAMTX_WEBRTC_PUBLIC_BASE=https://stream.example.org/rtc
-#
-# Also open NSG UDP/TCP 8189 for WebRTC ICE to the VM public IP.
-# Set MediaMTX webrtcAdditionalHosts to the public IP and hostname.
-#
-# IMPORTANT: /hls and /rtc must be in their own `handle` blocks *before* the
-# Laravel catch-all. Otherwise php_fastcgi steals WHIP/HLS and Studio fails.
+#   APP_URL=https://soundmix.live
+#   CHANNEL_SUBDOMAINS=true
+#   CHANNEL_DOMAIN=soundmix.live
+#   SESSION_DOMAIN=.soundmix.live
+#   SESSION_SECURE_COOKIE=true
+#   MEDIAMTX_HLS_PUBLIC_BASE=https://soundmix.live/hls
+#   MEDIAMTX_WEBRTC_PUBLIC_BASE=https://soundmix.live/rtc
 
-stream.example.org {
+{
+	email you@example.com
+	on_demand_tls {
+		ask http://127.0.0.1:8080/internal/caddy-ask
+	}
+}
+
+# Loopback-only Laravel for Caddy TLS ask (no public exposure).
+http://127.0.0.1:8080 {
+	root * /var/www/app/public
+	php_fastcgi unix//run/php/php8.4-fpm.sock
+	file_server
+}
+
+soundmix.live, www.soundmix.live {
 	encode gzip zstd
-	# Studio audio library + gallery reels (match deploy/php/99-uploads.ini)
 	request_body {
 		max_size 72MB
 	}
+
+	@www host www.soundmix.live
+	redir @www https://soundmix.live{uri} permanent
 
 	handle /hls/* {
 		uri strip_prefix /hls
@@ -29,7 +48,6 @@ stream.example.org {
 		reverse_proxy 127.0.0.1:8889
 	}
 
-	# Static / PWA assets — serve from disk; do not fall through to index.php
 	handle /build/* {
 		root * /var/www/app/public
 		file_server
@@ -58,5 +76,41 @@ stream.example.org {
 	}
 }
 
-# WHIP: POST https://stream.example.org/rtc/live/<uuid>/whip
-# HLS:  GET  https://stream.example.org/hls/live/<uuid>/index.m3u8
+# Channel pages — Mixlr style: https://your-channel.soundmix.live/
+*.soundmix.live {
+	encode gzip zstd
+	request_body {
+		max_size 72MB
+	}
+
+	tls {
+		on_demand
+	}
+
+	handle /build/* {
+		root * /var/www/app/public
+		file_server
+	}
+
+	handle /icons/* {
+		root * /var/www/app/public
+		file_server
+	}
+
+	handle /manifest.webmanifest {
+		root * /var/www/app/public
+		file_server
+	}
+
+	handle /favicon.ico {
+		root * /var/www/app/public
+		file_server
+	}
+
+	handle {
+		root * /var/www/app/public
+		try_files {path} {path}/ /index.php?{query}
+		php_fastcgi unix//run/php/php8.4-fpm.sock
+		file_server
+	}
+}

@@ -27,6 +27,9 @@ class Event extends Model
         'access_password',
         'chat_enabled',
         'show_listener_count',
+        'scripture_ref',
+        'scripture_text',
+        'scripture_updated_at',
     ];
 
     protected $hidden = [
@@ -43,6 +46,7 @@ class Event extends Model
             'ended_at' => 'datetime',
             'chat_enabled' => 'boolean',
             'show_listener_count' => 'boolean',
+            'scripture_updated_at' => 'datetime',
         ];
     }
 
@@ -85,9 +89,29 @@ class Event extends Model
         return $this->hasMany(ChatMessage::class);
     }
 
+    public function recordings(): HasMany
+    {
+        return $this->hasMany(Recording::class)->latest('completed_at');
+    }
+
+    public function galleryImages(): HasMany
+    {
+        return $this->hasMany(GalleryImage::class)->latest('id');
+    }
+
     public function isLive(): bool
     {
         return $this->status === EventStatus::Live;
+    }
+
+    public function isPaused(): bool
+    {
+        return $this->status === EventStatus::Paused;
+    }
+
+    public function isOpen(): bool
+    {
+        return in_array($this->status, [EventStatus::Scheduled, EventStatus::Live, EventStatus::Paused], true);
     }
 
     public function isDiscoverable(): bool

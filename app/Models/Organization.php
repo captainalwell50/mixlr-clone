@@ -60,7 +60,49 @@ class Organization extends Model
             return true;
         }
 
-        return $subscription->allowsBroadcast();
+        if (! $subscription->allowsBroadcast()) {
+            return false;
+        }
+
+        return $this->hasFeature('live_streaming');
+    }
+
+    public function plan(): ?Plan
+    {
+        $this->loadMissing('subscription.plan');
+
+        return $this->subscription?->plan;
+    }
+
+    public function hasFeature(string $feature): bool
+    {
+        $plan = $this->plan();
+        if ($plan === null) {
+            // No plan row yet — allow core features so onboarding is not blocked.
+            return (bool) data_get(config('plan_features.features'), $feature.'.default', false)
+                || in_array($feature, ['live_streaming', 'channel_page', 'followable_profile', 'gallery'], true);
+        }
+
+        return $plan->hasFeature($feature);
+    }
+
+    public function planLimit(string $key, mixed $default = null): mixed
+    {
+        $plan = $this->plan();
+        if ($plan === null) {
+            return $default;
+        }
+
+        return $plan->limit($key, $default);
+    }
+
+    public function assertFeature(string $feature, ?string $message = null): void
+    {
+        if ($this->hasFeature($feature)) {
+            return;
+        }
+
+        abort(402, $message ?: 'Upgrade your plan to use this feature.');
     }
 
     public function subscriptionStatus(): ?SubscriptionStatus
@@ -109,6 +151,20 @@ class Organization extends Model
     public function getRouteKeyName(): string
     {
         return 'slug';
+    }
+
+    /**
+     * Public Mixlr-style channel URL (subdomain when enabled, else /c/{slug}).
+     */
+    public function channelUrl(): string
+    {
+        if (config('app.channel_subdomains') && filled(config('app.channel_domain'))) {
+            $scheme = parse_url((string) config('app.url'), PHP_URL_SCHEME) ?: 'https';
+
+            return $scheme.'://'.$this->slug.'.'.config('app.channel_domain');
+        }
+
+        return route('channels.show', $this);
     }
 
     public function liveEvent(): ?Event

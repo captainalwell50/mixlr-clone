@@ -7,6 +7,7 @@ use App\Enums\EventStatus;
 use App\Enums\StreamStatus;
 use App\Models\Event;
 use App\Models\Organization;
+use App\Models\Recording;
 use App\Models\Stream;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -126,6 +127,48 @@ class ListenPageTest extends TestCase
             ->assertOk()
             ->assertSee('Live', false)
             ->assertSee('Morning Service', false);
+    }
+
+    public function test_event_page_does_not_list_podcasts_from_event(): void
+    {
+        $org = Organization::query()->create([
+            'name' => 'Grace Church',
+            'slug' => 'grace-'.uniqid(),
+            'is_public' => true,
+        ]);
+        $stream = Stream::query()->create([
+            'organization_id' => $org->id,
+            'uuid' => fake()->uuid(),
+            'title' => 'Main',
+            'status' => StreamStatus::Live,
+            'is_public' => true,
+        ]);
+        $event = Event::query()->create([
+            'organization_id' => $org->id,
+            'stream_id' => $stream->id,
+            'title' => 'Morning Service',
+            'status' => EventStatus::Ended,
+            'access' => EventAccess::Public,
+            'started_at' => now()->subHour(),
+            'ended_at' => now(),
+        ]);
+        $recording = Recording::query()->create([
+            'stream_id' => $stream->id,
+            'event_id' => $event->id,
+            'source' => Recording::SOURCE_STUDIO,
+            'is_public' => true,
+            'title' => 'Clip From Event',
+            'relative_path' => $stream->mediaPath().'/clip.mp4',
+            'duration_raw' => '120',
+            'completed_at' => now(),
+        ]);
+
+        $this->get(route('events.show', $event))
+            ->assertOk()
+            ->assertSee('Morning Service', false)
+            ->assertDontSee('Audio from this event', false)
+            ->assertDontSee('Clip From Event', false)
+            ->assertDontSee(route('archive.play', $recording), false);
     }
 
     public function test_embed_includes_status(): void

@@ -13,6 +13,8 @@
     $background = $listenBackgroundUrl ?: asset('images/listen-stage-bg.jpg');
     $cardArt = $artwork ?: $background;
     $shareUrl = route('listen.stream', $stream);
+    $scriptureEnabled = $organization->creator_type === \App\Enums\CreatorType::Church;
+    $scriptureUrl = $scriptureEnabled ? route('scripture.show', $stream) : null;
 @endphp
 
 @section('content')
@@ -22,7 +24,7 @@
         <div class="stage-shell">
             <header class="portal-bar stage-rise">
                 <div class="portal-brand">
-                    <a href="{{ route('channels.show', $organization) }}" class="portal-channel-link">
+                    <a href="{{ $organization->channelUrl() }}" class="portal-channel-link">
                         @if ($artwork)
                             <img src="{{ $artwork }}" alt="" class="portal-avatar">
                         @else
@@ -42,61 +44,25 @@
             </header>
 
             <div class="portal-layout" id="portal-layout">
-                <div class="portal-cards stage-rise-delay">
-                    <div class="portal-card portal-art" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork"></div>
-
-                    @if ($stream->chat_enabled)
-                        <div class="portal-card stage-rail wa-chat portal-chat-slot" id="portal-chat" aria-label="Live chat">
-                            <header class="wa-header">
-                                @if ($artwork)
-                                    <img src="{{ $artwork }}" alt="" class="wa-header-avatar">
-                                @else
-                                    <span class="wa-header-avatar" aria-hidden="true">{{ strtoupper(substr($organization->name, 0, 1)) }}</span>
-                                @endif
-                                <div class="wa-header-copy">
-                                    <h2>{{ $organization->name }}</h2>
-                                    <p>Live chat · online now</p>
-                                </div>
-                            </header>
-                            <div id="chat-messages" class="wa-messages" aria-live="polite">
-                                <p class="wa-empty">Say hello — the room is listening.</p>
-                            </div>
-                            @auth
-                                <form id="chat-form" class="wa-composer stage-chat-input">
-                                    <input id="chat-body" type="text" maxlength="500" placeholder="Type a message" autocomplete="off" required>
-                                    <button type="submit" aria-label="Send">Send</button>
-                                </form>
-                            @else
-                                <p class="wa-login">
-                                    <a href="{{ route('login') }}">Log in</a> to join the conversation
-                                </p>
-                            @endauth
-                            <div
-                                id="chat-root"
-                                class="hidden"
-                                data-poll-url="{{ route('chat.index', $stream) }}"
-                                data-post-url="{{ route('chat.store', $stream) }}"
-                                data-self-name="{{ auth()->user()?->name }}"
-                            ></div>
-                        </div>
-                    @else
-                        <div class="portal-card portal-chat-off" aria-label="Chat unavailable">
-                            <p>Chat is off for this broadcast.</p>
-                        </div>
-                    @endif
-
-                    <section class="portal-card portal-gallery" aria-label="Service gallery">
-                        <div class="portal-section-head portal-section-head--side">
-                            <h2>Live Gallery - Happening Now</h2>
-                            <p>Photos & video reels · tap to open</p>
-                        </div>
-                        <div class="portal-gallery-grid" id="gallery-grid">
-                            @include('partials.gallery-items', ['galleryImages' => $galleryImages])
-                        </div>
-                    </section>
-                </div>
-
                 <div class="portal-below">
+                    @include('partials.stage-player', [
+                        'status' => $isLive ? 'Connecting…' : 'Waiting for the broadcast to start. This page will keep trying.',
+                        'disabled' => ! $isLive,
+                    ])
+
+                    <div
+                        id="listen-root"
+                        data-hls-url="{{ $hlsUrl }}"
+                        data-whep-url="{{ $whepUrl }}"
+                        data-stream-status="{{ $stream->status->value }}"
+                        data-status-url="{{ route('listen.status', $stream) }}"
+                        data-gallery-url="{{ route('gallery.index', $stream) }}"
+                        @if ($scriptureUrl)
+                            data-scripture-url="{{ $scriptureUrl }}"
+                        @endif
+                        class="hidden"
+                    ></div>
+
                     <h1 class="portal-title stage-rise-delay">{{ $stream->title }}</h1>
 
                     <div class="portal-badges stage-rise-delay-2">
@@ -162,11 +128,6 @@
                         </p>
                     </div>
 
-                    @include('partials.stage-player', [
-                        'status' => $isLive ? 'Connecting…' : 'Waiting for the broadcast to start. This page will keep trying.',
-                        'disabled' => ! $isLive,
-                    ])
-
                     @if ($organization->social_feed_url)
                         <section class="portal-social stage-rise-delay-2">
                             <div class="portal-section-head">
@@ -179,16 +140,75 @@
                             </a>
                         </section>
                     @endif
+                </div>
 
-                    <div
-                        id="listen-root"
-                        data-hls-url="{{ $hlsUrl }}"
-                        data-whep-url="{{ $whepUrl }}"
-                        data-stream-status="{{ $stream->status->value }}"
-                        data-status-url="{{ route('listen.status', $stream) }}"
-                        data-gallery-url="{{ route('gallery.index', $stream) }}"
-                        class="hidden"
-                    ></div>
+                <div class="portal-cards stage-rise-delay">
+                    <div class="portal-card portal-art" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork">
+                        <div id="scripture-slide" class="scripture-slide" hidden>
+                            <div class="scripture-body">
+                                <div class="scripture-body-inner">
+                                    <div class="scripture-heading">
+                                        <p class="scripture-board-name">Scripture Board</p>
+                                        <p class="scripture-ref"></p>
+                                    </div>
+                                    <p class="scripture-text"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    @if ($scriptureUrl)
+                        <div id="scripture-poll-root" class="hidden" data-scripture-url="{{ $scriptureUrl }}"></div>
+                    @endif
+
+                    <section class="portal-card portal-gallery" aria-label="Service gallery">
+                        <div class="portal-section-head portal-section-head--side">
+                            <h2>Live Gallery - Happening Now</h2>
+                            <p>Photos & video reels · tap to open</p>
+                        </div>
+                        <div class="portal-gallery-grid" id="gallery-grid">
+                            @include('partials.gallery-items', ['galleryImages' => $galleryImages])
+                        </div>
+                    </section>
+
+                    @if ($stream->chat_enabled)
+                        <div class="portal-card stage-rail wa-chat portal-chat-slot" id="portal-chat" aria-label="Live chat">
+                            <header class="wa-header">
+                                @if ($artwork)
+                                    <img src="{{ $artwork }}" alt="" class="wa-header-avatar">
+                                @else
+                                    <span class="wa-header-avatar" aria-hidden="true">{{ strtoupper(substr($organization->name, 0, 1)) }}</span>
+                                @endif
+                                <div class="wa-header-copy">
+                                    <h2>{{ $organization->name }}</h2>
+                                    <p>Live chat · online now</p>
+                                </div>
+                            </header>
+                            <div id="chat-messages" class="wa-messages" aria-live="polite">
+                                <p class="wa-empty">Say hello — the room is listening.</p>
+                            </div>
+                            @auth
+                                <form id="chat-form" class="wa-composer stage-chat-input">
+                                    <input id="chat-body" type="text" maxlength="500" placeholder="Type a message" autocomplete="off" required>
+                                    <button type="submit" aria-label="Send">Send</button>
+                                </form>
+                            @else
+                                <p class="wa-login">
+                                    <a href="{{ route('login') }}">Log in</a> to join the conversation
+                                </p>
+                            @endauth
+                            <div
+                                id="chat-root"
+                                class="hidden"
+                                data-poll-url="{{ route('chat.index', $stream) }}"
+                                data-post-url="{{ route('chat.store', $stream) }}"
+                                data-self-name="{{ auth()->user()?->name }}"
+                            ></div>
+                        </div>
+                    @else
+                        <div class="portal-card portal-chat-off" aria-label="Chat unavailable">
+                            <p>Chat is off for this broadcast.</p>
+                        </div>
+                    @endif
                 </div>
             </div>
 

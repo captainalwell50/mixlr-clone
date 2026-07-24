@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ $event->title }} · {{ config('app.name', 'Live Mix Audio') }}</title>
+    <title>{{ $event->title }} · {{ config('app.name', 'Sound Mix Live') }}</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=fraunces:600|source-sans-3:400,600" rel="stylesheet" />
     @vite(['resources/css/app.css', 'resources/js/listen.js'])
@@ -47,7 +47,7 @@
                 <p class="embed-offline">Broadcast not live.</p>
             @endif
 
-            <p class="embed-brand">{{ config('app.name', 'Live Mix Audio') }}</p>
+            <p class="embed-brand">{{ config('app.name', 'Sound Mix Live') }}</p>
         </div>
     </div>
 </body>

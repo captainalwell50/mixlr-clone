@@ -20,8 +20,14 @@ class EventController extends Controller
             abort_unless($unlocked || $canManage, 403);
         }
 
+        $status = match (true) {
+            $event->isLive() => 'live',
+            $event->isPaused() => 'paused',
+            default => 'offline',
+        };
+
         return response()->json([
-            'status' => $event->isLive() ? 'live' : 'offline',
+            'status' => $status,
         ]);
     }
 
@@ -45,7 +51,7 @@ class EventController extends Controller
         $hlsUrl = $event->stream?->hlsPlaylistUrl();
         $whepUrl = $event->stream?->whepUrl();
         $galleryImages = $event->stream
-            ? $event->stream->galleryImages()->limit(24)->get()
+            ? $event->stream->serviceGalleryImages($event->id)->limit(24)->get()
             : collect();
         $listenBackgroundUrl = $event->stream?->listenBackgroundUrl();
 

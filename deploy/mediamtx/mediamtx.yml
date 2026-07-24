@@ -16,6 +16,7 @@ webrtcAddress: :8889
 webrtcEncryption: false
 webrtcAllowOrigins: ['*']
 webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
 webrtcIPsFromInterfaces: true
 webrtcAdditionalHosts: ['stream.example.org']
 
@@ -35,6 +36,7 @@ rtmpEncryption: false
 pathDefaults:
   source: publisher
   overridePublisher: true
+  # Server archive for desktop + crash safety. Laravel ignores short reconnect junk.
   record: true
   recordFormat: fmp4
   recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f

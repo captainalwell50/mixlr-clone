@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\EventStatus;
 use App\Enums\StreamStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -82,6 +84,52 @@ class Stream extends Model
     public function galleryImages(): HasMany
     {
         return $this->hasMany(GalleryImage::class)->latest('id');
+    }
+
+    /**
+     * Open service event for Studio gallery (scheduled / live / paused).
+     */
+    public function openServiceEvent(): ?Event
+    {
+        return $this->events()
+            ->whereIn('status', [EventStatus::Scheduled, EventStatus::Live, EventStatus::Paused])
+            ->latest('id')
+            ->first();
+    }
+
+    /**
+     * Resolve which event's gallery to show.
+     * Explicit event_id wins when it belongs to this stream; otherwise the open service event.
+     */
+    public function resolveGalleryEventId(?int $requestedEventId = null): ?int
+    {
+        if ($requestedEventId !== null) {
+            $belongs = $this->events()->whereKey($requestedEventId)->exists();
+
+            return $belongs ? $requestedEventId : null;
+        }
+
+        return $this->openServiceEvent()?->id;
+    }
+
+    /**
+     * Gallery posts for a single service event. Empty when no event can be resolved.
+     * Legacy rows with null event_id are excluded from "this service" views.
+     *
+     * @return Builder<GalleryImage>
+     */
+    public function serviceGalleryImages(?int $eventId = null): Builder
+    {
+        $resolvedId = $this->resolveGalleryEventId($eventId);
+
+        if ($resolvedId === null) {
+            return GalleryImage::query()->whereKey([]);
+        }
+
+        return GalleryImage::query()
+            ->where('stream_id', $this->id)
+            ->where('event_id', $resolvedId)
+            ->latest('id');
     }
 
     public function studioAudioAssets(): HasMany

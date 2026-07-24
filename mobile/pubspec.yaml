@@ -1,7 +1,7 @@
 name: live_mix
-description: Live Mix — creator and listener Android app.
+description: Sound Mix Live — Listen + Studio for Android, macOS, and Windows.
 publish_to: 'none'
-version: 1.1.3+5
+version: 1.2.11+22
 
 environment:
   sdk: ^3.5.3
@@ -14,6 +14,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   flutter_webrtc: ^0.11.7
   just_audio: ^0.9.40
+  audio_session: ^0.1.25
   permission_handler: ^11.3.1
   provider: ^6.1.2
   uuid: ^4.5.1
@@ -29,3 +30,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/brand/soundmix-icon-1024.png
+    - assets/brand/soundmix-logo.png
+

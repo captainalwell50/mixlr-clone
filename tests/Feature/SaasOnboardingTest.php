@@ -22,11 +22,16 @@ class SaasOnboardingTest extends TestCase
     {
         config(['app.registration_enabled' => true]);
 
+        config(['registration.min_form_seconds' => 0]);
+
+        $this->get('/register')->assertOk();
+
         $this->post('/register', [
             'name' => 'Creator',
             'email' => 'creator@example.org',
             'password' => 'Password1!xx',
             'password_confirmation' => 'Password1!xx',
+            'website' => '',
         ])->assertRedirect(route('onboarding.show'));
 
         $this->assertAuthenticated();

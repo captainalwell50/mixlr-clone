@@ -1,0 +1,59 @@
+{
+  "name": "soundmix-studio",
+  "productName": "Sound Mix Live Studio",
+  "version": "1.0.0",
+  "description": "Desktop Studio for Sound Mix Live — full web mixer in a native shell.",
+  "main": "main.js",
+  "author": "Sound Mix Live",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac",
+    "dist:dir": "electron-builder --mac --dir"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "live.soundmix.studio",
+    "productName": "Sound Mix Live Studio",
+    "copyright": "Copyright © Sound Mix Live",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Sound Mix Live Studio"
+    }
+  }
+}

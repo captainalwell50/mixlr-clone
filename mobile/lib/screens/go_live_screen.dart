@@ -6,12 +6,15 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../brand.dart';
 import '../models/models.dart';
+import '../platform_info.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
 import '../services/network_status.dart';
 import '../services/whip_publisher.dart';
 import '../theme.dart';
+import '../widgets/brand_mark.dart';
 import '../widgets/network_banner.dart';
 import '../widgets/signal_meter.dart';
 
@@ -29,6 +32,7 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
   final _publisher = WhipPublisher();
   bool _busy = false;
   bool _onAir = false;
+  bool _paused = false;
   String? _status;
   String? _error;
   DateTime? _liveStartedAt;
@@ -106,7 +110,8 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
       _startTimer();
       setState(() {
         _onAir = true;
-        _status = 'On air — listeners can join now.';
+        _paused = false;
+        _status = 'On air — Pause keeps this event; End live closes it.';
       });
     } on ApiException catch (e) {
       await _publisher.stop(keepPreview: true);
@@ -119,12 +124,39 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
     }
   }
 
+  Future<void> _pause() async {
+    final api = context.read<AuthState>().api;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _status = 'Pausing event…';
+    });
+    try {
+      await api.pauseStream(widget.stream.uuid);
+      await _publisher.stop(keepPreview: true);
+      _tick?.cancel();
+      if (!mounted) return;
+      HapticFeedback.selectionClick();
+      setState(() {
+        _onAir = false;
+        _paused = true;
+        _status = 'Paused — Resume to continue this event, or End live to close it.';
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _end() async {
     final api = context.read<AuthState>().api;
     setState(() {
       _busy = true;
       _error = null;
-      _status = 'Ending…';
+      _status = 'Ending event…';
     });
     try {
       await _publisher.stop();
@@ -152,183 +184,275 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
     };
 
     final org = widget.organization;
+    final title = widget.stream.title.length > 22
+        ? '${widget.stream.title.substring(0, 20)}…'
+        : widget.stream.title;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.stream.title),
-        actions: [
-          if (org != null)
-            IconButton(
-              tooltip: 'Share channel',
-              onPressed: () => _shareChannel(org),
-              icon: const Icon(Icons.ios_share_rounded),
-            ),
-          const Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: NetworkPill(),
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: _onAir
+                ? const [Color(0xFF2A1416), LiveMixTheme.ink, Color(0xFF0A0C10)]
+                : const [Color(0xFF1C1A14), LiveMixTheme.ink, Color(0xFF0A0C10)],
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          const NetworkBanner(),
-          Expanded(
-            child: SafeArea(
-              top: false,
+        ),
+        child: Column(
+          children: [
+            SafeArea(
+              bottom: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                padding: const EdgeInsets.fromLTRB(4, 0, 8, 0),
+                child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: LiveMixTheme.panel,
-                        borderRadius: BorderRadius.circular(22),
-                        border: Border.all(
-                          color: _onAir
-                              ? LiveMixTheme.live.withOpacity(0.45)
-                              : Colors.transparent,
-                        ),
-                      ),
-                      child: Row(
+                    IconButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    ),
+                    const BrandMark(size: 28, showWordmark: false),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: _onAir
-                                        ? LiveMixTheme.liveSoft
-                                        : LiveMixTheme.goldSoft,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    _onAir ? 'ON AIR' : 'STANDBY',
-                                    style: TextStyle(
-                                      color: _onAir
-                                          ? LiveMixTheme.live
-                                          : LiveMixTheme.gold,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
-                                      letterSpacing: 1,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
-                                Text(
-                                  'DURATION',
-                                  style: GoogleFonts.outfit(
-                                    color: LiveMixTheme.mute,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1.2,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                LiveDurationText(elapsed: _elapsed),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _status ?? 'Preparing microphone…',
-                                  style: const TextStyle(
-                                    color: LiveMixTheme.mute,
-                                    height: 1.35,
-                                  ),
-                                ),
-                                const SizedBox(height: 14),
-                                Row(
-                                  children: [
-                                    Icon(Icons.sensors, size: 16, color: linkColor),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      _publisher.iceState ??
-                                          (_publisher.isPreviewing
-                                              ? 'Mic preview'
-                                              : 'Idle'),
-                                      style: TextStyle(
-                                        color: linkColor,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                          Text(
+                            Brand.name,
+                            style: GoogleFonts.outfit(
+                              color: LiveMixTheme.mist,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.2,
+                              height: 1.1,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(width: 18),
-                          SizedBox(
-                            width: 56,
-                            child: SignalMeter(
-                              level: _publisher.level,
-                              peak: _publisher.peak,
-                              height: 160,
+                          Text(
+                            title,
+                            style: GoogleFonts.outfit(
+                              color: LiveMixTheme.mute,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 14),
-                      Text(
-                        _error!,
-                        style: const TextStyle(color: LiveMixTheme.bad),
-                      ),
-                    ],
-                    const Spacer(),
-                    Text(
-                      'Tip: speak normally and keep SIGNAL in green. Full mixer (playlist, cues) stays on the web Studio.',
-                      style: GoogleFonts.outfit(
-                        color: LiveMixTheme.mute.withOpacity(0.9),
-                        fontSize: 13,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (org != null) ...[
-                      OutlinedButton.icon(
+                    if (org != null)
+                      IconButton(
+                        tooltip: 'Share channel',
                         onPressed: () => _shareChannel(org),
                         icon: const Icon(Icons.ios_share_rounded),
-                        label: const Text('Share channel link'),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        org.publicChannelUrl,
-                        style: const TextStyle(
-                          color: LiveMixTheme.mute,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    if (!_onAir)
-                      FilledButton.icon(
-                        onPressed: _busy ? null : _goLive,
-                        icon: const Icon(Icons.podcasts_rounded),
-                        label: Text(_busy ? 'Connecting…' : 'Go live'),
-                      )
-                    else
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: LiveMixTheme.live,
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: _busy ? null : _end,
-                        icon: const Icon(Icons.stop_rounded),
-                        label: Text(_busy ? 'Ending…' : 'End stream'),
-                      ),
+                    const NetworkPill(),
                   ],
                 ),
               ),
             ),
-          ),
-        ],
+            const NetworkBanner(),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(22),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(28),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                LiveMixTheme.panelHi,
+                                LiveMixTheme.panel,
+                              ],
+                            ),
+                            border: Border.all(
+                              color: _onAir
+                                  ? LiveMixTheme.live.withOpacity(0.5)
+                                  : LiveMixTheme.gold.withOpacity(0.22),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_onAir ? LiveMixTheme.live : LiveMixTheme.gold)
+                                    .withOpacity(0.14),
+                                blurRadius: 36,
+                                offset: const Offset(0, 16),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _onAir
+                                          ? LiveMixTheme.liveSoft
+                                          : LiveMixTheme.goldSoft,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _onAir ? 'ON AIR' : (_paused ? 'PAUSED' : 'STANDBY'),
+                                      style: TextStyle(
+                                        color: _onAir
+                                            ? LiveMixTheme.live
+                                            : LiveMixTheme.gold,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                        letterSpacing: 1.1,
+                                      ),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Icon(Icons.sensors_rounded, size: 16, color: linkColor),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _publisher.iceState ??
+                                        (_publisher.isPreviewing ? 'Mic preview' : 'Idle'),
+                                    style: TextStyle(
+                                      color: linkColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 28),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'DURATION',
+                                          style: GoogleFonts.outfit(
+                                            color: LiveMixTheme.mute,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 1.3,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        LiveDurationText(elapsed: _elapsed, fontSize: 52),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          _status ?? 'Preparing microphone…',
+                                          style: const TextStyle(
+                                            color: LiveMixTheme.mute,
+                                            height: 1.4,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  SizedBox(
+                                    width: 64,
+                                    child: SignalMeter(
+                                      level: _publisher.level,
+                                      peak: _publisher.peak,
+                                      height: 180,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Spacer(),
+                              Row(
+                                children: [
+                                  const BrandMark(size: 28, showWordmark: false),
+                                  const SizedBox(width: 10),
+                                  Flexible(
+                                    child: Text(
+                                      '${Brand.name} Studio',
+                                      style: GoogleFonts.outfit(
+                                        color: LiveMixTheme.mute,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_error!, style: const TextStyle(color: LiveMixTheme.bad)),
+                      ],
+                      const SizedBox(height: 14),
+                      Text(
+                        PlatformInfo.isDesktop
+                            ? 'Tip: speak normally and keep SIGNAL in green. Playlist & cues still live on the web Studio.'
+                            : 'Tip: speak normally and keep SIGNAL in green. Full mixer stays on web Studio.',
+                        style: GoogleFonts.outfit(
+                          color: LiveMixTheme.mute.withOpacity(0.9),
+                          fontSize: 12.5,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      if (!_onAir) ...[
+                        FilledButton.icon(
+                          onPressed: _busy ? null : _goLive,
+                          icon: const Icon(Icons.podcasts_rounded),
+                          label: Text(
+                            _busy
+                                ? 'Connecting…'
+                                : (_paused ? 'Resume' : 'Go live'),
+                          ),
+                        ),
+                        if (_paused) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _busy ? null : _end,
+                            icon: const Icon(Icons.stop_rounded),
+                            label: const Text('End live'),
+                          ),
+                        ],
+                      ] else ...[
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _pause,
+                          icon: const Icon(Icons.pause_rounded),
+                          label: Text(_busy ? 'Working…' : 'Pause'),
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: LiveMixTheme.live,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: _busy ? null : _end,
+                          icon: const Icon(Icons.stop_rounded),
+                          label: Text(_busy ? 'Ending…' : 'End live'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

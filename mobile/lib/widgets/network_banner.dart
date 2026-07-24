@@ -19,8 +19,8 @@ class NetworkBanner extends StatelessWidget {
         ? const Color(0xFF3A1A1A)
         : const Color(0xFF3A2E14);
     final message = net.health == NetHealth.offline
-        ? 'You’re offline — showing saved content where available'
-        : 'Network issue — ${net.label}. Retrying…';
+        ? 'You’re offline — saved content only until you’re back online'
+        : 'Connection issue — ${net.label}. Retrying…';
 
     return Material(
       color: bg,

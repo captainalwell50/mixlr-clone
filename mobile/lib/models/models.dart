@@ -38,6 +38,7 @@ class OrgSummary {
     this.artworkUrl,
     this.channelUrl,
     this.canBroadcast = false,
+    this.creatorType,
   });
 
   final int id;
@@ -47,6 +48,9 @@ class OrgSummary {
   final String? artworkUrl;
   final String? channelUrl;
   final bool canBroadcast;
+  final String? creatorType;
+
+  bool get isChurch => creatorType == 'church';
 
   /// Clear public channel page, e.g. https://soundmix.live/c/my-church
   String get publicChannelUrl {
@@ -66,6 +70,7 @@ class OrgSummary {
       artworkUrl: json['artwork_url'] as String?,
       channelUrl: json['channel_url'] as String?,
       canBroadcast: json['can_broadcast'] as bool? ?? false,
+      creatorType: json['creator_type'] as String?,
     );
   }
 }
@@ -146,8 +151,10 @@ class ListenPayload {
     this.hlsUrl,
     this.whepUrl,
     this.orgName,
+    this.orgSlug,
     this.themeColor,
     this.artworkUrl,
+    this.creatorType,
   });
 
   final String uuid;
@@ -158,16 +165,23 @@ class ListenPayload {
   final String? hlsUrl;
   final String? whepUrl;
   final String? orgName;
+  final String? orgSlug;
   final String? themeColor;
   final String? artworkUrl;
+  final String? creatorType;
 
   bool get isLive => status == 'live';
+  bool get isChurch => creatorType == 'church';
 
   factory ListenPayload.fromJson(Map<String, dynamic> json) {
     final stream = json['stream'] as Map<String, dynamic>? ?? {};
     final org = json['organization'] as Map<String, dynamic>?;
+    final uuid = stream['uuid'] as String? ?? '';
+    if (uuid.isEmpty) {
+      throw FormatException('Listen payload missing stream uuid');
+    }
     return ListenPayload(
-      uuid: stream['uuid'] as String,
+      uuid: uuid,
       title: stream['title'] as String? ?? 'Live',
       status: stream['status'] as String? ?? 'offline',
       description: stream['description'] as String?,
@@ -175,8 +189,64 @@ class ListenPayload {
       hlsUrl: stream['hls_url'] as String?,
       whepUrl: stream['whep_url'] as String?,
       orgName: org?['name'] as String?,
+      orgSlug: org?['slug'] as String?,
       themeColor: org?['theme_color'] as String?,
       artworkUrl: org?['artwork_url'] as String?,
+      creatorType: org?['creator_type'] as String?,
+    );
+  }
+}
+
+class ScriptureCue {
+  ScriptureCue({
+    required this.ref,
+    required this.text,
+    this.version = 'KJV',
+    this.updatedAt,
+  });
+
+  final String ref;
+  final String text;
+  final String version;
+  final String? updatedAt;
+
+  factory ScriptureCue.fromJson(Map<String, dynamic> json) {
+    return ScriptureCue(
+      ref: json['ref'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+      version: json['version'] as String? ?? 'KJV',
+      updatedAt: json['updated_at'] as String?,
+    );
+  }
+}
+
+class GalleryItem {
+  GalleryItem({
+    required this.id,
+    required this.url,
+    required this.type,
+    this.caption,
+    this.posterUrl,
+    this.durationSeconds,
+  });
+
+  final int id;
+  final String url;
+  final String type;
+  final String? caption;
+  final String? posterUrl;
+  final int? durationSeconds;
+
+  bool get isVideo => type == 'video';
+
+  factory GalleryItem.fromJson(Map<String, dynamic> json) {
+    return GalleryItem(
+      id: json['id'] as int,
+      url: json['url'] as String? ?? '',
+      type: json['type'] as String? ?? 'image',
+      caption: json['caption'] as String?,
+      posterUrl: json['poster_url'] as String?,
+      durationSeconds: (json['duration_seconds'] as num?)?.round(),
     );
   }
 }

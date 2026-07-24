@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../platform_info.dart';
 import '../widgets/network_banner.dart';
 import 'creator_home_screen.dart';
 import 'discover_screen.dart';
+import 'gallery_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -16,23 +18,66 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
+    final desktop = PlatformInfo.isDesktop;
+
+    final body = Column(
+      children: [
+        const NetworkBanner(),
+        Expanded(
+          child: IndexedStack(
+            index: _index,
+            children: const [
+              DiscoverScreen(),
+              GalleryScreen(),
+              CreatorHomeScreen(),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (desktop) {
+      return Scaffold(
+        body: Row(
           children: [
-            const NetworkBanner(),
+            NavigationRail(
+              selectedIndex: _index,
+              onDestinationSelected: (i) => setState(() => _index = i),
+              labelType: NavigationRailLabelType.all,
+              backgroundColor: const Color(0xFF12151C),
+              destinations: const [
+                NavigationRailDestination(
+                  icon: Icon(Icons.headphones_outlined),
+                  selectedIcon: Icon(Icons.headphones),
+                  label: Text('Listen'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.photo_library_outlined),
+                  selectedIcon: Icon(Icons.photo_library),
+                  label: Text('Gallery'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.mic_none),
+                  selectedIcon: Icon(Icons.mic),
+                  label: Text('Studio'),
+                ),
+              ],
+            ),
+            const VerticalDivider(width: 1, thickness: 1),
             Expanded(
-              child: IndexedStack(
-                index: _index,
-                children: const [
-                  DiscoverScreen(),
-                  CreatorHomeScreen(),
-                ],
+              child: SafeArea(
+                child: body,
               ),
             ),
           ],
         ),
+      );
+    }
+
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: body,
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -42,6 +87,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.headphones_outlined),
             selectedIcon: Icon(Icons.headphones),
             label: 'Listen',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.photo_library_outlined),
+            selectedIcon: Icon(Icons.photo_library),
+            label: 'Gallery',
           ),
           NavigationDestination(
             icon: Icon(Icons.mic_none),

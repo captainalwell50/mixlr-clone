@@ -1,6 +1,6 @@
 # Storage architecture (R2 + Google Drive)
 
-Recommended path for Live Mix cost control.
+Recommended path for Sound Mix Live cost control.
 
 ## What goes where
 
@@ -80,7 +80,7 @@ GOOGLE_DRIVE_REDIRECT_URI="${APP_URL}/integrations/google-drive/callback"
 ```
 
 4. In Studio → Audio library → **Connect Drive**.  
-   Creates a **Live Mix Audio** folder. Upload destination **Google Drive** or **Import Drive** by file ID.
+   Creates a **Sound Mix Live** folder. Upload destination **Google Drive** or **Import Drive** by file ID.
 
 ## Ops checklist
 

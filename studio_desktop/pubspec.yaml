@@ -1,0 +1,31 @@
+name: soundmix_studio
+description: Sound Mix Live Studio — premium desktop broadcast console.
+publish_to: 'none'
+version: 2.0.0+2
+
+environment:
+  sdk: ^3.5.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+  shared_preferences: ^2.3.3
+  flutter_webrtc: ^0.11.7
+  provider: ^6.1.2
+  google_fonts: ^6.2.1
+  share_plus: ^10.1.2
+  file_picker: ^8.1.2
+  speech_to_text: ^7.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/brand/soundmix-icon-1024.png
+    - assets/brand/soundmix-logo.png

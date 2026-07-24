@@ -15,7 +15,7 @@
         ></div>
         <div class="stage-content">
             <header class="stage-top stage-rise">
-                <p class="stage-platform">{{ config('app.name', 'Live Mix Audio') }}</p>
+                <p class="stage-platform">{{ config('app.name', 'Sound Mix Live') }}</p>
                 <a href="{{ route('discover') }}" class="stage-top-link">Discover</a>
             </header>
 

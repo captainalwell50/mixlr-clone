@@ -40,6 +40,14 @@ Install [Caddy](https://caddyserver.com/docs/install#debian-ubuntu-raspbian) and
 
 ## 3. App deploy
 
+**Never rsync with `--delete` over `database/` or `storage/app/`.** That wiped production SQLite once. Use:
+
+```bash
+./deploy/sync-app.sh
+```
+
+Or rsync with `deploy/rsync-excludes.txt` (excludes `database.sqlite`, uploads, `.env`).
+
 Use the project branch `project/mixlr-clone` (not `main`):
 
 ```bash
@@ -120,9 +128,9 @@ export MEDIAMTX_PUBLISH_SECRET=<same-as-.env-if-set>
 docker compose up -d --build
 ```
 
-Ensure `webrtcAdditionalHosts` includes the public DNS/IP so browsers behind NAT can complete ICE.
+Ensure `webrtcAdditionalHosts` includes the public DNS/IP so browsers behind NAT can complete ICE, and set `webrtcLocalTCPAddress: :8189` (UDP alone is not enough when home networks block UDP).
 
-Open NSG **UDP 8189** (and TCP 8189). Caddy only proxies HTTP WHIP/HLS signaling; media often uses UDP to the VM IP.
+Open NSG **UDP 8189** and **TCP 8189**, and host UFW (`ufw allow 8189/udp` + `8189/tcp`). Caddy only proxies HTTP WHIP/WHEP signaling; media uses 8189 to the VM IP.
 
 ## 5. Scheduler
 
@@ -156,7 +164,7 @@ sudo crontab -u www-data -e
 | Symptom | Check |
 |---------|--------|
 | Listen never goes Live | Webhook URL/secret; MediaMTX container has `curl`; Laravel `/api/webhooks/mediamtx` |
-| Studio connects then silent | ICE: `webrtcAdditionalHosts`, UDP 8189 open |
+| Studio connects then silent | ICE: `webrtcAdditionalHosts`, `webrtcLocalTCPAddress`, UDP/TCP 8189 (NSG + UFW) |
 | Publish rejected | Stream UUID exists; optional `MEDIAMTX_PUBLISH_SECRET` matches query/password; auth URL reachable from Docker |
 | No Archive rows | `runOnRecordSegmentComplete` hook; shared recordings path |
 | 503 on webhook | `MEDIAMTX_WEBHOOK_SECRET` empty in Laravel |

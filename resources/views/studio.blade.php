@@ -15,7 +15,7 @@
 @section('content')
     <div id="studio-stage" class="mixer" style="--mixer-accent: {{ $theme }};">
         <header class="mixer-topbar">
-            <a href="{{ url('/') }}" class="mixer-brand">{{ config('app.name', 'Live Mix Audio') }}</a>
+            @include('partials.brand-logo', ['compact' => true, 'onDark' => true])
             <p class="mixer-topbar-status">
                 <span id="studio-mode-mobile">STANDBY</span>
                 <span class="mixer-topbar-dot" aria-hidden="true">·</span>
@@ -33,8 +33,22 @@
             <div class="mixer-hero-art" style="background-image: url('{{ $artwork ?: asset('images/listen-stage-bg.jpg') }}')"></div>
             <div class="mixer-hero-copy">
                 <p class="mixer-hero-kicker" id="studio-mode">Standby</p>
-                <h1 class="mixer-hero-title">{{ $stream->title }}</h1>
-                <p class="mixer-hero-sub" id="studio-hero-hint">Hit Go on air when you’re ready</p>
+                <h1 class="mixer-hero-title" id="studio-event-title">{{ $openEvent?->title ?: $stream->title }}</h1>
+                <p class="mixer-hero-sub" id="studio-hero-hint">Create an event, or go live to start one automatically</p>
+                <div class="mixer-event-rename" id="studio-event-rename" @unless($openEvent) hidden @endunless>
+                    <label class="mixer-hint" for="event-title-input">Event name</label>
+                    <div class="mixer-event-rename-row">
+                        <input
+                            id="event-title-input"
+                            type="text"
+                            maxlength="255"
+                            value="{{ $openEvent?->title }}"
+                            placeholder="Name this event"
+                            autocomplete="off"
+                        >
+                        <button type="button" class="mixer-add-sounds" id="btn-save-event-title">Save</button>
+                    </div>
+                </div>
             </div>
             <div class="mixer-hero-actions">
                 <a class="mixer-icon-btn" href="{{ route('dashboard') }}" title="Back to dashboard" aria-label="Back to dashboard">←</a>
@@ -265,19 +279,66 @@
                         @endforeach
                     </div>
 
+                    @if ($scriptureEnabled ?? false)
+                        <div class="mixer-playlist-head" style="margin-top: 1rem">
+                            <h2>Scripture</h2>
+                        </div>
+                        <div id="studio-scripture" class="studio-scripture">
+                            <p class="mixer-hint">Show KJV verses on the listen page left panel (EasyWorship-style). Type a reference or let Studio listen for spoken scripture.</p>
+                            <label class="sr-only" for="scripture-search">Scripture reference</label>
+                            <input id="scripture-search" class="mixer-library-search" type="search" placeholder="e.g. John 3:16" autocomplete="off">
+                            <div id="scripture-suggestions" class="scripture-suggestions" role="listbox"></div>
+                            <div class="mixer-gallery-actions">
+                                <button type="button" id="btn-scripture-show" class="mixer-add-sounds">Show on listen</button>
+                                <button type="button" id="btn-scripture-clear" class="mixer-add-sounds">Clear</button>
+                                <button type="button" id="btn-scripture-listen" class="mixer-add-sounds">Listen for scripture</button>
+                            </div>
+                            <div id="scripture-live" class="scripture-live" hidden aria-live="polite">
+                                <span class="scripture-live-label">Live transcript</span>
+                                <p id="scripture-live-text" class="scripture-live-text scripture-live-text--idle">Listening…</p>
+                            </div>
+                            <div id="scripture-confirm" class="scripture-confirm" hidden>
+                                <p>Show <strong id="scripture-confirm-ref"></strong> on listen?</p>
+                                <div class="mixer-gallery-actions">
+                                    <button type="button" id="btn-scripture-confirm" class="mixer-btn-start">Show</button>
+                                    <button type="button" id="btn-scripture-dismiss" class="mixer-btn-secondary">Dismiss</button>
+                                </div>
+                            </div>
+                            <p id="scripture-status" class="mixer-hint" role="status">No scripture on listen</p>
+                        </div>
+                    @endif
+
                     <div class="mixer-playlist-head" style="margin-top: 1rem">
-                        <h2>Recorded audio</h2>
+                        <h2>Podcasts</h2>
                     </div>
-                    <p class="mixer-hint">Delete past recordings from this stream when you no longer need them.</p>
+                    <p class="mixer-hint">Audio is recorded on this device while you’re on air. Ending live uploads it to Podcasts automatically — you can also upload, save, or discard here.</p>
+                    <div class="mixer-local-recording" id="studio-local-recording" hidden>
+                        <p class="mixer-recording-title" id="studio-local-recording-title">Local session ready</p>
+                        <p class="mixer-recording-meta" id="studio-local-recording-meta"></p>
+                        <label class="mixer-hint" for="local-recording-title">Podcast title (optional)</label>
+                        <input id="local-recording-title" type="text" maxlength="255" placeholder="e.g. Sunday Morning Service" autocomplete="off">
+                        <div class="mixer-recording-actions">
+                            <button type="button" class="mixer-recording-upload" id="btn-upload-recording">Upload</button>
+                            <button type="button" class="mixer-recording-link" id="btn-download-recording">Save locally</button>
+                            <button type="button" class="mixer-recording-delete" id="btn-discard-recording">Discard</button>
+                        </div>
+                    </div>
+                    <p class="mixer-hint" id="studio-local-recording-live" hidden>Recording locally… network drops won’t cut this file.</p>
                     <div class="mixer-recordings" id="studio-recordings">
                         @forelse ($recordings as $recording)
                             <div class="mixer-recording-row" data-recording-id="{{ $recording->id }}">
                                 <div class="mixer-recording-copy">
-                                    <p class="mixer-recording-title">{{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }}</p>
-                                    <p class="mixer-recording-meta">{{ $recording->durationLabel() }} · {{ $recording->sizeLabel() }}</p>
+                                    <p class="mixer-recording-title">{{ $recording->displayTitle() }}</p>
+                                    <p class="mixer-recording-meta">{{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }} · {{ $recording->durationLabel() }} · {{ $recording->sizeLabel() }}</p>
                                 </div>
                                 <div class="mixer-recording-actions">
                                     <a href="{{ route('archive.play', $recording) }}" target="_blank" rel="noopener" class="mixer-recording-link">Play</a>
+                                    <button
+                                        type="button"
+                                        class="mixer-recording-link mixer-recording-rename"
+                                        data-update-url="{{ URL::temporarySignedRoute('recordings.update', now()->addHours(12), ['stream' => $stream, 'recording' => $recording]) }}"
+                                        data-title="{{ $recording->displayTitle() }}"
+                                    >Rename</button>
                                     <button
                                         type="button"
                                         class="mixer-recording-delete"
@@ -286,7 +347,7 @@
                                 </div>
                             </div>
                         @empty
-                            <p class="mixer-hint" id="studio-recordings-empty">No recordings yet for this stream.</p>
+                            <p class="mixer-hint" id="studio-recordings-empty">No uploaded recordings yet for this stream.</p>
                         @endforelse
                     </div>
                 </div>
@@ -295,8 +356,9 @@
                 </p>
                 <p id="studio-status" class="mixer-status" role="status">Allow microphone access when prompted.</p>
                 <div class="mixer-listen-row">
-                    <p class="mixer-hint" style="margin: 0 0 0.35rem">Your channel link</p>
-                    <code id="channel-url" title="{{ $channelUrl }}">{{ $channelUrl }}</code>
+                    <p class="mixer-hint" style="margin: 0 0 0.35rem">Event / channel link</p>
+                    <code id="event-url" title="{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}">{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}</code>
+                    <code id="channel-url" class="hidden" title="{{ $channelUrl }}">{{ $channelUrl }}</code>
                     <div class="mixer-share-actions">
                         <button type="button" class="mixer-add-sounds" id="btn-share-channel-main">Share</button>
                         <button type="button" class="mixer-add-sounds" id="btn-copy-channel">Copy</button>
@@ -314,8 +376,10 @@
             </p>
             <p class="mixer-timer" id="studio-timer">00:00:00</p>
             <div class="mixer-bar-actions">
-                <button type="button" id="btn-stop" class="mixer-btn-stop" disabled>End broadcast</button>
-                <button type="button" id="btn-start" class="mixer-btn-start" @disabled(! ($broadcastAllowed ?? true))>Go on air</button>
+                <button type="button" id="btn-create-event" class="mixer-btn-secondary" @disabled(! ($broadcastAllowed ?? true))>Create event</button>
+                <button type="button" id="btn-pause" class="mixer-btn-stop" hidden disabled>Pause</button>
+                <button type="button" id="btn-end" class="mixer-btn-stop" hidden disabled>End live</button>
+                <button type="button" id="btn-start" class="mixer-btn-start" @disabled(! ($broadcastAllowed ?? true))>Go live</button>
             </div>
         </footer>
 
@@ -333,8 +397,28 @@
             data-library-list-url="{{ $libraryListUrl }}"
             data-library-upload-url="{{ $libraryUploadUrl }}"
             data-library-import-drive-url="{{ $libraryImportDriveUrl }}"
+            data-recording-upload-url="{{ $recordingUploadUrl }}"
+            data-session-show-url="{{ $sessionShowUrl }}"
+            data-session-create-event-url="{{ $sessionCreateEventUrl }}"
+            data-session-go-live-url="{{ $sessionGoLiveUrl }}"
+            data-session-pause-url="{{ $sessionPauseUrl }}"
+            data-session-resume-url="{{ $sessionResumeUrl }}"
+            data-session-end-url="{{ $sessionEndUrl }}"
+            data-session-rename-event-url="{{ $sessionRenameEventUrl }}"
+            data-scripture-enabled="{{ ($scriptureEnabled ?? false) ? '1' : '0' }}"
+            @if ($scriptureEnabled ?? false)
+                data-scripture-show-url="{{ $scriptureShowUrl }}"
+                data-scripture-store-url="{{ $scriptureStoreUrl }}"
+                data-scripture-destroy-url="{{ $scriptureDestroyUrl }}"
+                data-scripture-suggest-url="{{ $scriptureSuggestUrl }}"
+            @endif
+            data-open-event-id="{{ $openEvent?->id }}"
+            data-open-event-title="{{ $openEvent?->title }}"
+            data-open-event-status="{{ $openEvent?->status?->value }}"
+            data-open-event-url="{{ $openEvent ? route('events.show', $openEvent) : '' }}"
             data-channel-url="{{ $channelUrl }}"
             data-channel-name="{{ $organization->name }}"
+            data-stream-title="{{ $stream->title }}"
             data-csrf="{{ csrf_token() }}"
             class="hidden"
         ></div>

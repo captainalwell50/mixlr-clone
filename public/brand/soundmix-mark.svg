@@ -1,0 +1,25 @@
+<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sound Mix Live">
+  <defs>
+    <linearGradient id="smGrad" x1="6" y1="4" x2="34" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5EEAD4"/>
+      <stop offset="0.45" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#0F766E"/>
+    </linearGradient>
+  </defs>
+  <rect width="40" height="40" rx="10" fill="url(#smGrad)"/>
+  <!-- Continuous SM matching brand PNG -->
+  <path
+    d="M10.2 17.4c.2-2.6 2.2-4.4 4.8-4.4 1.6 0 2.9.7 3.6 1.8M10.4 22.8c.7 2.2 2.5 3.6 4.9 3.6 1.8 0 3.1-.8 3.8-2M18.8 14.8v11.6M18.8 26.4c1.1-2.4 2.2-4.8 3.4-7.2 1.1 2.3 2.2 4.7 3.4 7.2 1.1-2.4 2.2-4.8 3.4-7.2"
+    stroke="#fff"
+    stroke-width="2.45"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M10.2 17.4c.2 1.6 1.1 2.7 2.7 3.5l2.2 1.15c1.5.8 2.3 1.7 2.3 3.15"
+    stroke="#fff"
+    stroke-width="2.45"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

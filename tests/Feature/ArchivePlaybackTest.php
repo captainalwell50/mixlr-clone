@@ -17,12 +17,17 @@ class ArchivePlaybackTest extends TestCase
     public function test_guest_can_open_play_page(): void
     {
         Storage::fake('mediamtx_recordings');
-        $recording = $this->makeRecording();
+        $recording = $this->makeRecording([
+            'title' => 'Sunday Podcast',
+            'duration_raw' => '3195',
+        ]);
 
         $this->get(route('archive.play', $recording))
             ->assertOk()
-            ->assertSee($recording->stream->title, false)
-            ->assertSee(route('archive.file', $recording), false);
+            ->assertSee('Sunday Podcast', false)
+            ->assertSee(route('archive.file', $recording), false)
+            ->assertSee('data-duration-seconds="3195"', false)
+            ->assertSee('53:15', false);
     }
 
     public function test_guest_can_stream_recording_file(): void
@@ -35,19 +40,97 @@ class ArchivePlaybackTest extends TestCase
             ->assertOk();
     }
 
-    public function test_archive_index_has_friendly_empty_state(): void
+    public function test_archive_index_lists_channels_not_flat_recordings(): void
     {
+        $recording = $this->makeRecording(['title' => 'Hidden Flat Title']);
+        $org = $recording->stream->organization;
+
         $this->get(route('archive.index'))
             ->assertOk()
-            ->assertSee('No recordings yet', false)
-            ->assertDontSee('mediamtx-recordings', false);
+            ->assertSee($org->name, false)
+            ->assertSee('podcast', false)
+            ->assertDontSee('Hidden Flat Title', false);
     }
 
-    private function makeRecording(): Recording
+    public function test_archive_channel_lists_podcasts(): void
+    {
+        $recording = $this->makeRecording(['title' => 'Morning Dew Podcast']);
+        $org = $recording->stream->organization;
+
+        $this->get(route('archive.channel', $org))
+            ->assertOk()
+            ->assertSee('Morning Dew Podcast', false)
+            ->assertSee($org->name, false);
+    }
+
+    public function test_archive_prefers_event_name_over_channel_stream_title(): void
+    {
+        $recording = $this->makeRecording([
+            'title' => 'Church', // same as channel/stream — treat as generic
+        ]);
+        $event = \App\Models\Event::query()->create([
+            'organization_id' => $recording->stream->organization_id,
+            'stream_id' => $recording->stream_id,
+            'title' => 'Sunday Service',
+            'status' => \App\Enums\EventStatus::Ended,
+        ]);
+        $recording->forceFill(['event_id' => $event->id])->save();
+
+        $this->assertSame('Sunday Service', $recording->fresh(['event', 'stream.organization'])->displayTitle());
+
+        $this->get(route('archive.channel', $recording->stream->organization))
+            ->assertOk()
+            ->assertSee('Sunday Service', false);
+    }
+
+    public function test_archive_uses_live_date_when_no_event_instead_of_channel_name(): void
+    {
+        $recording = $this->makeRecording([
+            'title' => null,
+            'completed_at' => now()->setTime(20, 44),
+        ]);
+        // stream title matches channel name in makeRecording fixtures via org/stream setup
+        $recording->stream->forceFill(['title' => 'Church'])->save();
+
+        $label = $recording->fresh(['event', 'stream.organization'])->displayTitle();
+        $this->assertStringStartsWith('Live ·', $label);
+        $this->assertStringNotContainsString('Church', $label);
+    }
+
+    public function test_archive_index_hides_channels_with_only_unpublished_recordings(): void
+    {
+        Storage::fake('mediamtx_recordings');
+        $public = $this->makeRecording(['title' => 'Public One']);
+        Recording::query()->create([
+            'stream_id' => $public->stream_id,
+            'source' => Recording::SOURCE_MEDIAMTX,
+            'is_public' => false,
+            'title' => 'Draft Only',
+            'relative_path' => $public->stream->mediaPath().'/draft-only.mp4',
+            'duration_raw' => '600',
+            'size_bytes' => 12_000_000,
+            'completed_at' => now(),
+        ]);
+
+        $this->get(route('archive.index'))
+            ->assertOk()
+            ->assertSee($public->stream->organization->name, false);
+
+        $this->get(route('archive.channel', $public->stream->organization))
+            ->assertOk()
+            ->assertSee('Public One', false)
+            ->assertDontSee('Draft Only', false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
+    private function makeRecording(array $overrides = []): Recording
     {
         $org = Organization::query()->create([
             'name' => 'Church',
             'slug' => 'church-'.uniqid(),
+            'is_public' => true,
         ]);
         $stream = Stream::query()->create([
             'organization_id' => $org->id,
@@ -57,10 +140,13 @@ class ArchivePlaybackTest extends TestCase
         ]);
         $rel = $stream->mediaPath().'/part1.mp4';
 
-        return Recording::query()->create([
+        return Recording::query()->create(array_merge([
             'stream_id' => $stream->id,
+            'source' => Recording::SOURCE_STUDIO,
+            'is_public' => true,
+            'title' => 'Podcast',
             'relative_path' => $rel,
             'completed_at' => now(),
-        ]);
+        ], $overrides));
     }
 }
