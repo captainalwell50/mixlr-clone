@@ -4,13 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Stream;
 use App\Models\StreamLike;
-use App\Models\StreamListenerSession;
+use App\Services\ListenerPresenceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class StreamEngageController extends Controller
 {
+    public function __construct(
+        private ListenerPresenceService $presence,
+    ) {}
+
     public function presence(Request $request, Stream $stream): JsonResponse
     {
         $this->authorizeListen($request, $stream);
@@ -22,22 +26,15 @@ class StreamEngageController extends Controller
             ?: Str::uuid()
         ), 0, 64);
 
-        $session = StreamListenerSession::query()->firstOrNew([
-            'stream_id' => $stream->id,
-            'session_key' => $sessionKey,
-        ]);
-
-        if (! $session->exists) {
-            $session->started_at = now();
-        }
-
-        $session->last_seen_at = now();
-        $session->user_id = $request->user()?->id ?? $session->user_id;
-        $session->save();
+        $result = $this->presence->touchStream(
+            $stream,
+            $sessionKey,
+            $request->user()?->id ?? $request->user('sanctum')?->id,
+        );
 
         return response()->json([
-            'session_key' => $session->session_key,
-            'listeners' => $stream->activeListenerCount(),
+            'session_key' => $result['session_key'],
+            'listeners' => $result['listeners'],
             'likes' => $stream->likes()->count(),
         ]);
     }

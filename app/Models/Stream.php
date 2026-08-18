@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EventStatus;
 use App\Enums\StreamStatus;
+use App\Services\ListenerPresenceService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -137,11 +138,9 @@ class Stream extends Model
         return $this->hasMany(StudioAudioAsset::class)->latest('id');
     }
 
-    public function activeListenerCount(int $withinSeconds = 45): int
+    public function activeListenerCount(int $withinSeconds = ListenerPresenceService::HEARTBEAT_SECONDS): int
     {
-        return $this->listenerSessions()
-            ->where('last_seen_at', '>=', now()->subSeconds($withinSeconds))
-            ->count();
+        return app(ListenerPresenceService::class)->countForStream($this, $withinSeconds);
     }
 
     public function listenBackgroundUrl(): ?string

@@ -69,7 +69,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
   NetHealth? _lastNetHealth;
   bool _networkListening = false;
 
-  static const _presencePoll = Duration(seconds: 30);
+  static const _presencePoll = Duration(seconds: 15);
   static const _scripturePoll = Duration(seconds: 3);
   static const _statusPoll = Duration(seconds: 5);
   static const _loadCooldown = Duration(seconds: 2);

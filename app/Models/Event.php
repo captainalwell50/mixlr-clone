@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EventAccess;
 use App\Enums\EventStatus;
+use App\Services\ListenerPresenceService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -150,11 +151,9 @@ class Event extends Model
         return Hash::check($plain, $this->access_password);
     }
 
-    public function activeListenerCount(int $withinSeconds = 45): int
+    public function activeListenerCount(int $withinSeconds = ListenerPresenceService::HEARTBEAT_SECONDS): int
     {
-        return $this->listenerSessions()
-            ->where('last_seen_at', '>=', now()->subSeconds($withinSeconds))
-            ->count();
+        return app(ListenerPresenceService::class)->countForEvent($this, $withinSeconds);
     }
 
     public function artworkUrl(): ?string
