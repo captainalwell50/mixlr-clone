@@ -71,7 +71,18 @@ class ApiMobileAuthTest extends TestCase
 
         $this->getJson('/api/v1/discover')
             ->assertOk()
-            ->assertJsonCount(1, 'streams');
+            ->assertJsonCount(1, 'streams')
+            ->assertJsonStructure([
+                'streams' => [
+                    [
+                        'uuid',
+                        'title',
+                        'organization',
+                        'logo_url',
+                        'artwork_url',
+                    ],
+                ],
+            ]);
 
         $this->getJson('/api/v1/listen/'.$stream->uuid)
             ->assertOk()

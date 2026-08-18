@@ -30,8 +30,10 @@ class CacheStore {
               'status': s.status,
               'organization': s.organization,
               'theme_color': s.themeColor,
+              'logo_url': s.logoUrl,
               'artwork_url': s.artworkUrl,
               'hls_url': s.hlsUrl,
+              'creator_type': s.creatorType,
             },
           )
           .toList(),

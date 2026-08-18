@@ -82,6 +82,7 @@ class ListenApiController extends Controller
                 : (string) $stream->status,
             'organization' => $org?->name,
             'theme_color' => $org?->themeColor(),
+            'logo_url' => $org?->logoUrl(),
             'artwork_url' => $org?->artworkUrl(),
             'creator_type' => $org?->creator_type?->value,
             'hls_url' => $stream->hlsPlaylistUrl(),

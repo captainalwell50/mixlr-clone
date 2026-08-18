@@ -300,6 +300,8 @@ class _StreamTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = card.organization ?? card.title;
+
     return Material(
       color: LiveMixTheme.panel,
       borderRadius: BorderRadius.circular(16),
@@ -310,25 +312,9 @@ class _StreamTile extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: LiveMixTheme.ink,
-                  borderRadius: BorderRadius.circular(12),
-                  image: card.artworkUrl != null
-                      ? DecorationImage(
-                          image: NetworkImage(card.artworkUrl!),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                ),
-                child: card.artworkUrl == null
-                    ? const Icon(
-                        Icons.graphic_eq_rounded,
-                        color: LiveMixTheme.gold,
-                      )
-                    : null,
+              _CreatorLogo(
+                logoUrl: card.logoUrl,
+                label: label,
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -372,5 +358,72 @@ class _StreamTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _CreatorLogo extends StatelessWidget {
+  const _CreatorLogo({required this.logoUrl, required this.label});
+
+  final String? logoUrl;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = logoUrl?.trim();
+    final hasUrl = url != null && url.isNotEmpty;
+
+    return ClipOval(
+      child: Container(
+        width: 52,
+        height: 52,
+        color: LiveMixTheme.panelHi,
+        alignment: Alignment.center,
+        child: hasUrl
+            ? Image.network(
+                url,
+                width: 52,
+                height: 52,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _Initials(label: label),
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return _Initials(label: label, soft: true);
+                },
+              )
+            : _Initials(label: label),
+      ),
+    );
+  }
+}
+
+class _Initials extends StatelessWidget {
+  const _Initials({required this.label, this.soft = false});
+
+  final String label;
+  final bool soft;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      _initials(label),
+      style: GoogleFonts.outfit(
+        color: soft
+            ? LiveMixTheme.mute.withValues(alpha: 0.7)
+            : LiveMixTheme.accentBright,
+        fontWeight: FontWeight.w700,
+        fontSize: 16,
+      ),
+    );
+  }
+
+  String _initials(String value) {
+    final parts = value.trim().split(RegExp(r'\s+'));
+    if (parts.length >= 2 &&
+        parts[0].isNotEmpty &&
+        parts[1].isNotEmpty) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    if (value.trim().isNotEmpty) return value.trim()[0].toUpperCase();
+    return '?';
   }
 }

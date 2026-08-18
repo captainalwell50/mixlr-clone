@@ -136,6 +136,7 @@ class DiscoverCard {
     required this.status,
     this.organization,
     this.themeColor,
+    this.logoUrl,
     this.artworkUrl,
     this.hlsUrl,
     this.creatorType,
@@ -146,6 +147,8 @@ class DiscoverCard {
   final String status;
   final String? organization;
   final String? themeColor;
+  /// Creator/org logo (preferred for list identity over [artworkUrl]).
+  final String? logoUrl;
   final String? artworkUrl;
   final String? hlsUrl;
   final String? creatorType;
@@ -157,6 +160,7 @@ class DiscoverCard {
       status: json['status'] as String? ?? 'live',
       organization: json['organization'] as String?,
       themeColor: json['theme_color'] as String?,
+      logoUrl: json['logo_url'] as String?,
       artworkUrl: json['artwork_url'] as String?,
       hlsUrl: json['hls_url'] as String?,
       creatorType: json['creator_type'] as String?,
