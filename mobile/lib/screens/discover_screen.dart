@@ -23,16 +23,27 @@ class DiscoverScreen extends StatefulWidget {
 
 class _DiscoverScreenState extends State<DiscoverScreen> {
   final _cache = CacheStore();
+  final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
   List<DiscoverCard> _streams = [];
   DateTime? _cachedAt;
   bool _loading = true;
   bool _fromCache = false;
+  bool _searchOpen = false;
+  String _query = '';
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
   }
 
   Future<void> _bootstrap() async {
@@ -85,15 +96,87 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     }
   }
 
+  List<DiscoverCard> get _filtered {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _streams;
+    return _streams.where((card) {
+      final title = card.title.toLowerCase();
+      final org = (card.organization ?? '').toLowerCase();
+      return title.contains(q) || org.contains(q);
+    }).toList();
+  }
+
+  void _openSearch() {
+    setState(() => _searchOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocus.requestFocus();
+    });
+  }
+
+  void _closeSearch() {
+    setState(() {
+      _searchOpen = false;
+      _query = '';
+      _searchController.clear();
+    });
+  }
+
+  void _openRoom(DiscoverCard card) {
+    context.read<SelectedChannel>().select(
+          uuid: card.uuid,
+          title: card.title,
+          organization: card.organization,
+          artworkUrl: card.artworkUrl,
+          creatorType: card.creatorType,
+        );
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ListenScreen(streamUuid: card.uuid),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final visible = _filtered;
+
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 16,
-        title: const BrandMark(size: 32, compact: true),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 12),
+        title: _searchOpen
+            ? TextField(
+                controller: _searchController,
+                focusNode: _searchFocus,
+                autofocus: true,
+                style: const TextStyle(color: LiveMixTheme.mist),
+                cursorColor: LiveMixTheme.accent,
+                decoration: const InputDecoration(
+                  hintText: 'Search creators…',
+                  hintStyle: TextStyle(color: LiveMixTheme.mute),
+                  border: InputBorder.none,
+                  filled: false,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                textInputAction: TextInputAction.search,
+                onChanged: (v) => setState(() => _query = v),
+              )
+            : const BrandMark(size: 32, compact: true),
+        actions: [
+          if (_searchOpen)
+            IconButton(
+              tooltip: 'Close search',
+              onPressed: _closeSearch,
+              icon: const Icon(Icons.close_rounded),
+            )
+          else
+            IconButton(
+              tooltip: 'Search creators',
+              onPressed: _openSearch,
+              icon: const Icon(Icons.search_rounded),
+            ),
+          const Padding(
+            padding: EdgeInsets.only(right: 8),
             child: Center(child: NetworkPill()),
           ),
         ],
@@ -114,7 +197,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
                 children: [
                   Text(
-                    'Live now',
+                    _searchOpen && _query.trim().isNotEmpty
+                        ? 'Search results'
+                        : 'Live now',
                     style: GoogleFonts.outfit(
                       color: LiveMixTheme.mist,
                       fontSize: 26,
@@ -124,17 +209,24 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _fromCache && _cachedAt != null
-                        ? 'Saved ${_relative(_cachedAt!)} · pull to refresh'
-                        : Brand.tagline,
+                    _searchOpen && _query.trim().isNotEmpty
+                        ? (visible.isEmpty
+                            ? 'No creators match “${_query.trim()}”'
+                            : '${visible.length} match${visible.length == 1 ? '' : 'es'}')
+                        : (_fromCache && _cachedAt != null
+                            ? 'Saved ${_relative(_cachedAt!)} · pull to refresh'
+                            : Brand.tagline),
                     style: const TextStyle(color: LiveMixTheme.mute),
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Text(_error!, style: const TextStyle(color: LiveMixTheme.warn)),
+                    Text(
+                      _error!,
+                      style: const TextStyle(color: LiveMixTheme.warn),
+                    ),
                   ],
                   const SizedBox(height: 18),
-                  if (_streams.isEmpty)
+                  if (visible.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(28),
                       decoration: BoxDecoration(
@@ -144,13 +236,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       child: Column(
                         children: [
                           Icon(
-                            Icons.radar_rounded,
+                            _searchOpen && _query.trim().isNotEmpty
+                                ? Icons.search_off_rounded
+                                : Icons.radar_rounded,
                             size: 48,
-                            color: LiveMixTheme.gold.withOpacity(0.8),
+                            color: LiveMixTheme.gold.withValues(alpha: 0.8),
                           ),
                           const SizedBox(height: 14),
                           Text(
-                            'No live rooms right now',
+                            _searchOpen && _query.trim().isNotEmpty
+                                ? 'No matching creators'
+                                : 'No live rooms right now',
                             style: GoogleFonts.outfit(
                               color: LiveMixTheme.mist,
                               fontWeight: FontWeight.w700,
@@ -158,19 +254,29 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          const Text(
-                            'When a creator goes on air, they’ll show up here.',
+                          Text(
+                            _searchOpen && _query.trim().isNotEmpty
+                                ? 'Try another name, or clear search to see who’s live.'
+                                : 'When a creator goes on air, they’ll show up here.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: LiveMixTheme.mute, height: 1.4),
+                            style: const TextStyle(
+                              color: LiveMixTheme.mute,
+                              height: 1.4,
+                            ),
                           ),
                         ],
                       ),
                     )
                   else
-                    ..._streams.map((card) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _StreamTile(card: card),
-                        )),
+                    ...visible.map(
+                      (card) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _StreamTile(
+                          card: card,
+                          onTap: () => _openRoom(card),
+                        ),
+                      ),
+                    ),
                 ],
               ),
       ),
@@ -187,9 +293,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 }
 
 class _StreamTile extends StatelessWidget {
-  const _StreamTile({required this.card});
+  const _StreamTile({required this.card, required this.onTap});
 
   final DiscoverCard card;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -198,19 +305,7 @@ class _StreamTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          context.read<SelectedChannel>().select(
-                uuid: card.uuid,
-                title: card.title,
-                organization: card.organization,
-                artworkUrl: card.artworkUrl,
-              );
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ListenScreen(streamUuid: card.uuid),
-            ),
-          );
-        },
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -229,7 +324,10 @@ class _StreamTile extends StatelessWidget {
                       : null,
                 ),
                 child: card.artworkUrl == null
-                    ? const Icon(Icons.graphic_eq_rounded, color: LiveMixTheme.gold)
+                    ? const Icon(
+                        Icons.graphic_eq_rounded,
+                        color: LiveMixTheme.gold,
+                      )
                     : null,
               ),
               const SizedBox(width: 14),
@@ -254,7 +352,8 @@ class _StreamTile extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
                   color: LiveMixTheme.liveSoft,
                   borderRadius: BorderRadius.circular(8),

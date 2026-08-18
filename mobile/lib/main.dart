@@ -13,6 +13,7 @@ import 'screens/splash_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'services/auth_state.dart';
 import 'services/cache_store.dart';
+import 'services/listen_controller.dart';
 import 'services/network_status.dart';
 import 'services/selected_channel.dart';
 import 'services/whep_listener.dart';
@@ -66,6 +67,13 @@ class LiveMixApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthState()..bootstrap()),
         ChangeNotifierProvider(create: (_) => NetworkStatus()..start()),
         ChangeNotifierProvider(create: (_) => SelectedChannel()),
+        ChangeNotifierProvider(
+          create: (context) => ListenController(
+            auth: context.read<AuthState>(),
+            network: context.read<NetworkStatus>(),
+            channel: context.read<SelectedChannel>(),
+          ),
+        ),
       ],
       child: MaterialApp(
         title: Brand.name,

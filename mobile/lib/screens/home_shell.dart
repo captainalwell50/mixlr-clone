@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../platform_info.dart';
+import '../widgets/listen_session_overlay.dart';
 import '../widgets/network_banner.dart';
 import 'creator_home_screen.dart';
 import 'discover_screen.dart';
@@ -78,22 +79,24 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final desktop = PlatformInfo.isDesktop;
 
-    final body = Column(
-      children: [
-        const NetworkBanner(),
-        Expanded(
-          child: IndexedStack(
-            index: _index,
-            children: const [
-              DiscoverScreen(),
-              ScriptureScreen(),
-              GalleryScreen(),
-              CreatorHomeScreen(),
-              ProfileScreen(),
-            ],
+    final body = ListenSessionOverlay(
+      child: Column(
+        children: [
+          const NetworkBanner(),
+          Expanded(
+            child: IndexedStack(
+              index: _index,
+              children: const [
+                DiscoverScreen(),
+                ScriptureScreen(),
+                GalleryScreen(),
+                CreatorHomeScreen(),
+                ProfileScreen(),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
 
     if (desktop) {
