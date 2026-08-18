@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// Last channel the listener opened — shared by Listen, Scripture, and Gallery tabs.
+/// Last channel the listener opened — shared by Listen and Gallery tabs.
 class SelectedChannel extends ChangeNotifier {
   String? uuid;
   String? title;

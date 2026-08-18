@@ -834,55 +834,78 @@ class _ListenScreenState extends State<ListenScreen>
                                   ),
                                   const SizedBox(height: 18),
                                   // Artwork stage — EasyWorship scripture overlays when the
-                                  // church board is enabled (same cue as the Scripture tab).
-                                  AspectRatio(
-                                    aspectRatio: 16 / 10,
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(20),
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          DecoratedBox(
-                                            decoration: BoxDecoration(
-                                              color: LiveMixTheme.panel,
-                                              gradient: p?.artworkUrl == null
-                                                  ? const LinearGradient(
-                                                      begin: Alignment.topLeft,
-                                                      end: Alignment.bottomRight,
-                                                      colors: [
-                                                        Color(0xFF242933),
-                                                        Color(0xFF151820),
-                                                      ],
-                                                    )
-                                                  : null,
-                                              image: p?.artworkUrl != null
-                                                  ? DecorationImage(
-                                                      image: NetworkImage(
-                                                        p!.artworkUrl!,
+                                  // church board is enabled. Taller when scripture is active
+                                  // so verse text uses the empty space below the player.
+                                  Builder(
+                                    builder: (context) {
+                                      final screenH =
+                                          MediaQuery.sizeOf(context).height;
+                                      final stageH = _scriptureEnabled
+                                          ? (screenH * 0.46).clamp(320.0, 520.0)
+                                          : null;
+                                      final stage = ClipRRect(
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                color: LiveMixTheme.panel,
+                                                gradient: p?.artworkUrl == null
+                                                    ? const LinearGradient(
+                                                        begin: Alignment.topLeft,
+                                                        end: Alignment
+                                                            .bottomRight,
+                                                        colors: [
+                                                          Color(0xFF242933),
+                                                          Color(0xFF151820),
+                                                        ],
+                                                      )
+                                                    : null,
+                                                image: p?.artworkUrl != null
+                                                    ? DecorationImage(
+                                                        image: NetworkImage(
+                                                          p!.artworkUrl!,
+                                                        ),
+                                                        fit: BoxFit.cover,
+                                                      )
+                                                    : null,
+                                              ),
+                                              child: p?.artworkUrl == null &&
+                                                      !_scriptureEnabled
+                                                  ? Center(
+                                                      child: Icon(
+                                                        Icons
+                                                            .graphic_eq_rounded,
+                                                        size: 64,
+                                                        color: LiveMixTheme
+                                                            .gold
+                                                            .withOpacity(
+                                                          0.55 + _pulse * 0.4,
+                                                        ),
                                                       ),
-                                                      fit: BoxFit.cover,
                                                     )
                                                   : null,
                                             ),
-                                            child: p?.artworkUrl == null &&
-                                                    !_scriptureEnabled
-                                                ? Center(
-                                                    child: Icon(
-                                                      Icons.graphic_eq_rounded,
-                                                      size: 64,
-                                                      color: LiveMixTheme.gold
-                                                          .withOpacity(
-                                                        0.55 + _pulse * 0.4,
-                                                      ),
-                                                    ),
-                                                  )
-                                                : null,
-                                          ),
-                                          if (_scriptureEnabled)
-                                            ScriptureArtOverlay(cue: _scripture),
-                                        ],
-                                      ),
-                                    ),
+                                            if (_scriptureEnabled)
+                                              ScriptureArtOverlay(
+                                                cue: _scripture,
+                                              ),
+                                          ],
+                                        ),
+                                      );
+                                      if (stageH != null) {
+                                        return SizedBox(
+                                          height: stageH,
+                                          width: double.infinity,
+                                          child: stage,
+                                        );
+                                      }
+                                      return AspectRatio(
+                                        aspectRatio: 16 / 10,
+                                        child: stage,
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
