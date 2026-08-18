@@ -11,6 +11,7 @@ import '../services/auth_state.dart';
 import '../services/selected_channel.dart';
 import '../theme.dart';
 import '../widgets/brand_mark.dart';
+import '../widgets/scripture_board.dart';
 import 'listen_screen.dart';
 
 /// Dedicated Scripture tab — polls the same public listen scripture API used
@@ -269,7 +270,7 @@ class _ScriptureScreenState extends State<ScriptureScreen> {
                     'This channel has not enabled the live scripture board, or nothing is posted yet.',
               )
             else
-              _ScriptureBoardCard(cue: _cue),
+              ScriptureBoardCard(cue: _cue),
             if (selected.hasSelection) ...[
               const SizedBox(height: 18),
               OutlinedButton.icon(
@@ -286,94 +287,6 @@ class _ScriptureScreenState extends State<ScriptureScreen> {
             ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ScriptureBoardCard extends StatelessWidget {
-  const _ScriptureBoardCard({this.cue});
-
-  final ScriptureCue? cue;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1A3D37), Color(0xFF141C19)],
-        ),
-        border: Border.all(color: LiveMixTheme.accent.withOpacity(0.35)),
-        boxShadow: [
-          BoxShadow(
-            color: LiveMixTheme.accent.withOpacity(0.12),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'SCRIPTURE BOARD',
-                style: GoogleFonts.outfit(
-                  color: LiveMixTheme.accentBright,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                cue?.version ?? 'KJV',
-                style: const TextStyle(
-                  color: LiveMixTheme.mute,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (cue == null) ...[
-            Text(
-              'Waiting for the next verse…',
-              style: GoogleFonts.outfit(
-                color: LiveMixTheme.mute,
-                fontSize: 16,
-                height: 1.4,
-              ),
-            ),
-          ] else ...[
-            Text(
-              cue!.ref,
-              style: GoogleFonts.outfit(
-                color: LiveMixTheme.mist,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.4,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              cue!.text,
-              style: GoogleFonts.outfit(
-                color: LiveMixTheme.mist.withOpacity(0.94),
-                fontSize: 17,
-                height: 1.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }

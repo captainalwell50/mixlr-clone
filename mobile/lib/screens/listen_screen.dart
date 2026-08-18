@@ -18,6 +18,8 @@ import '../services/selected_channel.dart';
 import '../services/whep_listener.dart';
 import '../theme.dart';
 import '../widgets/network_banner.dart';
+import '../widgets/permission_disclosure.dart';
+import '../widgets/scripture_board.dart';
 import '../widgets/signal_meter.dart';
 import 'login_screen.dart';
 
@@ -64,10 +66,10 @@ class _ListenScreenState extends State<ListenScreen>
   bool _scriptureEnabled = false;
   ScriptureCue? _scripture;
 
-  /// Presence / scripture polls — keep chatty enough for live cues, not enough
-  /// to burn shared NAT / church-Wi‑Fi rate-limit budgets on refresh.
+  /// Presence / scripture polls — scripture is poll-only, so stay snappy for live cues.
+  /// listen-poll rate limit is 900/min per route+identity; 3s leaves ample headroom.
   static const _presencePoll = Duration(seconds: 30);
-  static const _scripturePoll = Duration(seconds: 15);
+  static const _scripturePoll = Duration(seconds: 3);
   static const _loadCooldown = Duration(seconds: 2);
 
   @override
@@ -190,6 +192,10 @@ class _ListenScreenState extends State<ListenScreen>
             playing: true,
           );
         } else {
+          // Disclosure + POST_NOTIFICATIONS before mediaPlayback FGS.
+          if (mounted) {
+            await PermissionDisclosure.ensureNotifications(context);
+          }
           await ListenPlaybackService.start(
             title: p.title,
             artist: p.orgName,
@@ -213,9 +219,17 @@ class _ListenScreenState extends State<ListenScreen>
     _presenceTimer?.cancel();
     _scriptureTimer?.cancel();
     _listenTick?.cancel();
-    unawaited(_whepSub?.cancel() ?? Future.value());
-    unawaited(_hlsSub?.cancel() ?? Future.value());
-    unawaited(_fgStopSub?.cancel() ?? Future.value());
+    // Cancel Dart subscriptions first so connection/player events cannot
+    // touch setState after the element is unmounted.
+    final whepSub = _whepSub;
+    final hlsSub = _hlsSub;
+    final fgStopSub = _fgStopSub;
+    _whepSub = null;
+    _hlsSub = null;
+    _fgStopSub = null;
+    unawaited(whepSub?.cancel() ?? Future.value());
+    unawaited(hlsSub?.cancel() ?? Future.value());
+    unawaited(fgStopSub?.cancel() ?? Future.value());
     unawaited(() async {
       await ListenPlaybackService.stop();
       await _stopMedia();
@@ -277,8 +291,14 @@ class _ListenScreenState extends State<ListenScreen>
           _loading = false;
           _connecting = false;
           _error = 'This channel is offline right now.';
+          if (payload.isChurch) _scriptureEnabled = true;
         });
         unawaited(_refreshScripture());
+        _scriptureTimer?.cancel();
+        _scriptureTimer = Timer.periodic(
+          _scripturePoll,
+          (_) => unawaited(_refreshScripture()),
+        );
         return;
       }
 
@@ -286,6 +306,7 @@ class _ListenScreenState extends State<ListenScreen>
       setState(() {
         _loading = false;
         _connecting = true;
+        if (payload.isChurch) _scriptureEnabled = true;
       });
 
       final started = await _startMedia(payload);
@@ -352,55 +373,59 @@ class _ListenScreenState extends State<ListenScreen>
     }
   }
 
-  /// Prefer WHEP (Opus Studio publishes). HLS is a fallback for AAC/RTMP only —
-  /// Opus-in-HLS hangs or fails silently in just_audio / ExoPlayer.
+  /// Dual-mode: prefer HLS when server says so (CDN / AAC sidecar), else WHEP.
+  /// Opus-in-HLS is skipped (ExoPlayer); WHEP remains the Studio fallback.
   Future<bool> _startMedia(ListenPayload payload) async {
-    final whepUrl = payload.whepUrl;
-    var whepAttempted = false;
-    if (whepUrl != null && whepUrl.isNotEmpty) {
-      whepAttempted = true;
-      try {
-        // Set mode before start so connection callbacks update UI during connect.
-        _mode = _ListenMode.whep;
-        await _whep.start(whepUrl).timeout(const Duration(seconds: 25));
-        // Never report success from signaling alone — require verified connect.
-        if (_whep.isConnected) return true;
-        throw Exception('WHEP connected without audio readiness.');
-      } catch (e) {
-        debugPrint('WHEP listen failed: $e');
-        _mode = _ListenMode.none;
-        try {
-          await _whep.stop();
-        } catch (_) {}
-        // Fall through to HLS only when the playlist is likely AAC (not Opus).
-      }
+    final preferHls = payload.preferHls || payload.playbackMode == 'hls';
+
+    if (preferHls) {
+      final hlsOk = await _tryHls(payload.hlsUrl);
+      if (hlsOk) return true;
+      return _tryWhep(payload.whepUrl);
     }
 
-    final hlsUrl = payload.hlsUrl;
-    if (hlsUrl != null && hlsUrl.isNotEmpty) {
-      final opusOnly = await _hlsLooksLikeOpus(hlsUrl);
-      if (opusOnly) {
-        // Studio WHIP → Opus HLS is not playable in ExoPlayer. Don't fake play.
-        debugPrint('Skipping Opus HLS fallback after WHEP failure.');
-        if (whepAttempted) return false;
-        return false;
-      }
-      try {
-        _mode = _ListenMode.hls;
-        await _player.setUrl(hlsUrl).timeout(const Duration(seconds: 12));
-        await _player.play().timeout(const Duration(seconds: 8));
-        // just_audio can report playing while decoding nothing — require playing.
-        return _player.playing;
-      } catch (e) {
-        debugPrint('HLS listen failed: $e');
-        _mode = _ListenMode.none;
-        try {
-          await _player.stop();
-        } catch (_) {}
-      }
-    }
+    final whepOk = await _tryWhep(payload.whepUrl);
+    if (whepOk) return true;
+    return _tryHls(payload.hlsUrl);
+  }
 
-    return false;
+  Future<bool> _tryWhep(String? whepUrl) async {
+    if (whepUrl == null || whepUrl.isEmpty) return false;
+    try {
+      _mode = _ListenMode.whep;
+      await _whep.start(whepUrl).timeout(const Duration(seconds: 25));
+      if (_whep.isConnected) return true;
+      throw Exception('WHEP connected without audio readiness.');
+    } catch (e) {
+      debugPrint('WHEP listen failed: $e');
+      _mode = _ListenMode.none;
+      try {
+        await _whep.stop();
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  Future<bool> _tryHls(String? hlsUrl) async {
+    if (hlsUrl == null || hlsUrl.isEmpty) return false;
+    final opusOnly = await _hlsLooksLikeOpus(hlsUrl);
+    if (opusOnly) {
+      debugPrint('Skipping Opus HLS (not playable in ExoPlayer).');
+      return false;
+    }
+    try {
+      _mode = _ListenMode.hls;
+      await _player.setUrl(hlsUrl).timeout(const Duration(seconds: 12));
+      await _player.play().timeout(const Duration(seconds: 8));
+      return _player.playing;
+    } catch (e) {
+      debugPrint('HLS listen failed: $e');
+      _mode = _ListenMode.none;
+      try {
+        await _player.stop();
+      } catch (_) {}
+      return false;
+    }
   }
 
   /// True when MediaMTX advertises Opus in the master playlist (Studio WHIP).
@@ -455,6 +480,10 @@ class _ListenScreenState extends State<ListenScreen>
         });
       }
       return;
+    }
+    // Church channels: show the board immediately (waiting state) while we poll.
+    if (payload?.isChurch == true && !_scriptureEnabled) {
+      setState(() => _scriptureEnabled = true);
     }
     if (!context.read<NetworkStatus>().hasLink) return;
     try {
@@ -804,50 +833,57 @@ class _ListenScreenState extends State<ListenScreen>
                                     ],
                                   ),
                                   const SizedBox(height: 18),
+                                  // Artwork stage — EasyWorship scripture overlays when the
+                                  // church board is enabled (same cue as the Scripture tab).
                                   AspectRatio(
                                     aspectRatio: 16 / 10,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: LiveMixTheme.panel,
-                                        borderRadius: BorderRadius.circular(20),
-                                        gradient: p?.artworkUrl == null
-                                            ? const LinearGradient(
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
-                                                colors: [
-                                                  Color(0xFF242933),
-                                                  Color(0xFF151820),
-                                                ],
-                                              )
-                                            : null,
-                                        image: p?.artworkUrl != null
-                                            ? DecorationImage(
-                                                image: NetworkImage(
-                                                  p!.artworkUrl!,
-                                                ),
-                                                fit: BoxFit.cover,
-                                              )
-                                            : null,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              color: LiveMixTheme.panel,
+                                              gradient: p?.artworkUrl == null
+                                                  ? const LinearGradient(
+                                                      begin: Alignment.topLeft,
+                                                      end: Alignment.bottomRight,
+                                                      colors: [
+                                                        Color(0xFF242933),
+                                                        Color(0xFF151820),
+                                                      ],
+                                                    )
+                                                  : null,
+                                              image: p?.artworkUrl != null
+                                                  ? DecorationImage(
+                                                      image: NetworkImage(
+                                                        p!.artworkUrl!,
+                                                      ),
+                                                      fit: BoxFit.cover,
+                                                    )
+                                                  : null,
+                                            ),
+                                            child: p?.artworkUrl == null &&
+                                                    !_scriptureEnabled
+                                                ? Center(
+                                                    child: Icon(
+                                                      Icons.graphic_eq_rounded,
+                                                      size: 64,
+                                                      color: LiveMixTheme.gold
+                                                          .withOpacity(
+                                                        0.55 + _pulse * 0.4,
+                                                      ),
+                                                    ),
+                                                  )
+                                                : null,
+                                          ),
+                                          if (_scriptureEnabled)
+                                            ScriptureArtOverlay(cue: _scripture),
+                                        ],
                                       ),
-                                      child: p?.artworkUrl == null
-                                          ? Center(
-                                              child: Icon(
-                                                Icons.graphic_eq_rounded,
-                                                size: 64,
-                                                color: LiveMixTheme.gold
-                                                    .withOpacity(
-                                                  0.55 + _pulse * 0.4,
-                                                ),
-                                              ),
-                                            )
-                                          : null,
                                     ),
                                   ),
-                                  // 3) Scripture board (church channels)
-                                  if (_scriptureEnabled) ...[
-                                    const SizedBox(height: 22),
-                                    _ScriptureBoard(cue: _scripture),
-                                  ],
                                 ],
                               ),
                   ),
@@ -855,83 +891,6 @@ class _ListenScreenState extends State<ListenScreen>
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ScriptureBoard extends StatelessWidget {
-  const _ScriptureBoard({this.cue});
-
-  final ScriptureCue? cue;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-      decoration: BoxDecoration(
-        color: LiveMixTheme.panel,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: LiveMixTheme.accent.withOpacity(0.22)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'SCRIPTURE',
-                style: GoogleFonts.outfit(
-                  color: LiveMixTheme.accentBright,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                cue?.version ?? 'KJV',
-                style: const TextStyle(
-                  color: LiveMixTheme.mute,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (cue == null) ...[
-            Text(
-              'Waiting for the next verse…',
-              style: GoogleFonts.outfit(
-                color: LiveMixTheme.mute,
-                fontSize: 15,
-                height: 1.4,
-              ),
-            ),
-          ] else ...[
-            Text(
-              cue!.ref,
-              style: GoogleFonts.outfit(
-                color: LiveMixTheme.mist,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              cue!.text,
-              style: GoogleFonts.outfit(
-                color: LiveMixTheme.mist.withOpacity(0.92),
-                fontSize: 16,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
         ],
       ),
     );
