@@ -90,8 +90,13 @@ class _PhoneWelcome extends StatelessWidget {
           const _Feature(
             icon: Icons.headphones_rounded,
             title: 'Listen',
-            body:
-                'Discover live rooms. Church streams show a live scripture board.',
+            body: 'Discover live rooms and keep listening from cache when offline.',
+          ),
+          const SizedBox(height: 10),
+          const _Feature(
+            icon: Icons.menu_book_rounded,
+            title: 'Scripture',
+            body: 'Follow the live scripture board during church gatherings.',
           ),
           const SizedBox(height: 10),
           const _Feature(
@@ -172,29 +177,42 @@ class _DesktopWelcome extends StatelessWidget {
                   const SizedBox(height: 36),
                   Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: _FeatureCard(
                           icon: Icons.headphones_rounded,
                           title: 'Listen',
-                          body:
-                              'Discover live rooms. Church streams show a live scripture board.',
+                          body: 'Discover live rooms. Cache keeps browsing snappy offline.',
                         ),
                       ),
                       const SizedBox(width: 14),
-                      const Expanded(
+                      Expanded(
+                        child: _FeatureCard(
+                          icon: Icons.menu_book_rounded,
+                          title: 'Scripture',
+                          body: 'Live scripture board for church gatherings.',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
                         child: _FeatureCard(
                           icon: Icons.photo_library_rounded,
                           title: 'Gallery',
                           body: 'Photos and reels while a channel is live.',
                         ),
                       ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _FeatureCard(
+                          icon: Icons.mic_rounded,
+                          title: 'Studio',
+                          body: 'Go live from your desk with mic publish.',
+                        ),
+                      ),
                     ],
-                  ),
-                  const SizedBox(height: 14),
-                  const _FeatureCard(
-                    icon: Icons.mic_rounded,
-                    title: 'Studio',
-                    body: 'Go live from your desk with mic publish.',
                   ),
                   const SizedBox(height: 18),
                   const _NavPreview(),
@@ -480,6 +498,7 @@ class _NavPreview extends StatelessWidget {
 
   static const _tabs = [
     (Icons.headphones_rounded, 'Listen'),
+    (Icons.menu_book_rounded, 'Scripture'),
     (Icons.photo_library_rounded, 'Gallery'),
     (Icons.mic_rounded, 'Studio'),
     (Icons.person_rounded, 'Profile'),

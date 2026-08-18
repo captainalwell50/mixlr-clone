@@ -6,6 +6,7 @@ import 'creator_home_screen.dart';
 import 'discover_screen.dart';
 import 'gallery_screen.dart';
 import 'profile_screen.dart';
+import 'scripture_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -22,6 +23,11 @@ class _HomeShellState extends State<HomeShell> {
       icon: Icon(Icons.headphones_outlined),
       selectedIcon: Icon(Icons.headphones),
       label: 'Listen',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.menu_book_outlined),
+      selectedIcon: Icon(Icons.menu_book_rounded),
+      label: 'Scripture',
     ),
     NavigationDestination(
       icon: Icon(Icons.photo_library_outlined),
@@ -45,6 +51,11 @@ class _HomeShellState extends State<HomeShell> {
       icon: Icon(Icons.headphones_outlined),
       selectedIcon: Icon(Icons.headphones),
       label: Text('Listen'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.menu_book_outlined),
+      selectedIcon: Icon(Icons.menu_book_rounded),
+      label: Text('Scripture'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.photo_library_outlined),
@@ -75,6 +86,7 @@ class _HomeShellState extends State<HomeShell> {
             index: _index,
             children: const [
               DiscoverScreen(),
+              ScriptureScreen(),
               GalleryScreen(),
               CreatorHomeScreen(),
               ProfileScreen(),

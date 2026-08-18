@@ -14,8 +14,8 @@ import '../widgets/brand_mark.dart';
 import '../widgets/scripture_board.dart';
 import 'listen_screen.dart';
 
-/// Dedicated Scripture board screen (not in bottom nav). Polls the same public
-/// listen scripture API used during live listen. Does not replace the in-listen
+/// Dedicated Scripture board screen in bottom nav. Polls the same public listen
+/// scripture API used during live listen. Does not replace the in-listen
 /// scripture overlay.
 class ScriptureScreen extends StatefulWidget {
   const ScriptureScreen({super.key});
