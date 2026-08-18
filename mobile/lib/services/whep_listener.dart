@@ -67,23 +67,12 @@ class WhepListener {
     } else if (WebRTC.platformIsIOS) {
       await WebRTC.initialize();
       await _configureAudioSessionForListen();
+      // Listen-only: playback / remoteOnly. Do NOT call setSpeakerphoneOn —
+      // flutter_webrtc 0.11.x posts onDeviceChange with a nil EventSink and
+      // SIGSEGVs (__postEvent_block_invoke) when FlutterWebRTC.Event has no
+      // Dart listener yet (common on cold WHEP connect in the simulator).
       try {
-        await Helper.setAppleAudioIOMode(
-          AppleAudioIOMode.remoteOnly,
-          preferSpeakerOutput: true,
-        );
-        // Explicit default-to-speaker for playAndRecord fallbacks.
-        await Helper.setAppleAudioConfiguration(
-          AppleAudioConfiguration(
-            appleAudioCategory: AppleAudioCategory.playAndRecord,
-            appleAudioCategoryOptions: {
-              AppleAudioCategoryOption.defaultToSpeaker,
-              AppleAudioCategoryOption.allowBluetooth,
-              AppleAudioCategoryOption.mixWithOthers,
-            },
-            appleAudioMode: AppleAudioMode.videoChat,
-          ),
-        );
+        await Helper.setAppleAudioIOMode(AppleAudioIOMode.remoteOnly);
       } catch (_) {}
     } else {
       await WebRTC.initialize();
@@ -365,6 +354,23 @@ class WhepListener {
     _iceConnected = false;
     _audioTrack = null;
 
+    // Detach native→Dart event sinks before closing the PC so late ICE/track
+    // callbacks cannot post into a disposed Flutter engine.
+    final pc = _pc;
+    _pc = null;
+    if (pc != null) {
+      pc.onTrack = null;
+      pc.onIceConnectionState = null;
+      pc.onConnectionState = null;
+      pc.onIceCandidate = null;
+      pc.onIceGatheringState = null;
+      pc.onSignalingState = null;
+      pc.onAddStream = null;
+      pc.onRemoveStream = null;
+      pc.onDataChannel = null;
+      pc.onRenegotiationNeeded = null;
+    }
+
     if (_resourceUrl != null) {
       try {
         await http.delete(Uri.parse(_resourceUrl!)).timeout(
@@ -389,8 +395,9 @@ class WhepListener {
       _renderer = null;
     }
 
-    await _pc?.close();
-    _pc = null;
+    try {
+      await pc?.close();
+    } catch (_) {}
     _iceState = null;
     await AndroidListenAudio.releasePlayback();
     _setConnection(WhepConnectionState.idle);
@@ -412,27 +419,15 @@ class WhepListener {
       // Re-assert after AudioSwitch activates (can race with onTrack / ICE).
       await AndroidListenAudio.forceSpeaker();
       _armSpeakerReassert();
+      return;
     }
     if (WebRTC.platformIsIOS) {
+      // iOS listen routing: AVAudioSession playback + WebRTC remoteOnly.
+      // Never call Helper.setSpeakerphoneOn here — see ensureWebRtcInitialized.
       try {
         await _configureAudioSessionForListen();
+        await Helper.setAppleAudioIOMode(AppleAudioIOMode.remoteOnly);
         await Helper.ensureAudioSession();
-        await Helper.setAppleAudioIOMode(
-          AppleAudioIOMode.remoteOnly,
-          preferSpeakerOutput: true,
-        );
-        await Helper.setAppleAudioConfiguration(
-          AppleAudioConfiguration(
-            appleAudioCategory: AppleAudioCategory.playAndRecord,
-            appleAudioCategoryOptions: {
-              AppleAudioCategoryOption.defaultToSpeaker,
-              AppleAudioCategoryOption.allowBluetooth,
-              AppleAudioCategoryOption.mixWithOthers,
-            },
-            appleAudioMode: AppleAudioMode.videoChat,
-          ),
-        );
-        await Helper.setSpeakerphoneOn(true);
       } catch (_) {}
     }
   }
@@ -521,9 +516,18 @@ class WhepListener {
 
   void _armIceWatchdog() {
     _iceWatchdog?.cancel();
-    _iceWatchdog = Timer(const Duration(seconds: 8), () {
+    // Give ICE a longer chance to heal; ListenController resubscribes on failed.
+    _iceWatchdog = Timer(const Duration(seconds: 15), () {
       if (_connectionState == WhepConnectionState.reconnecting) {
-        _setConnection(WhepConnectionState.failed);
+        // Soft ICE restart once before declaring failure.
+        try {
+          _pc?.restartIce();
+        } catch (_) {}
+        _iceWatchdog = Timer(const Duration(seconds: 10), () {
+          if (_connectionState == WhepConnectionState.reconnecting) {
+            _setConnection(WhepConnectionState.failed);
+          }
+        });
       }
     });
   }

@@ -176,6 +176,11 @@ let liveStartedAt = 0;
 let timerInterval = 0;
 /** @type {'mixer' | null} */
 let publishMode = null;
+/** Auto-republish WHIP after publisher network drops while still on air. */
+let publisherReconnectTimer = null;
+let publisherDisconnectGraceTimer = null;
+let publisherReconnectAttempt = 0;
+let publisherRepublishing = false;
 
 /** @type {MediaRecorder|null} */
 let localRecorder = null;
@@ -229,6 +234,9 @@ function updateTimer() {
 
 function setOnAir(live) {
     isLive = live;
+    if (!live) {
+        clearPublisherReconnect();
+    }
     if (heroHint) {
         if (live) {
             heroHint.textContent = 'You’re broadcasting — Pause keeps this event; End live closes it.';
@@ -1548,6 +1556,7 @@ async function publishWhip(stream) {
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
     silenceRemoteAudio(pc);
+    bindPublisherPeerWatch(pc);
 
     try {
         await track.applyConstraints(audioCaptureConstraints());
@@ -1612,6 +1621,112 @@ async function publishWhip(stream) {
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     silenceRemoteAudio(pc);
     await applyMaxAudioBitrate(pc);
+}
+
+function clearPublisherReconnect() {
+    if (publisherReconnectTimer) {
+        window.clearTimeout(publisherReconnectTimer);
+        publisherReconnectTimer = null;
+    }
+    if (publisherDisconnectGraceTimer) {
+        window.clearTimeout(publisherDisconnectGraceTimer);
+        publisherDisconnectGraceTimer = null;
+    }
+    publisherReconnectAttempt = 0;
+    publisherRepublishing = false;
+}
+
+function bindPublisherPeerWatch(peer) {
+    peer.onconnectionstatechange = () => {
+        if (peer !== pc || !isLive || publishMode !== 'mixer') {
+            return;
+        }
+        const state = peer.connectionState;
+        if (state === 'connected') {
+            if (publisherDisconnectGraceTimer) {
+                window.clearTimeout(publisherDisconnectGraceTimer);
+                publisherDisconnectGraceTimer = null;
+            }
+            publisherReconnectAttempt = 0;
+            return;
+        }
+        if (state === 'failed') {
+            schedulePublisherReconnect('Broadcast link failed — reconnecting…');
+            return;
+        }
+        if (state === 'disconnected') {
+            // Brief ICE blips often recover — wait before tearing down WHIP.
+            if (publisherDisconnectGraceTimer) {
+                return;
+            }
+            publisherDisconnectGraceTimer = window.setTimeout(() => {
+                publisherDisconnectGraceTimer = null;
+                if (peer !== pc || !isLive) {
+                    return;
+                }
+                if (pc?.connectionState === 'connected' || pc?.connectionState === 'connecting') {
+                    return;
+                }
+                schedulePublisherReconnect('Network dropped — republishing…');
+            }, 12_000);
+        }
+    };
+}
+
+function schedulePublisherReconnect(message) {
+    if (!isLive || publishMode !== 'mixer' || publisherRepublishing) {
+        return;
+    }
+    if (publisherReconnectTimer) {
+        return;
+    }
+    setStatus(message);
+    const delay = Math.min(30_000, 1500 * 2 ** publisherReconnectAttempt);
+    publisherReconnectAttempt = Math.min(publisherReconnectAttempt + 1, 6);
+    publisherReconnectTimer = window.setTimeout(() => {
+        publisherReconnectTimer = null;
+        void republishWhipWhileLive();
+    }, delay);
+}
+
+async function republishWhipWhileLive() {
+    if (!isLive || publishMode !== 'mixer' || publisherRepublishing) {
+        return;
+    }
+    if (!mixDest?.stream) {
+        schedulePublisherReconnect('Mixer not ready — retrying publish…');
+        return;
+    }
+    publisherRepublishing = true;
+    setStatus('Reconnecting broadcast…');
+    try {
+        if (whipResourceUrl) {
+            try {
+                await fetch(whipResourceUrl, { method: 'DELETE' });
+            } catch {
+                /* ignore */
+            }
+            whipResourceUrl = null;
+        }
+        if (pc) {
+            pc.onconnectionstatechange = null;
+            pc.close();
+            pc = null;
+        }
+        await publishWhip(mixDest.stream);
+        publisherReconnectAttempt = 0;
+        setStatus(
+            anyCueOn()
+                ? 'You’re broadcasting again. Cue is on — use headphones to avoid feedback.'
+                : 'You’re broadcasting again.',
+        );
+    } catch (e) {
+        console.error(e);
+        setStatus(friendlyError(e));
+        schedulePublisherReconnect('Could not republish — retrying…');
+    } finally {
+        publisherRepublishing = false;
+    }
 }
 
 async function primeMicrophone({ interactive = false } = {}) {
@@ -1860,6 +1975,7 @@ btnStop?.addEventListener('click', async () => {
 
 async function teardownPublisher({ keepEvent }) {
     publishMode = null;
+    clearPublisherReconnect();
     stopMeter();
     await stopLocalRecording();
 

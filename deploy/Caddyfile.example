@@ -1,10 +1,12 @@
 # Azure VM / single-host: Laravel + MediaMTX behind HTTPS.
 # Apex + Mixlr-style channel subdomains: https://{slug}.soundmix.live
 #
-# DNS (Namecheap / your registrar):
-#   A     @                 → VM public IP
-#   A     www               → VM public IP
-#   A     *                 → VM public IP   (wildcard for channel subdomains)
+# DNS (Cloudflare recommended):
+#   A     @                 → VM public IP   DNS only (grey) — WebRTC safety
+#   A     www               → VM public IP   DNS only (grey)
+#   A     *                 → VM public IP   DNS only (grey)
+#   A     cdn               → VM public IP   Proxied (orange) — HLS cache only
+# SSL/TLS mode: Full (self-signed/origin cert OK). Full Strict needs Origin CA or public cert.
 #
 # Laravel .env:
 #   APP_URL=https://soundmix.live
@@ -40,7 +42,14 @@ soundmix.live, www.soundmix.live {
 
 	handle /hls/* {
 		uri strip_prefix /hls
-		reverse_proxy 127.0.0.1:8888
+		reverse_proxy 127.0.0.1:8888 {
+			# Never surface MediaMTX Basic challenges on public playlists/segments.
+			header_down -WWW-Authenticate
+		}
+		@playlist path *.m3u8
+		header @playlist Cache-Control "public, max-age=2, must-revalidate"
+		@segment path *.m4s *.ts *.mp4
+		header @segment Cache-Control "public, max-age=15"
 	}
 
 	handle /rtc/* {
@@ -73,6 +82,29 @@ soundmix.live, www.soundmix.live {
 		try_files {path} {path}/ /index.php?{query}
 		php_fastcgi unix//run/php/php8.4-fpm.sock
 		file_server
+	}
+}
+
+# HLS CDN origin — Cloudflare orange-clouds this host only
+cdn.soundmix.live {
+	encode gzip zstd
+
+	# Self-signed OK for Cloudflare SSL Full. For Full Strict use Origin CA.
+	tls /etc/caddy/certs/cdn.soundmix.live.crt /etc/caddy/certs/cdn.soundmix.live.key
+
+	handle /hls/* {
+		uri strip_prefix /hls
+		reverse_proxy 127.0.0.1:8888 {
+			header_down -WWW-Authenticate
+		}
+		@playlist path *.m3u8
+		header @playlist Cache-Control "public, max-age=2, must-revalidate"
+		@segment path *.m4s *.ts *.mp4
+		header @segment Cache-Control "public, max-age=15"
+	}
+
+	handle {
+		respond "SoundMix CDN — HLS only" 404
 	}
 }
 

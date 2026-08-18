@@ -57,15 +57,21 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _presenceTimer;
   Timer? _scriptureTimer;
   Timer? _listenTick;
+  Timer? _statusTimer;
+  Timer? _reconnectTimer;
   StreamSubscription<WhepConnectionState>? _whepSub;
   StreamSubscription<PlayerState>? _hlsSub;
   StreamSubscription? _fgStopSub;
   DateTime? _listenStartedAt;
   DateTime? _lastLoadAt;
   bool _loadInFlight = false;
+  int _reconnectAttempt = 0;
+  NetHealth? _lastNetHealth;
+  bool _networkListening = false;
 
   static const _presencePoll = Duration(seconds: 30);
   static const _scripturePoll = Duration(seconds: 3);
+  static const _statusPoll = Duration(seconds: 5);
   static const _loadCooldown = Duration(seconds: 2);
 
   String? get streamUuid => _streamUuid;
@@ -104,7 +110,10 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
           _whep.connectionState == WhepConnectionState.reconnecting) {
         return 'RECONNECTING';
       }
-      return 'CONNECTING';
+      if (_payload != null && !_payload!.isLive) {
+        return 'WAITING';
+      }
+      return _hasStartedPlayback ? 'RECONNECTING' : 'CONNECTING';
     }
     if (_mode == ListenMode.whep &&
         _whep.connectionState == WhepConnectionState.reconnecting) {
@@ -113,6 +122,9 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     if (_playing) return 'LISTENING';
     if (_hasUserPaused || (_hasStartedPlayback && !_userWantsPlay)) {
       return 'PAUSED';
+    }
+    if (_userWantsPlay && _payload != null && !_payload!.isLive) {
+      return 'WAITING';
     }
     return 'TAP PLAY';
   }
@@ -126,6 +138,11 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     _fgStopSub = ListenPlaybackService.onStopRequested.listen((_) {
       unawaited(stopFromNotification());
     });
+    _lastNetHealth = _network.health;
+    if (!_networkListening) {
+      _networkListening = true;
+      _network.addListener(_onNetworkChanged);
+    }
     _listenTick = Timer.periodic(const Duration(milliseconds: 120), (_) {
       if (!_playing) return;
       _pulse = 0.15 + (DateTime.now().millisecond % 700) / 1000;
@@ -134,6 +151,16 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
       }
       notifyListeners();
     });
+  }
+
+  void _onNetworkChanged() {
+    final next = _network.health;
+    final prev = _lastNetHealth;
+    _lastNetHealth = next;
+    if (!_userWantsPlay || _streamUuid == null) return;
+    if (prev == NetHealth.offline && next != NetHealth.offline) {
+      _scheduleListenReconnect(immediate: true);
+    }
   }
 
   void attachUi() {
@@ -156,12 +183,13 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
       unawaited(_whep.ensureLoudspeaker());
     }
     if (_userWantsPlay &&
-        _mode == ListenMode.whep &&
-        !_whep.isConnected &&
-        _error == null &&
+        _streamUuid != null &&
         !_loading &&
-        _streamUuid != null) {
-      unawaited(load());
+        !_loadInFlight &&
+        ((_mode == ListenMode.whep && !_whep.isConnected) ||
+            _mode == ListenMode.none ||
+            _error != null)) {
+      _scheduleListenReconnect(immediate: true);
     }
   }
 
@@ -218,7 +246,8 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
       if (!payload.isLive) {
         _loading = false;
         _connecting = false;
-        _error = 'This channel is offline right now.';
+        _error = null;
+        _playing = false;
         if (payload.isChurch) _scriptureEnabled = true;
         notifyListeners();
         unawaited(refreshScripture());
@@ -227,6 +256,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
           _scripturePoll,
           (_) => unawaited(refreshScripture()),
         );
+        _startStatusWatch();
         return;
       }
 
@@ -237,6 +267,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
 
       final started = await _startMedia(payload);
       if (started) {
+        _reconnectAttempt = 0;
         _listenStartedAt = DateTime.now();
         _playing = true;
         _connecting = false;
@@ -251,9 +282,9 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
         ));
       } else {
         _connecting = false;
-        _error =
-            'Could not connect to the live audio. Check your connection and tap Retry.';
+        _error = null;
         notifyListeners();
+        _scheduleListenReconnect();
       }
 
       unawaited(pingPresence());
@@ -268,24 +299,121 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
         _scripturePoll,
         (_) => unawaited(refreshScripture()),
       );
+      _startStatusWatch();
     } on ApiException catch (e) {
       _error = e.message;
       _loading = false;
       _connecting = false;
       notifyListeners();
+      if (_userWantsPlay) _scheduleListenReconnect();
     } on TimeoutException {
-      _error = 'Timed out connecting to this stream. Tap Retry.';
+      _error = null;
       _loading = false;
       _connecting = false;
       notifyListeners();
+      if (_userWantsPlay) _scheduleListenReconnect();
     } catch (e) {
-      _error = e.toString();
+      _error = null;
       _loading = false;
       _connecting = false;
       notifyListeners();
+      if (_userWantsPlay) _scheduleListenReconnect();
     } finally {
       _loadInFlight = false;
     }
+  }
+
+  void _startStatusWatch() {
+    _statusTimer?.cancel();
+    if (_streamUuid == null) return;
+    _statusTimer = Timer.periodic(_statusPoll, (_) {
+      unawaited(_pollLiveStatus());
+    });
+  }
+
+  Future<void> _pollLiveStatus() async {
+    final uuid = _streamUuid;
+    if (uuid == null || !_userWantsPlay || !_network.hasLink) return;
+    if (_loading || _loadInFlight || _connecting) return;
+    try {
+      final status = await _auth.api
+          .listenStatus(uuid)
+          .timeout(const Duration(seconds: 8));
+      final live = status == 'live';
+      final wasLive = _payload?.isLive ?? false;
+
+      if (!live) {
+        if (_playing || _mode != ListenMode.none) {
+          await _stopMedia();
+          _playing = false;
+          _connecting = false;
+          _error = null;
+          if (_payload != null) {
+            _payload = ListenPayload(
+              uuid: _payload!.uuid,
+              title: _payload!.title,
+              status: 'offline',
+              description: _payload!.description,
+              chatEnabled: _payload!.chatEnabled,
+              hlsUrl: _payload!.hlsUrl,
+              whepUrl: _payload!.whepUrl,
+              playbackMode: _payload!.playbackMode,
+              preferHls: _payload!.preferHls,
+              orgName: _payload!.orgName,
+              orgSlug: _payload!.orgSlug,
+              themeColor: _payload!.themeColor,
+              logoUrl: _payload!.logoUrl,
+              artworkUrl: _payload!.artworkUrl,
+              creatorType: _payload!.creatorType,
+            );
+          }
+          notifyListeners();
+          unawaited(ListenPlaybackService.stop());
+        }
+        return;
+      }
+
+      // Live again (or stayed live) but not playing — force a fresh session.
+      if (!_playing && !_hasUserPaused) {
+        if (!wasLive || _mode == ListenMode.none || _error != null) {
+          _lastLoadAt = null;
+          _reconnectAttempt = 0;
+          await load();
+        } else if (_mode == ListenMode.whep && !_whep.isConnected) {
+          _scheduleListenReconnect(immediate: true);
+        } else if (_mode == ListenMode.hls && !_player.playing) {
+          _scheduleListenReconnect(immediate: true);
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _scheduleListenReconnect({bool immediate = false}) {
+    if (!_userWantsPlay || _streamUuid == null || _hasUserPaused) return;
+    if (_reconnectTimer != null && !immediate) return;
+    _reconnectTimer?.cancel();
+    final delay = immediate
+        ? Duration.zero
+        : Duration(
+            seconds: (1 << _reconnectAttempt.clamp(0, 4)).clamp(2, 20),
+          );
+    if (!immediate) {
+      _reconnectAttempt = (_reconnectAttempt + 1).clamp(0, 5);
+    }
+    _connecting = true;
+    _error = null;
+    notifyListeners();
+    _reconnectTimer = Timer(delay, () {
+      _reconnectTimer = null;
+      if (!_userWantsPlay || _hasUserPaused || _streamUuid == null) return;
+      if (_playing &&
+          ((_mode == ListenMode.whep && _whep.isConnected) ||
+              (_mode == ListenMode.hls && _player.playing))) {
+        return;
+      }
+      _lastLoadAt = null;
+      unawaited(load());
+    });
   }
 
   Future<bool> _startMedia(ListenPayload payload) async {
@@ -328,7 +456,8 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     }
     try {
       _mode = ListenMode.hls;
-      await _player.setUrl(hlsUrl).timeout(const Duration(seconds: 12));
+      final busted = _hlsUrlWithCacheBust(hlsUrl);
+      await _player.setUrl(busted).timeout(const Duration(seconds: 12));
       await _player.play().timeout(const Duration(seconds: 8));
       return _player.playing;
     } catch (e) {
@@ -339,6 +468,17 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
       } catch (_) {}
       return false;
     }
+  }
+
+  String _hlsUrlWithCacheBust(String hlsUrl) {
+    final uri = Uri.tryParse(hlsUrl);
+    if (uri == null) {
+      final join = hlsUrl.contains('?') ? '&' : '?';
+      return '$hlsUrl${join}_sm=${DateTime.now().millisecondsSinceEpoch}';
+    }
+    final params = Map<String, String>.from(uri.queryParameters);
+    params['_sm'] = DateTime.now().millisecondsSinceEpoch.toString();
+    return uri.replace(queryParameters: params).toString();
   }
 
   Future<bool> _hlsLooksLikeOpus(String hlsUrl) async {
@@ -363,6 +503,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     switch (state) {
       case WhepConnectionState.connected:
         if (_userWantsPlay && _whep.isConnected) {
+          _reconnectAttempt = 0;
           _listenStartedAt ??= DateTime.now();
           _playing = true;
           _connecting = false;
@@ -374,18 +515,28 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
         }
         break;
       case WhepConnectionState.reconnecting:
-        if (!_playing && _userWantsPlay) {
+        if (_userWantsPlay) {
           _connecting = true;
+          _playing = false;
+          _error = null;
           notifyListeners();
         }
         break;
       case WhepConnectionState.failed:
       case WhepConnectionState.closed:
         _playing = false;
-        _connecting = false;
-        _error = 'Live audio dropped. Check your connection and tap Retry.';
-        notifyListeners();
-        unawaited(ListenPlaybackService.stop());
+        if (_userWantsPlay && !_hasUserPaused) {
+          _connecting = true;
+          _error = null;
+          notifyListeners();
+          unawaited(ListenPlaybackService.stop());
+          _scheduleListenReconnect();
+        } else {
+          _connecting = false;
+          _error = 'Live audio dropped. Check your connection and tap Retry.';
+          notifyListeners();
+          unawaited(ListenPlaybackService.stop());
+        }
         break;
       case WhepConnectionState.connecting:
         if (_userWantsPlay) {
@@ -403,10 +554,13 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     final playing = state.playing;
     if (state.processingState == ProcessingState.completed ||
         state.processingState == ProcessingState.idle) {
-      if (_playing) {
+      if (_playing || (_userWantsPlay && !_hasUserPaused)) {
         _playing = false;
         notifyListeners();
         unawaited(ListenPlaybackService.stop());
+        if (_userWantsPlay && !_hasUserPaused) {
+          _scheduleListenReconnect();
+        }
       }
       return;
     }
@@ -652,6 +806,9 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     _hasUserPaused = false;
     _presenceTimer?.cancel();
     _scriptureTimer?.cancel();
+    _statusTimer?.cancel();
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     try {
       await ListenPlaybackService.stop();
     } catch (_) {}
@@ -684,8 +841,14 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     if (_observed) {
       WidgetsBinding.instance.removeObserver(this);
     }
+    if (_networkListening) {
+      _network.removeListener(_onNetworkChanged);
+      _networkListening = false;
+    }
     _presenceTimer?.cancel();
     _scriptureTimer?.cancel();
+    _statusTimer?.cancel();
+    _reconnectTimer?.cancel();
     _listenTick?.cancel();
     unawaited(_whepSub?.cancel() ?? Future.value());
     unawaited(_hlsSub?.cancel() ?? Future.value());

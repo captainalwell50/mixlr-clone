@@ -7,12 +7,13 @@ const root = document.getElementById('listen-root');
 const audio = document.getElementById('stream-audio');
 const statusEl = document.getElementById('stream-status');
 
-const STATUS_POLL_MS = 8000;
+const STATUS_POLL_MS = 5000;
 /** Hold through brief ICE/NAT blips before any recovery work. */
 const DISCONNECT_GRACE_MS = 20_000;
 /** Extra hold after a soft ICE restart before tearing down. */
 const ICE_RESTART_GRACE_MS = 12_000;
-const RETRY_MS = 3500;
+const RETRY_BASE_MS = 2000;
+const RETRY_MAX_MS = 20_000;
 const OFFLINE_CONFIRM_POLLS = 2;
 const MAX_SOFT_ICE_RESTARTS = 2;
 /** Receive jitter buffer target (seconds / ms) — absorbs micro-gaps without cutting audio. */
@@ -31,10 +32,17 @@ let statusPollTimer = null;
 let startingPlayback = false;
 let offlinePollStreak = 0;
 let softIceRestarts = 0;
-/** Once WHEP works, keep using it — Opus HLS in Chrome is unreliable. */
+let retryAttempt = 0;
+/** Once WHEP works, keep using it for this page session when not preferring HLS. */
 let whepSucceeded = false;
+/** Once HLS works (CDN / AAC), keep preferring it for this page session. */
+let hlsSucceeded = false;
 /** @type {ReturnType<typeof bindStagePlayer> | null} */
 let stagePlayer = null;
+
+function preferHls() {
+    return root?.dataset.preferHls === '1' || root?.dataset.preferHls === 'true';
+}
 
 function setStatus(message) {
     if (statusEl) {
@@ -78,6 +86,10 @@ function isPeerHealthy() {
     );
 }
 
+function peerIsTerminal() {
+    return Boolean(pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed'));
+}
+
 /** True when the element is still producing audio — prefer holding over teardown. */
 function audioStillPlaying() {
     return Boolean(
@@ -87,6 +99,51 @@ function audioStillPlaying() {
         (audio.srcObject || audio.src) &&
         audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
     );
+}
+
+/**
+ * Whether we should skip starting a new session.
+ * Never trust a stale MediaStream after the peer has failed/closed — that left
+ * listeners permanently silent after publisher network gaps.
+ */
+function playbackLooksHealthy() {
+    if (peerIsTerminal()) {
+        return false;
+    }
+    if (isPeerHealthy()) {
+        return true;
+    }
+    // HLS (no peer): element still advancing.
+    if (!pc && (hls || (audio?.src && !audio.srcObject))) {
+        return audioStillPlaying();
+    }
+    // WHEP blip (disconnected): only hold while frames are still arriving.
+    if (pc && pc.connectionState === 'disconnected') {
+        return audioStillPlaying();
+    }
+    return false;
+}
+
+function nextRetryDelayMs() {
+    const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** retryAttempt);
+    retryAttempt = Math.min(retryAttempt + 1, 6);
+    return delay;
+}
+
+function resetRetryBackoff() {
+    retryAttempt = 0;
+}
+
+/** Bust CDN/proxy playlist cache after a publisher gap. */
+function hlsUrlWithCacheBust(hlsUrl) {
+    try {
+        const url = new URL(hlsUrl, window.location.href);
+        url.searchParams.set('_sm', String(Date.now()));
+        return url.toString();
+    } catch {
+        const join = hlsUrl.includes('?') ? '&' : '?';
+        return `${hlsUrl}${join}_sm=${Date.now()}`;
+    }
 }
 
 /**
@@ -148,18 +205,20 @@ function scheduleRetry(reason) {
         return;
     }
     // Don't tear down a connection that already recovered or is still audible.
-    if (isPeerHealthy() || audioStillPlaying()) {
+    if (playbackLooksHealthy()) {
         return;
     }
     setStatus(reason);
+    const delay = nextRetryDelayMs();
     retryTimer = window.setTimeout(() => {
         retryTimer = null;
-        if (isPeerHealthy() || audioStillPlaying()) {
+        if (playbackLooksHealthy()) {
+            resetRetryBackoff();
             setStatus(isMarkedLive() ? 'On air' : 'Playing');
             return;
         }
-        void startPlayback();
-    }, RETRY_MS);
+        void startPlayback({ force: true });
+    }, delay);
 }
 
 function armDisconnectRecovery() {
@@ -177,7 +236,7 @@ function armDisconnectRecovery() {
             return;
         }
         // Still getting frames — hold quietly; soft-refresh ICE in the background.
-        if (audioStillPlaying()) {
+        if (audioStillPlaying() && !peerIsTerminal()) {
             trySoftIceRestart();
             armDisconnectRecovery();
             return;
@@ -188,7 +247,7 @@ function armDisconnectRecovery() {
                 if (!pc || pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
                     return;
                 }
-                if (audioStillPlaying()) {
+                if (playbackLooksHealthy()) {
                     return;
                 }
                 scheduleRetry(waitingMessage());
@@ -207,6 +266,7 @@ function handlePeerConnectionChange() {
     const state = pc.connectionState;
     if (state === 'connected') {
         softIceRestarts = 0;
+        resetRetryBackoff();
         clearDisconnectGrace();
         clearRetry();
         setStatus(isMarkedLive() ? 'On air' : 'Playing');
@@ -231,7 +291,7 @@ function handlePeerConnectionChange() {
                 if (!pc || pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
                     return;
                 }
-                if (audioStillPlaying()) {
+                if (playbackLooksHealthy()) {
                     return;
                 }
                 scheduleRetry(waitingMessage());
@@ -266,7 +326,9 @@ async function applyOffline() {
     clearDisconnectGrace();
     offlinePollStreak = 0;
     softIceRestarts = 0;
+    resetRetryBackoff();
     whepSucceeded = false;
+    hlsSucceeded = false;
     if (root) {
         root.dataset.streamStatus = 'offline';
     }
@@ -277,16 +339,17 @@ async function applyOffline() {
     setStatus('Offline');
 }
 
-async function applyLive() {
+async function applyLive({ force = false } = {}) {
     offlinePollStreak = 0;
     if (root) {
         root.dataset.streamStatus = 'live';
     }
     updateBroadcastBadge(true);
-    if (isPeerHealthy() || audioStillPlaying()) {
+    if (!force && playbackLooksHealthy()) {
         return;
     }
-    void startPlayback();
+    resetRetryBackoff();
+    void startPlayback({ force: true });
 }
 
 async function refreshStreamStatus() {
@@ -318,10 +381,20 @@ async function refreshStreamStatus() {
             await applyOffline();
         } else if (!wasLive && live) {
             offlinePollStreak = 0;
-            await applyLive();
+            // Offline → live: always open a fresh WHEP/HLS session.
+            await applyLive({ force: true });
+        } else if (live) {
+            offlinePollStreak = 0;
+            if (root) {
+                root.dataset.streamStatus = 'live';
+            }
+            // Stayed live but listener session died (publisher path replace /
+            // MediaMTX destroy) — resubscribe without waiting for offline→live.
+            if (!playbackLooksHealthy() && !startingPlayback && !retryTimer) {
+                scheduleRetry(waitingMessage());
+            }
         } else if (root) {
-            offlinePollStreak = live ? 0 : offlinePollStreak;
-            root.dataset.streamStatus = live ? 'live' : 'offline';
+            root.dataset.streamStatus = 'offline';
         }
 
         return live || (wasLive && offlinePollStreak > 0 && offlinePollStreak < OFFLINE_CONFIRM_POLLS);
@@ -457,99 +530,161 @@ async function startWhep(whepUrl) {
     whepSucceeded = true;
 }
 
-async function startHls(hlsUrl) {
+/**
+ * Start HLS and resolve once audio is playing. Rejects on timeout / fatal error
+ * so callers can fall back to WHEP.
+ * @param {string} hlsUrl
+ * @param {{ allowFallback?: boolean }} [opts]
+ */
+async function startHls(hlsUrl, opts = {}) {
+    const allowFallback = Boolean(opts.allowFallback);
     if (!audio) {
-        return;
+        throw new Error('Missing audio element');
     }
 
+    const CONNECT_MS = allowFallback ? 5000 : 15000;
+
     if (audio.canPlayType('application/vnd.apple.mpegurl')) {
-        audio.src = hlsUrl;
-        audio.addEventListener(
-            'error',
-            () => {
-                scheduleRetry(waitingMessage());
-            },
-            { once: true },
-        );
-        audio.addEventListener(
-            'playing',
-            () => {
+        await new Promise((resolve, reject) => {
+            let settled = false;
+            const timer = window.setTimeout(() => {
+                if (!settled) {
+                    settled = true;
+                    reject(new Error('HLS connect timeout'));
+                }
+            }, CONNECT_MS);
+            const onPlaying = () => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(timer);
                 setStatus(isMarkedLive() ? 'On air' : 'Playing');
-            },
-            { once: true },
-        );
-        try {
-            await audio.play();
-        } catch {
-            setStatus('Press play when you are ready.');
-        }
+                hlsSucceeded = true;
+                resolve();
+            };
+            const onError = () => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(timer);
+                reject(new Error('Native HLS error'));
+            };
+            audio.addEventListener('playing', onPlaying, { once: true });
+            audio.addEventListener('error', onError, { once: true });
+            audio.src = hlsUrlWithCacheBust(hlsUrl);
+            audio.play().catch(() => {
+                // Autoplay blocked — still treat as connected if metadata arrives.
+                if (!settled) {
+                    settled = true;
+                    window.clearTimeout(timer);
+                    setStatus('Press play when you are ready.');
+                    hlsSucceeded = true;
+                    resolve();
+                }
+            });
+        });
         return;
     }
 
     const { default: Hls } = await import('hls.js');
 
     if (!Hls.isSupported()) {
-        setStatus('This browser cannot play the stream.');
-        stagePlayer?.disable();
-        return;
+        throw new Error('HLS.js unsupported');
     }
 
-    hls = new Hls({
-        lowLatencyMode: false,
-        backBufferLength: 60,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 90,
-        liveSyncDurationCount: 4,
-        liveMaxLatencyDurationCount: 12,
-        // Prefer smooth playback over aggressive catch-up jumps.
-        liveDurationInfinity: true,
-        maxLiveSyncPlaybackRate: 1.05,
-    });
-    hls.loadSource(hlsUrl);
-    hls.attachMedia(audio);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        audio.play().catch(() => {
-            setStatus('Press play when you are ready.');
-        });
-    });
-    hls.on(Hls.Events.ERROR, (_, data) => {
-        if (!data.fatal) {
-            return;
-        }
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            // Recover in-place — do not also schedule a full teardown retry.
-            hls?.startLoad();
-            setStatus('Rebuffering…');
-            return;
-        }
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            try {
-                hls?.recoverMediaError();
-                setStatus('Recovering playback…');
-            } catch {
-                void teardown().then(() => scheduleRetry('Trying again…'));
+    await new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (err) => {
+            if (settled) {
+                return;
             }
-            return;
-        }
-        setStatus('Playback error.');
-        void teardown().then(() => scheduleRetry('Trying again…'));
+            settled = true;
+            window.clearTimeout(timer);
+            if (err) {
+                reject(err);
+            } else {
+                hlsSucceeded = true;
+                resolve();
+            }
+        };
+        const timer = window.setTimeout(() => finish(new Error('HLS connect timeout')), CONNECT_MS);
+
+        hls = new Hls({
+            lowLatencyMode: false,
+            backBufferLength: 60,
+            maxBufferLength: 60,
+            maxMaxBufferLength: 90,
+            liveSyncDurationCount: 4,
+            liveMaxLatencyDurationCount: 12,
+            liveDurationInfinity: true,
+            maxLiveSyncPlaybackRate: 1.05,
+            // After publisher gaps, refuse stale CDN playlists.
+            manifestLoadingMaxRetry: 6,
+            levelLoadingMaxRetry: 6,
+            fragLoadingMaxRetry: 6,
+        });
+        hls.loadSource(hlsUrlWithCacheBust(hlsUrl));
+        hls.attachMedia(audio);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            audio.play().catch(() => {
+                setStatus('Press play when you are ready.');
+                finish(null);
+            });
+        });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+            if (!data.fatal) {
+                return;
+            }
+            if (!settled && allowFallback) {
+                finish(new Error(`HLS fatal: ${data.type}`));
+                return;
+            }
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                // After publisher gaps, startLoad alone can loop on a stale CDN playlist.
+                // Prefer a full session rebuild with cache-bust.
+                setStatus('Rebuffering…');
+                if (!settled) {
+                    finish(new Error('HLS network error'));
+                    return;
+                }
+                void teardown().then(() => scheduleRetry('Trying again…'));
+                return;
+            }
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                try {
+                    hls?.recoverMediaError();
+                    setStatus('Recovering playback…');
+                } catch {
+                    finish(new Error('HLS media recovery failed'));
+                    void teardown().then(() => scheduleRetry('Trying again…'));
+                }
+                return;
+            }
+            setStatus('Playback error.');
+            finish(new Error('HLS playback error'));
+            void teardown().then(() => scheduleRetry('Trying again…'));
+        });
+        audio.addEventListener(
+            'playing',
+            () => {
+                setStatus('On air');
+                finish(null);
+            },
+            { once: true },
+        );
     });
-    audio.addEventListener(
-        'playing',
-        () => {
-            setStatus('On air');
-        },
-        { once: true },
-    );
 }
 
-async function startPlayback() {
+async function startPlayback({ force = false } = {}) {
     if (!root || !audio || startingPlayback) {
         return;
     }
 
     // Already listening — do not tear down a healthy session.
-    if (isPeerHealthy() || audioStillPlaying()) {
+    if (!force && playbackLooksHealthy()) {
+        resetRetryBackoff();
         setStatus(isMarkedLive() ? 'On air' : 'Playing');
         return;
     }
@@ -582,30 +717,45 @@ async function startPlayback() {
     try {
         await teardown();
 
-        if (whepUrl) {
+        const tryHlsFirst = preferHls() || hlsSucceeded;
+        // After a successful WHEP session, stay on WHEP unless HLS is preferred (CDN/AAC).
+        const stickToWhep = whepSucceeded && !tryHlsFirst;
+
+        if (tryHlsFirst && hlsUrl && !stickToWhep) {
             try {
-                await startWhep(whepUrl);
+                await startHls(hlsUrl, { allowFallback: Boolean(whepUrl) });
+                resetRetryBackoff();
                 return;
             } catch {
-                // Opus Studio publishes should stay on WHEP — HLS Opus in Chrome glitches.
-                if (whepSucceeded) {
-                    scheduleRetry(waitingMessage());
-                    return;
-                }
-                // First connect failed — allow HLS for AAC/RTMP publishers.
+                // Fall through to WHEP (Studio Opus / sidecar not ready yet).
             }
         }
 
-        if (!hlsUrl || whepSucceeded) {
-            scheduleRetry(waitingMessage());
-            return;
+        if (whepUrl) {
+            try {
+                await startWhep(whepUrl);
+                resetRetryBackoff();
+                return;
+            } catch {
+                if (whepSucceeded && !preferHls()) {
+                    scheduleRetry(waitingMessage());
+                    return;
+                }
+                // First WHEP failure — try HLS for AAC/RTMP when not already tried.
+            }
         }
 
-        try {
-            await startHls(hlsUrl);
-        } catch {
-            scheduleRetry(waitingMessage());
+        if (hlsUrl && !tryHlsFirst) {
+            try {
+                await startHls(hlsUrl, { allowFallback: false });
+                resetRetryBackoff();
+                return;
+            } catch {
+                /* retry below */
+            }
         }
+
+        scheduleRetry(waitingMessage());
     } finally {
         startingPlayback = false;
     }

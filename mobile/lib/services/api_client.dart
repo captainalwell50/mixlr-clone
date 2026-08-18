@@ -231,6 +231,15 @@ class ApiClient {
     return ListenPayload.fromJson(data);
   }
 
+  Future<String> listenStatus(String streamUuid) async {
+    final response = await _client.get(
+      Uri.parse('${AppConfig.apiV1}/listen/$streamUuid/status'),
+      headers: _headers(auth: _token != null),
+    );
+    final data = await _json(response, fallback: 'Status failed');
+    return data['status'] as String? ?? 'offline';
+  }
+
   Future<Map<String, dynamic>> presence(
     String streamUuid, {
     String? sessionKey,
