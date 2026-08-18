@@ -178,6 +178,7 @@ class ListenPayload {
     this.orgName,
     this.orgSlug,
     this.themeColor,
+    this.logoUrl,
     this.artworkUrl,
     this.creatorType,
   });
@@ -195,6 +196,8 @@ class ListenPayload {
   final String? orgName;
   final String? orgSlug;
   final String? themeColor;
+  /// Creator/org logo mark (preferred over [artworkUrl] for station identity).
+  final String? logoUrl;
   final String? artworkUrl;
   final String? creatorType;
 
@@ -224,6 +227,7 @@ class ListenPayload {
       orgName: org?['name'] as String?,
       orgSlug: org?['slug'] as String?,
       themeColor: org?['theme_color'] as String?,
+      logoUrl: org?['logo_url'] as String?,
       artworkUrl: org?['artwork_url'] as String?,
       creatorType: org?['creator_type'] as String?,
     );

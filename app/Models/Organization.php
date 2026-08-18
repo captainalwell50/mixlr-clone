@@ -190,4 +190,14 @@ class Organization extends Model
 
         return $path;
     }
+
+    public function logoUrl(): ?string
+    {
+        $path = $this->logo_path;
+        if (! is_string($path) || $path === '') {
+            return null;
+        }
+
+        return $path;
+    }
 }

@@ -17,6 +17,7 @@ import '../services/network_status.dart';
 import '../services/selected_channel.dart';
 import '../services/whep_listener.dart';
 import '../theme.dart';
+import '../widgets/creator_station_mark.dart';
 import '../widgets/network_banner.dart';
 import '../widgets/permission_disclosure.dart';
 import '../widgets/scripture_board.dart';
@@ -907,6 +908,18 @@ class _ListenScreenState extends State<ListenScreen>
                                       );
                                     },
                                   ),
+                                  // Creator station mark — below stage / scripture card.
+                                  if ((p?.orgName ?? '').trim().isNotEmpty) ...[
+                                    const SizedBox(height: 22),
+                                    Center(
+                                      child: CreatorStationMark(
+                                        name: p!.orgName!.trim(),
+                                        logoUrl: p.logoUrl,
+                                        artworkUrl: p.artworkUrl,
+                                        themeColor: p.themeColor,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                   ),

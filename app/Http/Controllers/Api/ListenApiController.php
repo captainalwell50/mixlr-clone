@@ -43,12 +43,15 @@ class ListenApiController extends Controller
                 'chat_enabled' => (bool) $stream->chat_enabled,
                 'hls_url' => $stream->hlsPlaylistUrl(),
                 'whep_url' => $stream->whepUrl(),
+                'playback_mode' => $stream->playbackMode(),
+                'prefer_hls' => $stream->preferHlsListen(),
                 'listen_background_url' => $stream->listenBackgroundUrl(),
             ],
             'organization' => $org ? [
                 'name' => $org->name,
                 'slug' => $org->slug,
                 'theme_color' => $org->themeColor(),
+                'logo_url' => $org->logoUrl(),
                 'artwork_url' => $org->artworkUrl(),
                 'creator_type' => $org->creator_type?->value,
             ] : null,
@@ -80,7 +83,11 @@ class ListenApiController extends Controller
             'organization' => $org?->name,
             'theme_color' => $org?->themeColor(),
             'artwork_url' => $org?->artworkUrl(),
+            'creator_type' => $org?->creator_type?->value,
             'hls_url' => $stream->hlsPlaylistUrl(),
+            'whep_url' => $stream->whepUrl(),
+            'playback_mode' => $stream->playbackMode(),
+            'prefer_hls' => $stream->preferHlsListen(),
         ];
     }
 
