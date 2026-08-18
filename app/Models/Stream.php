@@ -191,11 +191,25 @@ class Stream extends Model
     }
 
     /**
-     * Browser listen path for Opus WHIP publishes (HLS/Opus is not playable in Chrome).
+     * Low-latency listen / Studio self-monitor (WHEP). Always available as fallback.
      */
     public function whepUrl(): string
     {
         return rtrim((string) config('streaming.mediamtx.webrtc_public_base'), '/').'/'.$this->mediaPath().'/whep';
+    }
+
+    /**
+     * MediaMTX path segment for public HLS (optional /aac sidecar for browser-safe audio).
+     */
+    public function hlsMediaPath(): string
+    {
+        $path = $this->mediaPath();
+
+        if (config('streaming.listen.hls_aac_sidecar')) {
+            return $path.'/aac';
+        }
+
+        return $path;
     }
 
     public function hlsPlaylistUrl(): string
@@ -205,7 +219,143 @@ class Stream extends Model
             ? $cdn
             : config('streaming.mediamtx.hls_public_base');
 
-        return rtrim((string) $base, '/').'/'.$this->mediaPath().'/index.m3u8';
+        return rtrim((string) $base, '/').'/'.$this->hlsMediaPath().'/index.m3u8';
+    }
+
+    /**
+     * Prefer CDN/HLS for mass public listen when configured; Studio stays on WHEP.
+     *
+     * Admin site setting overrides LISTEN_PREFER_HLS when set; otherwise .env/config.
+     */
+    public function preferHlsListen(): bool
+    {
+        return static::resolvePreferHlsListen();
+    }
+
+    /**
+     * Resolve public listen prefer-HLS from an explicit true/false/null (auto) policy.
+     * Shared by Stream::preferHlsListen() and the admin settings status panel.
+     */
+    public static function resolvePreferHlsListen(?bool $explicit = null): bool
+    {
+        $explicit ??= SiteSetting::listenPreferHls();
+
+        if ($explicit === true) {
+            return true;
+        }
+        if ($explicit === false) {
+            return false;
+        }
+
+        $cdn = config('streaming.mediamtx.hls_cdn_base');
+        if (is_string($cdn) && $cdn !== '') {
+            return true;
+        }
+
+        return (bool) config('streaming.listen.hls_aac_sidecar');
+    }
+
+    /**
+     * Admin-facing snapshot of which listen mode is effective and why.
+     *
+     * @return array{
+     *     prefers_hls: bool,
+     *     effective_mode: string,
+     *     effective_label: string,
+     *     configured_choice: ?string,
+     *     configured_label: string,
+     *     form_value: string,
+     *     is_auto: bool,
+     *     auto_reason: ?string,
+     *     policy_source: string,
+     *     policy_source_label: string,
+     *     cdn_configured: bool,
+     *     cdn_base: ?string,
+     *     cdn_host: ?string,
+     *     aac_sidecar: bool,
+     *     env_default: mixed,
+     *     env_label: string
+     * }
+     */
+    public static function listenPlaybackStatus(): array
+    {
+        $explicit = SiteSetting::listenPreferHls();
+        $choice = SiteSetting::listenPreferHlsChoice();
+        $formValue = SiteSetting::listenPreferHlsFormDefault();
+        $prefersHls = static::resolvePreferHlsListen($explicit);
+        $cdnBase = config('streaming.mediamtx.hls_cdn_base');
+        $cdnConfigured = is_string($cdnBase) && $cdnBase !== '';
+        $cdnBase = $cdnConfigured ? $cdnBase : null;
+        $cdnHost = null;
+        if ($cdnBase !== null) {
+            $host = parse_url($cdnBase, PHP_URL_HOST);
+            $cdnHost = is_string($host) && $host !== '' ? $host : $cdnBase;
+        }
+        $aacSidecar = (bool) config('streaming.listen.hls_aac_sidecar');
+        $envDefault = config('streaming.listen.prefer_hls');
+        $isAuto = $explicit === null;
+
+        $autoReason = null;
+        if ($isAuto) {
+            if ($cdnConfigured && $aacSidecar) {
+                $autoReason = 'Auto → HLS because CDN base + AAC sidecar';
+            } elseif ($cdnConfigured) {
+                $autoReason = 'Auto → HLS because CDN base is set';
+            } elseif ($aacSidecar) {
+                $autoReason = 'Auto → HLS because AAC sidecar is on';
+            } else {
+                $autoReason = 'Auto → WHEP because CDN base is not set and AAC sidecar is off';
+            }
+        }
+
+        $configuredLabel = match ($formValue) {
+            'hls' => 'CDN HLS (forced)',
+            'whep' => 'WHEP (forced)',
+            default => 'Auto',
+        };
+        if ($choice === null) {
+            $configuredLabel .= ' · from .env';
+        } else {
+            $configuredLabel .= ' · admin saved';
+        }
+
+        $envLabel = match (true) {
+            $envDefault === true => 'LISTEN_PREFER_HLS=true',
+            $envDefault === false => 'LISTEN_PREFER_HLS=false',
+            default => 'LISTEN_PREFER_HLS unset (auto)',
+        };
+
+        $policySource = $choice !== null ? 'admin' : 'env';
+        $policySourceLabel = $choice !== null
+            ? 'Admin override ('.$choice.')'
+            : '.env fallback ('.$envLabel.')';
+
+        return [
+            'prefers_hls' => $prefersHls,
+            'effective_mode' => $prefersHls ? 'hls' : 'whep',
+            'effective_label' => $prefersHls ? 'CDN HLS' : 'WHEP (Low latency)',
+            'configured_choice' => $choice,
+            'configured_label' => $configuredLabel,
+            'form_value' => $formValue,
+            'is_auto' => $isAuto,
+            'auto_reason' => $autoReason,
+            'policy_source' => $policySource,
+            'policy_source_label' => $policySourceLabel,
+            'cdn_configured' => $cdnConfigured,
+            'cdn_base' => $cdnBase,
+            'cdn_host' => $cdnHost,
+            'aac_sidecar' => $aacSidecar,
+            'env_default' => $envDefault,
+            'env_label' => $envLabel,
+        ];
+    }
+
+    /**
+     * Primary playback mode for public listen clients (`hls` or `whep`).
+     */
+    public function playbackMode(): string
+    {
+        return $this->preferHlsListen() ? 'hls' : 'whep';
     }
 
     /**

@@ -2,6 +2,23 @@
 
 return [
 
+    /*
+     | Public listen policy (Studio / creator preview stays on WHEP).
+     |
+     | prefer_hls: null = auto (true when CDN base is set OR AAC sidecar is on),
+     |             true/false = explicit override via LISTEN_PREFER_HLS.
+     | Admin UI (/admin/settings) can override this via site_settings.listen_prefer_hls;
+     | when that row is set it wins over this .env default.
+     | hls_aac_sidecar: point public HLS URLs at MediaMTX live/<uuid>/aac
+     |   (ffmpeg Opus→AAC remux). Requires deploy/mediamtx AAC path + hook.
+     */
+    'listen' => [
+        'prefer_hls' => (($v = env('LISTEN_PREFER_HLS')) === null || $v === '')
+            ? null
+            : filter_var($v, FILTER_VALIDATE_BOOLEAN),
+        'hls_aac_sidecar' => filter_var(env('LISTEN_HLS_AAC_SIDECAR', false), FILTER_VALIDATE_BOOLEAN),
+    ],
+
     'mediamtx' => [
         'webrtc_public_base' => env('MEDIAMTX_WEBRTC_PUBLIC_BASE', 'http://127.0.0.1:8889'),
         'hls_public_base' => env('MEDIAMTX_HLS_PUBLIC_BASE', 'http://127.0.0.1:8888'),

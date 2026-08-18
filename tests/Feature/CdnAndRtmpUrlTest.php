@@ -17,6 +17,7 @@ class CdnAndRtmpUrlTest extends TestCase
         config([
             'streaming.mediamtx.hls_public_base' => 'https://origin.example.org/hls',
             'streaming.mediamtx.hls_cdn_base' => 'https://cdn.example.org/hls',
+            'streaming.listen.hls_aac_sidecar' => false,
         ]);
 
         $stream = $this->makeStream();
@@ -25,6 +26,78 @@ class CdnAndRtmpUrlTest extends TestCase
             'https://cdn.example.org/hls/'.$stream->mediaPath().'/index.m3u8',
             $stream->hlsPlaylistUrl()
         );
+    }
+
+    public function test_hls_uses_aac_sidecar_path_when_enabled(): void
+    {
+        config([
+            'streaming.mediamtx.hls_public_base' => 'https://origin.example.org/hls',
+            'streaming.mediamtx.hls_cdn_base' => null,
+            'streaming.listen.hls_aac_sidecar' => true,
+        ]);
+
+        $stream = $this->makeStream();
+
+        $this->assertSame(
+            'https://origin.example.org/hls/'.$stream->mediaPath().'/aac/index.m3u8',
+            $stream->hlsPlaylistUrl()
+        );
+    }
+
+    public function test_prefer_hls_auto_when_cdn_configured(): void
+    {
+        config([
+            'streaming.listen.prefer_hls' => null,
+            'streaming.listen.hls_aac_sidecar' => false,
+            'streaming.mediamtx.hls_cdn_base' => 'https://cdn.example.org/hls',
+        ]);
+
+        $stream = $this->makeStream();
+
+        $this->assertTrue($stream->preferHlsListen());
+        $this->assertSame('hls', $stream->playbackMode());
+    }
+
+    public function test_prefer_hls_auto_when_aac_sidecar_enabled(): void
+    {
+        config([
+            'streaming.listen.prefer_hls' => null,
+            'streaming.listen.hls_aac_sidecar' => true,
+            'streaming.mediamtx.hls_cdn_base' => null,
+        ]);
+
+        $stream = $this->makeStream();
+
+        $this->assertTrue($stream->preferHlsListen());
+        $this->assertSame('hls', $stream->playbackMode());
+    }
+
+    public function test_prefer_hls_explicit_false_wins(): void
+    {
+        config([
+            'streaming.listen.prefer_hls' => false,
+            'streaming.listen.hls_aac_sidecar' => true,
+            'streaming.mediamtx.hls_cdn_base' => 'https://cdn.example.org/hls',
+        ]);
+
+        $stream = $this->makeStream();
+
+        $this->assertFalse($stream->preferHlsListen());
+        $this->assertSame('whep', $stream->playbackMode());
+    }
+
+    public function test_default_prefers_whep_without_cdn_or_sidecar(): void
+    {
+        config([
+            'streaming.listen.prefer_hls' => null,
+            'streaming.listen.hls_aac_sidecar' => false,
+            'streaming.mediamtx.hls_cdn_base' => null,
+        ]);
+
+        $stream = $this->makeStream();
+
+        $this->assertFalse($stream->preferHlsListen());
+        $this->assertSame('whep', $stream->playbackMode());
     }
 
     public function test_rtmp_helpers_include_stream_key(): void
