@@ -13,10 +13,10 @@ class Brand {
       ? 'Native Studio for mic publish. Full mixer stays on the web.'
       : 'Mic publish + listen on mobile. Full mixer stays on the web Studio.';
 
-  /// Studio tab / phone publisher blurb (product-first, feature second).
+  /// Studio entry blurb (product-first, feature second).
   static String get studioPhoneBlurb =>
-      'Sound Mix Live Studio on phone: timer + signal meter. Playlist & cues stay on the web.';
+      'Phone Studio: mic publish, mute, meters, listeners. Full playlist mixer stays on the web.';
 
   static String get studioDesktopBlurb =>
-      'Sound Mix Live Studio on desktop: timer + signal meter. Playlist & cues stay on the web.';
+      'Desktop Studio: mic publish, mute, meters, listeners. Full playlist mixer stays on the web.';
 }

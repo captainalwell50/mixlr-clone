@@ -59,4 +59,40 @@ class AuthState extends ChangeNotifier {
     user = null;
     notifyListeners();
   }
+
+  Future<void> deleteAccount(String password) async {
+    await _api.deleteAccount(password: password);
+    await _storage.delete(key: _tokenKey);
+    user = null;
+    notifyListeners();
+  }
+
+  Future<void> updateProfile({required String name}) async {
+    user = await _api.updateProfile(name: name);
+    notifyListeners();
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    user = await _api.changePassword(
+      currentPassword: currentPassword,
+      password: password,
+      passwordConfirmation: passwordConfirmation,
+    );
+    notifyListeners();
+  }
+
+  Future<void> uploadAvatar(String filePath) async {
+    user = await _api.uploadAvatar(filePath);
+    notifyListeners();
+  }
+
+  Future<void> refreshUser() async {
+    if (!isLoggedIn) return;
+    user = await _api.me();
+    notifyListeners();
+  }
 }

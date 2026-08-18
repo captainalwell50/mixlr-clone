@@ -94,12 +94,67 @@ class ApiClient {
     }
   }
 
+  Future<void> deleteAccount({required String password}) async {
+    final response = await _client.delete(
+      Uri.parse('${AppConfig.apiV1}/auth/account'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: jsonEncode({'password': password}),
+    );
+    await _json(response, fallback: 'Could not delete account');
+    setToken(null);
+  }
+
   Future<AppUser> me() async {
     final response = await _client.get(
       Uri.parse('${AppConfig.apiV1}/me'),
       headers: _headers(auth: true),
     );
     final data = await _json(response, fallback: 'Session expired');
+    return AppUser.fromJson(data['user'] as Map<String, dynamic>);
+  }
+
+  Future<AppUser> updateProfile({required String name}) async {
+    final response = await _client.patch(
+      Uri.parse('${AppConfig.apiV1}/me'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: jsonEncode({'name': name.trim()}),
+    );
+    final data = await _json(response, fallback: 'Could not update profile');
+    return AppUser.fromJson(data['user'] as Map<String, dynamic>);
+  }
+
+  Future<AppUser> changePassword({
+    required String currentPassword,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    final response = await _client.put(
+      Uri.parse('${AppConfig.apiV1}/auth/password'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: jsonEncode({
+        'current_password': currentPassword,
+        'password': password,
+        'password_confirmation': passwordConfirmation,
+      }),
+    );
+    final data = await _json(response, fallback: 'Could not change password');
+    final user = data['user'];
+    if (user is Map<String, dynamic>) {
+      return AppUser.fromJson(user);
+    }
+    return me();
+  }
+
+  Future<AppUser> uploadAvatar(String filePath) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('${AppConfig.apiV1}/auth/avatar'),
+    );
+    request.headers.addAll(_headers(auth: true));
+    request.files.add(await http.MultipartFile.fromPath('avatar', filePath));
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    final data = await _json(response, fallback: 'Could not upload photo');
     return AppUser.fromJson(data['user'] as Map<String, dynamic>);
   }
 

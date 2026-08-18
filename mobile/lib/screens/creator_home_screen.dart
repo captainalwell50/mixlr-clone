@@ -13,6 +13,8 @@ import '../services/network_status.dart';
 import '../theme.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/network_banner.dart';
+import '../widgets/legal_links.dart';
+import 'account_screen.dart';
 import 'go_live_screen.dart';
 import 'login_screen.dart';
 
@@ -101,6 +103,8 @@ class _CreatorHomeScreenState extends State<CreatorHomeScreen> {
                     },
                     child: const Text('Sign in to Studio'),
                   ),
+                  const SizedBox(height: 20),
+                  const LegalLinks(dense: true),
                   const Spacer(flex: 2),
                 ],
               ),
@@ -142,6 +146,18 @@ class _CreatorHomeScreenState extends State<CreatorHomeScreen> {
                       onPressed: _refresh,
                       icon: const Icon(Icons.refresh_rounded),
                       tooltip: 'Refresh',
+                    ),
+                    IconButton(
+                      onPressed: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const AccountScreen()),
+                        );
+                        if (!auth.isLoggedIn && mounted) {
+                          setState(() => _future = null);
+                        }
+                      },
+                      icon: const Icon(Icons.manage_accounts_outlined),
+                      tooltip: 'Account',
                     ),
                     IconButton(
                       onPressed: () async {

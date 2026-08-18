@@ -1,0 +1,12 @@
+# Copy to android/key.properties (never commit) OR set env vars for CI:
+#   LIVE_MIX_KEYSTORE=/absolute/path/to/upload-keystore.jks
+#   LIVE_MIX_KEYSTORE_PASSWORD=...
+#   LIVE_MIX_KEY_ALIAS=upload
+#   LIVE_MIX_KEY_PASSWORD=...
+#
+# Play App Signing: upload this upload keystore to Play Console; Google holds the app signing key.
+
+storePassword=
+keyPassword=
+keyAlias=upload
+storeFile=/absolute/path/to/upload-keystore.jks

@@ -6,6 +6,7 @@ import '../platform_info.dart';
 import '../services/cache_store.dart';
 import '../theme.dart';
 import '../widgets/brand_mark.dart';
+import '../widgets/legal_links.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key, required this.onContinue});
@@ -91,13 +92,27 @@ class _PhoneWelcome extends StatelessWidget {
             title: 'Listen',
             body: 'Discover live rooms and keep listening from cache when offline.',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+          const _Feature(
+            icon: Icons.menu_book_rounded,
+            title: 'Scripture',
+            body: 'Follow the live scripture board during church gatherings.',
+          ),
+          const SizedBox(height: 10),
+          const _Feature(
+            icon: Icons.photo_library_rounded,
+            title: 'Gallery',
+            body: 'See photos and reels shared while a channel is live.',
+          ),
+          const SizedBox(height: 10),
           const _Feature(
             icon: Icons.mic_rounded,
             title: 'Studio',
-            body: 'Go live with mic, signal meter, and on-air duration.',
+            body: 'Go live from your phone with a single mic publish.',
           ),
-          const Spacer(flex: 3),
+          const SizedBox(height: 18),
+          const _NavPreview(),
+          const Spacer(flex: 2),
           FilledButton(
             onPressed: busy ? null : onContinue,
             child: Text(busy ? 'Opening…' : 'Get started'),
@@ -111,6 +126,8 @@ class _PhoneWelcome extends StatelessWidget {
               fontSize: 12,
             ),
           ),
+          const SizedBox(height: 10),
+          const LegalLinks(dense: true),
         ],
       ),
     );
@@ -170,13 +187,35 @@ class _DesktopWelcome extends StatelessWidget {
                       const SizedBox(width: 14),
                       Expanded(
                         child: _FeatureCard(
-                          icon: Icons.mic_rounded,
-                          title: 'Studio',
-                          body: 'Native mic publish with meters — go live from your desk.',
+                          icon: Icons.menu_book_rounded,
+                          title: 'Scripture',
+                          body: 'Live scripture board for church gatherings.',
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _FeatureCard(
+                          icon: Icons.photo_library_rounded,
+                          title: 'Gallery',
+                          body: 'Photos and reels while a channel is live.',
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _FeatureCard(
+                          icon: Icons.mic_rounded,
+                          title: 'Studio',
+                          body: 'Go live from your desk with mic publish.',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  const _NavPreview(),
                   const Spacer(flex: 2),
                   SizedBox(
                     width: 220,
@@ -193,6 +232,8 @@ class _DesktopWelcome extends StatelessWidget {
                       fontSize: 12.5,
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  const LegalLinks(dense: true),
                   const Spacer(),
                 ],
               ),
@@ -448,6 +489,52 @@ class _Feature extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _NavPreview extends StatelessWidget {
+  const _NavPreview();
+
+  static const _tabs = [
+    (Icons.headphones_rounded, 'Listen'),
+    (Icons.menu_book_rounded, 'Scripture'),
+    (Icons.photo_library_rounded, 'Gallery'),
+    (Icons.mic_rounded, 'Studio'),
+    (Icons.person_rounded, 'Profile'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: LiveMixTheme.panel.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: LiveMixTheme.accent.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          for (final tab in _tabs)
+            Expanded(
+              child: Column(
+                children: [
+                  Icon(tab.$1, size: 20, color: LiveMixTheme.accentBright),
+                  const SizedBox(height: 4),
+                  Text(
+                    tab.$2,
+                    style: GoogleFonts.outfit(
+                      color: LiveMixTheme.mist,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

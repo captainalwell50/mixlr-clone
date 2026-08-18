@@ -7,11 +7,13 @@ class AppUser {
     required this.email,
     required this.onboarded,
     required this.organizations,
+    this.avatarUrl,
   });
 
   final int id;
   final String name;
   final String email;
+  final String? avatarUrl;
   final bool onboarded;
   final List<OrgSummary> organizations;
 
@@ -23,8 +25,26 @@ class AppUser {
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       email: json['email'] as String? ?? '',
+      avatarUrl: json['avatar_url'] as String?,
       onboarded: json['onboarded'] as bool? ?? false,
       organizations: orgs,
+    );
+  }
+
+  AppUser copyWith({
+    String? name,
+    String? email,
+    String? avatarUrl,
+    bool? onboarded,
+    List<OrgSummary>? organizations,
+  }) {
+    return AppUser(
+      id: id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      onboarded: onboarded ?? this.onboarded,
+      organizations: organizations ?? this.organizations,
     );
   }
 }
@@ -118,6 +138,7 @@ class DiscoverCard {
     this.themeColor,
     this.artworkUrl,
     this.hlsUrl,
+    this.creatorType,
   });
 
   final String uuid;
@@ -127,6 +148,7 @@ class DiscoverCard {
   final String? themeColor;
   final String? artworkUrl;
   final String? hlsUrl;
+  final String? creatorType;
 
   factory DiscoverCard.fromJson(Map<String, dynamic> json) {
     return DiscoverCard(
@@ -137,6 +159,7 @@ class DiscoverCard {
       themeColor: json['theme_color'] as String?,
       artworkUrl: json['artwork_url'] as String?,
       hlsUrl: json['hls_url'] as String?,
+      creatorType: json['creator_type'] as String?,
     );
   }
 }
@@ -150,6 +173,8 @@ class ListenPayload {
     this.chatEnabled = true,
     this.hlsUrl,
     this.whepUrl,
+    this.playbackMode = 'whep',
+    this.preferHls = false,
     this.orgName,
     this.orgSlug,
     this.themeColor,
@@ -164,6 +189,9 @@ class ListenPayload {
   final bool chatEnabled;
   final String? hlsUrl;
   final String? whepUrl;
+  /// Server primary mode for public listen: `hls` or `whep`.
+  final String playbackMode;
+  final bool preferHls;
   final String? orgName;
   final String? orgSlug;
   final String? themeColor;
@@ -180,6 +208,9 @@ class ListenPayload {
     if (uuid.isEmpty) {
       throw FormatException('Listen payload missing stream uuid');
     }
+    final preferHls = stream['prefer_hls'] as bool? ?? false;
+    final playbackMode = stream['playback_mode'] as String? ??
+        (preferHls ? 'hls' : 'whep');
     return ListenPayload(
       uuid: uuid,
       title: stream['title'] as String? ?? 'Live',
@@ -188,6 +219,8 @@ class ListenPayload {
       chatEnabled: stream['chat_enabled'] as bool? ?? true,
       hlsUrl: stream['hls_url'] as String?,
       whepUrl: stream['whep_url'] as String?,
+      playbackMode: playbackMode,
+      preferHls: preferHls || playbackMode == 'hls',
       orgName: org?['name'] as String?,
       orgSlug: org?['slug'] as String?,
       themeColor: org?['theme_color'] as String?,

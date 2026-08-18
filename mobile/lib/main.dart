@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:provider/provider.dart';
 
 import 'package:google_fonts/google_fonts.dart';
@@ -18,6 +20,7 @@ import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _enableAndroidPhotoPicker();
   // Never crash cold-start if Google Fonts CDN is unreachable.
   GoogleFonts.config.allowRuntimeFetching = true;
   // Phone chrome only — desktop uses native window chrome.
@@ -41,6 +44,16 @@ Future<void> main() async {
     debugPrint('WebRTC early init skipped: $e');
   }
   runApp(const LiveMixApp());
+}
+
+/// Play Photo/Video policy: one-time avatar pick via system Photo Picker —
+/// no READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE.
+void _enableAndroidPhotoPicker() {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+  final impl = ImagePickerPlatform.instance;
+  if (impl is ImagePickerAndroid) {
+    impl.useAndroidPhotoPicker = true;
+  }
 }
 
 class LiveMixApp extends StatelessWidget {

@@ -5,10 +5,18 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.livemixaudio.live_mix"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Play Target API: new apps/updates must target API 36 from 2026-08-31.
+    // https://support.google.com/googleplay/android-developer/answer/11926878
+    compileSdk = 36
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -20,21 +28,41 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.livemixaudio.live_mix"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        ndk {
+            // 64-bit only — Play policy for new apps / updates.
+            abiFilters "arm64-v8a", "x86_64"
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (System.getenv("LIVE_MIX_KEYSTORE") != null) {
+                storeFile file(System.getenv("LIVE_MIX_KEYSTORE"))
+                storePassword System.getenv("LIVE_MIX_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("LIVE_MIX_KEY_ALIAS")
+                keyPassword System.getenv("LIVE_MIX_KEY_PASSWORD")
+            } else if (keystoreProperties["storeFile"] != null) {
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+                storeFile file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+            }
+        }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig = signingConfigs.release
+            } else {
+                // Local unsigned/debug-signed release for CI smoke builds only.
+                signingConfig = signingConfigs.debug
+            }
         }
     }
 }
