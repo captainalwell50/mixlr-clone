@@ -1,7 +1,7 @@
 name: live_mix
 description: Sound Mix Live — Listen + Studio for Android, macOS, and Windows.
 publish_to: 'none'
-version: 1.2.14+25
+version: 1.2.15+26
 
 environment:
   sdk: ^3.5.3
