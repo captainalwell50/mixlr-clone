@@ -56,7 +56,6 @@ const shareChannelBtn = document.getElementById('btn-share-channel');
 const shareChannelMainBtn = document.getElementById('btn-share-channel-main');
 const copyChannelBtn = document.getElementById('btn-copy-channel');
 const channelUrlEl = document.getElementById('channel-url');
-const listenUrlEl = document.getElementById('listen-url');
 const channelShareUrl = root?.dataset.channelUrl || channelUrlEl?.textContent?.trim() || '';
 const channelShareName = root?.dataset.channelName || 'Sound Mix Live';
 

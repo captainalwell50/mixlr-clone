@@ -312,12 +312,11 @@
                 <div class="mixer-listen-row">
                     <p class="mixer-hint">Event / channel link</p>
                     <code id="event-url" title="{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}">{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}</code>
-                    <code id="channel-url" class="hidden" title="{{ $channelUrl }}">{{ $channelUrl }}</code>
+                    <code id="channel-url" title="{{ $channelUrl }}">{{ $channelUrl }}</code>
                     <div class="mixer-share-actions">
                         <button type="button" class="mixer-add-sounds" id="btn-share-channel-main">Share</button>
                         <button type="button" class="mixer-add-sounds" id="btn-copy-channel">Copy</button>
                     </div>
-                    <code id="listen-url" class="hidden" title="{{ $listenUrl }}">{{ $listenUrl }}</code>
                 </div>
             </div>
             </div>

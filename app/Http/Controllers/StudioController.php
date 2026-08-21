@@ -21,13 +21,11 @@ class StudioController extends Controller
                 ->latest('id')
                 ->first();
 
-        $listenUrl = $liveOrPaused
-            ? route('events.show', $liveOrPaused)
-            : route('listen.stream', $stream);
-
         $channelUrl = $stream->organization
             ? $stream->organization->channelUrl()
-            : $listenUrl;
+            : ($liveOrPaused
+                ? route('events.show', $liveOrPaused)
+                : route('listen.stream', $stream));
 
         $galleryListUrl = $openEvent
             ? route('gallery.index', ['stream' => $stream, 'event_id' => $openEvent->id])
@@ -37,7 +35,6 @@ class StudioController extends Controller
             'stream' => $stream,
             'whipUrl' => $stream->whipUrl(),
             'organization' => $stream->organization,
-            'listenUrl' => $listenUrl,
             'channelUrl' => $channelUrl,
             'broadcastAllowed' => $stream->organization?->allowsBroadcast() ?? true,
             'billingUrl' => route('billing.plans'),
