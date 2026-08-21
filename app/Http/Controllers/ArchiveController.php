@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Organization;
 use App\Models\Recording;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
@@ -33,7 +34,7 @@ class ArchiveController extends Controller
         return view('archive', compact('channels'));
     }
 
-    public function channel(Organization $organization): View
+    public function channel(Request $request, Organization $organization): View
     {
         abort_unless($organization->is_public, 404);
 
@@ -44,6 +45,8 @@ class ArchiveController extends Controller
             ->latest('completed_at')
             ->paginate(12);
 
-        return view('archive-channel', compact('organization', 'recordings'));
+        $canManage = (bool) $request->user()?->canManageOrganization($organization);
+
+        return view('archive-channel', compact('organization', 'recordings', 'canManage'));
     }
 }

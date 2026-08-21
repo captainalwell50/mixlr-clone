@@ -2866,9 +2866,25 @@ a.stage-platform:hover {
     background: color-mix(in srgb, var(--stage-cream) 35%, transparent);
 }
 
-.archive-play {
+.archive-row-actions {
     grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.5rem;
+}
+
+@media (min-width: 720px) {
+    .archive-row-actions {
+        grid-column: auto;
+        flex-wrap: nowrap;
+        align-items: center;
+    }
+}
+
+.archive-play {
     display: inline-flex;
+    flex: 1 1 auto;
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
@@ -2884,7 +2900,7 @@ a.stage-platform:hover {
 
 @media (min-width: 720px) {
     .archive-play {
-        grid-column: auto;
+        flex: 0 0 auto;
         min-width: 7.5rem;
         padding: 0 1.15rem;
     }
@@ -2898,6 +2914,42 @@ a.stage-platform:hover {
 .archive-play:hover {
     filter: brightness(1.08);
     transform: translateY(-1px);
+}
+
+.archive-delete-form {
+    display: flex;
+    flex: 1 1 auto;
+    margin: 0;
+}
+
+@media (min-width: 720px) {
+    .archive-delete-form {
+        flex: 0 0 auto;
+    }
+}
+
+.archive-delete {
+    display: inline-flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.6rem;
+    min-width: 5.5rem;
+    padding: 0 1rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 22%, transparent);
+    border-radius: 999px;
+    background: transparent;
+    color: color-mix(in srgb, var(--stage-cream) 88%, transparent);
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.archive-delete:hover {
+    border-color: color-mix(in srgb, #e35d5d 55%, transparent);
+    background: color-mix(in srgb, #e35d5d 14%, transparent);
+    color: #ffb4b4;
 }
 
 .archive-empty {

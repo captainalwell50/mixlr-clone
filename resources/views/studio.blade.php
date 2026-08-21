@@ -308,11 +308,7 @@
                         </div>
                     @endif
 
-                    <div class="mixer-playlist-head" style="margin-top: 1rem">
-                        <h2>Podcasts</h2>
-                    </div>
-                    <p class="mixer-hint">Audio is recorded on this device while you’re on air. Ending live uploads it to Podcasts automatically — you can also upload, save, or discard here.</p>
-                    <div class="mixer-local-recording" id="studio-local-recording" hidden>
+                    <div class="mixer-local-recording" id="studio-local-recording" hidden style="margin-top: 1rem">
                         <p class="mixer-recording-title" id="studio-local-recording-title">Local session ready</p>
                         <p class="mixer-recording-meta" id="studio-local-recording-meta"></p>
                         <label class="mixer-hint" for="local-recording-title">Podcast title (optional)</label>
@@ -324,7 +320,7 @@
                         </div>
                     </div>
                     <p class="mixer-hint" id="studio-local-recording-live" hidden>Recording locally… network drops won’t cut this file.</p>
-                    <div class="mixer-recordings" id="studio-recordings">
+                    <div class="mixer-recordings" id="studio-recordings" style="margin-top: 1rem">
                         @forelse ($recordings as $recording)
                             <div class="mixer-recording-row" data-recording-id="{{ $recording->id }}">
                                 <div class="mixer-recording-copy">
@@ -339,11 +335,6 @@
                                         data-update-url="{{ URL::temporarySignedRoute('recordings.update', now()->addHours(12), ['stream' => $stream, 'recording' => $recording]) }}"
                                         data-title="{{ $recording->displayTitle() }}"
                                     >Rename</button>
-                                    <button
-                                        type="button"
-                                        class="mixer-recording-delete"
-                                        data-delete-url="{{ URL::temporarySignedRoute('recordings.destroy', now()->addHours(12), ['stream' => $stream, 'recording' => $recording]) }}"
-                                    >Delete</button>
                                 </div>
                             </div>
                         @empty

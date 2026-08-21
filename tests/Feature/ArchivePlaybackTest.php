@@ -60,7 +60,51 @@ class ArchivePlaybackTest extends TestCase
         $this->get(route('archive.channel', $org))
             ->assertOk()
             ->assertSee('Morning Dew Podcast', false)
-            ->assertSee($org->name, false);
+            ->assertSee($org->name, false)
+            ->assertDontSee('PODCASTS', false)
+            ->assertDontSee('Recorded lives from this channel', false)
+            ->assertDontSee('>Delete<', false);
+    }
+
+    public function test_archive_channel_shows_delete_only_for_managers(): void
+    {
+        $recording = $this->makeRecording(['title' => 'Manager Delete Podcast']);
+        $org = $recording->stream->organization;
+        $manager = \App\Models\User::factory()->create();
+        $org->users()->attach($manager->id, ['role' => \App\Enums\OrgRole::Owner->value]);
+        $outsider = \App\Models\User::factory()->create();
+
+        $this->actingAs($manager)
+            ->get(route('archive.channel', $org))
+            ->assertOk()
+            ->assertSee('>Delete<', false)
+            ->assertSee('Delete this podcast permanently?', false);
+
+        $this->actingAs($outsider)
+            ->get(route('archive.channel', $org))
+            ->assertOk()
+            ->assertDontSee('>Delete<', false);
+    }
+
+    public function test_manager_can_delete_podcast_from_channel_page(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('mediamtx_recordings');
+        $recording = $this->makeRecording(['title' => 'Remove Me']);
+        $org = $recording->stream->organization;
+        $manager = \App\Models\User::factory()->create();
+        $org->users()->attach($manager->id, ['role' => \App\Enums\OrgRole::Owner->value]);
+
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'recordings.destroy',
+            now()->addHours(12),
+            ['stream' => $recording->stream, 'recording' => $recording],
+        );
+
+        $this->actingAs($manager)
+            ->delete($url)
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('recordings', ['id' => $recording->id]);
     }
 
     public function test_archive_prefers_event_name_over_channel_stream_title(): void

@@ -11,14 +11,7 @@
     <div class="archive-page site-page">
         <div class="archive-head stage-rise">
             <div>
-                <p class="site-section-label">
-                    <a href="{{ route('archive.index') }}" class="archive-crumb">Podcasts</a>
-                    · Channel
-                </p>
-                <h1 class="mt-2">{{ $organization->name }}</h1>
-                <p class="mt-2 max-w-lg text-sm text-[var(--stage-muted)]">
-                    Recorded lives from this channel. Open any podcast to listen.
-                </p>
+                <h1>{{ $organization->name }}</h1>
             </div>
             <a href="{{ $organization->channelUrl() }}" class="archive-head-link">Channel page</a>
         </div>
@@ -58,15 +51,29 @@
                             </div>
                         </div>
 
-                        <a
-                            href="{{ route('archive.play', $recording) }}"
-                            class="archive-play"
-                            target="_blank"
-                            rel="noopener"
-                        >
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86z"/></svg>
-                            Play
-                        </a>
+                        <div class="archive-row-actions">
+                            <a
+                                href="{{ route('archive.play', $recording) }}"
+                                class="archive-play"
+                                target="_blank"
+                                rel="noopener"
+                            >
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86z"/></svg>
+                                Play
+                            </a>
+                            @if ($canManage)
+                                <form
+                                    method="POST"
+                                    action="{{ URL::temporarySignedRoute('recordings.destroy', now()->addHours(12), ['stream' => $recording->stream, 'recording' => $recording]) }}"
+                                    class="archive-delete-form"
+                                    onsubmit="return confirm('Delete this podcast permanently?');"
+                                >
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="archive-delete">Delete</button>
+                                </form>
+                            @endif
+                        </div>
                     </li>
                 @endforeach
             </ul>

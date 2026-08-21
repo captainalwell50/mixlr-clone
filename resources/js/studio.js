@@ -2703,7 +2703,6 @@ function prependStudioRecordingRow(payload) {
         <div class="mixer-recording-actions">
             <a class="mixer-recording-link" target="_blank" rel="noopener">Play</a>
             <button type="button" class="mixer-recording-link mixer-recording-rename">Rename</button>
-            <button type="button" class="mixer-recording-delete">Delete</button>
         </div>
     `;
     row.querySelector('.mixer-recording-title').textContent = payload.title;
@@ -2717,10 +2716,6 @@ function prependStudioRecordingRow(payload) {
     if (rename instanceof HTMLButtonElement) {
         rename.dataset.updateUrl = payload.update_url || '';
         rename.dataset.title = payload.title || '';
-    }
-    const del = row.querySelector('.mixer-recording-delete');
-    if (del instanceof HTMLButtonElement) {
-        del.dataset.deleteUrl = payload.delete_url;
     }
     studioRecordings.prepend(row);
 }
@@ -2863,45 +2858,6 @@ studioRecordings?.addEventListener('click', async (ev) => {
             renameBtn.disabled = false;
         }
         return;
-    }
-
-    const btn = target.closest('.mixer-recording-delete');
-    if (!btn || !(btn instanceof HTMLButtonElement)) {
-        return;
-    }
-    const url = btn.dataset.deleteUrl;
-    const row = btn.closest('.mixer-recording-row');
-    if (!url || !row) {
-        return;
-    }
-    if (!window.confirm('Delete this podcast permanently?')) {
-        return;
-    }
-    btn.disabled = true;
-    try {
-        const res = await fetch(url, {
-            method: 'DELETE',
-            headers: {
-                Accept: 'application/json',
-                'X-CSRF-TOKEN': galleryCsrf || '',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-        });
-        if (!res.ok) {
-            throw new Error('delete failed');
-        }
-        row.remove();
-        if (studioRecordings && !studioRecordings.querySelector('.mixer-recording-row')) {
-            const empty = document.createElement('p');
-            empty.className = 'mixer-hint';
-            empty.id = 'studio-recordings-empty';
-            empty.textContent = 'No uploaded recordings yet for this stream.';
-            studioRecordings.appendChild(empty);
-        }
-        setStatus('Podcast deleted.');
-    } catch {
-        btn.disabled = false;
-        setStatus('Could not delete podcast.');
     }
 });
 
