@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Storage;
 
 class Organization extends Model
 {
@@ -183,21 +184,26 @@ class Organization extends Model
 
     public function artworkUrl(): ?string
     {
-        $path = $this->artwork_path;
-        if (! is_string($path) || $path === '') {
-            return null;
-        }
-
-        return $path;
+        return $this->resolvePublicAssetUrl($this->artwork_path);
     }
 
     public function logoUrl(): ?string
     {
-        $path = $this->logo_path;
+        return $this->resolvePublicAssetUrl($this->logo_path);
+    }
+
+    private function resolvePublicAssetUrl(?string $path): ?string
+    {
         if (! is_string($path) || $path === '') {
             return null;
         }
 
-        return $path;
+        if (str_starts_with($path, 'http://')
+            || str_starts_with($path, 'https://')
+            || str_starts_with($path, '/')) {
+            return $path;
+        }
+
+        return Storage::disk('public')->url($path);
     }
 }

@@ -4,7 +4,10 @@
 
 @section('content')
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 class="console-title">Channel branding</h1>
+        <div>
+            <h1 class="console-title">Edit channel</h1>
+            <p class="mt-1 text-sm text-[var(--stage-muted)]">Name, URLs, and discoverability. Visual branding lives on Customise channel.</p>
+        </div>
         <a href="{{ $organization->channelUrl() }}" target="_blank" class="text-sm text-emerald-400 hover:text-emerald-300">View channel →</a>
     </div>
 
@@ -43,23 +46,14 @@
                 class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white" placeholder="https://instagram.com/… or Facebook album">
             <p class="mt-1 text-xs text-zinc-500">Shown on the listen page so people can open photos from this service.</p>
         </div>
-        <div>
-            <label for="logo_path" class="block text-sm font-medium text-zinc-300">Logo URL</label>
-            <input id="logo_path" type="text" name="logo_path" value="{{ old('logo_path', $organization->logo_path) }}"
-                class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white">
-        </div>
-        <div>
-            <label for="artwork_path" class="block text-sm font-medium text-zinc-300">Default artwork URL</label>
-            <input id="artwork_path" type="text" name="artwork_path" value="{{ old('artwork_path', $organization->artwork_path) }}"
-                class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white">
-        </div>
         <label class="flex items-center gap-2 text-sm text-zinc-300">
             <input type="hidden" name="is_public" value="0">
             <input type="checkbox" name="is_public" value="1" @checked(old('is_public', $organization->is_public ?? true)) class="rounded border-zinc-600">
             Public channel (discoverable)
         </label>
-        <div class="flex gap-3">
+        <div class="flex flex-wrap gap-3">
             <button type="submit" class="console-btn console-btn-primary">Save</button>
+            <a href="{{ route('admin.organizations.customise', $organization) }}" class="console-btn console-btn-ghost">Customise channel</a>
             <a href="{{ route('admin.organizations.members', $organization) }}" class="console-btn console-btn-ghost">Members</a>
             <a href="{{ route('admin.organizations.index') }}" class="console-btn console-btn-ghost">Back</a>
         </div>

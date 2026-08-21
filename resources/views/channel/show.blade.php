@@ -21,8 +21,8 @@
             @if ($artwork) style="--site-art: url('{{ $artwork }}')" @endif
         >
             <div class="site-hero-inner">
-                @if ($organization->logo_path)
-                    <img src="{{ $organization->logo_path }}" alt=""
+                @if ($organization->logoUrl())
+                    <img src="{{ $organization->logoUrl() }}" alt=""
                         class="mb-4 h-14 w-14 rounded-xl object-cover ring-1 ring-white/15">
                 @endif
 

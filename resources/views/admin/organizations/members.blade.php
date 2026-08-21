@@ -8,7 +8,10 @@
             <h1 class="console-title">Members</h1>
             <p class="console-lead">{{ $organization->name }}</p>
         </div>
-        <a href="{{ route('admin.organizations.edit', $organization) }}" class="text-sm text-zinc-400 hover:text-white">Edit org</a>
+        <div class="flex flex-wrap gap-3 text-sm">
+            <a href="{{ route('admin.organizations.customise', $organization) }}" class="text-zinc-400 hover:text-white">Customise</a>
+            <a href="{{ route('admin.organizations.edit', $organization) }}" class="text-zinc-400 hover:text-white">Edit org</a>
+        </div>
     </div>
 
     <form method="POST" action="{{ route('admin.organizations.members.store', $organization) }}" class="mt-8 max-w-xl space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">

@@ -31,6 +31,8 @@
                         <td class="text-right whitespace-nowrap">
                             <a href="{{ $org->channelUrl() }}" class="console-muted-link" target="_blank">Page</a>
                             <span class="text-[var(--stage-muted)]">·</span>
+                            <a href="{{ route('admin.organizations.customise', $org) }}" class="console-muted-link">Customise</a>
+                            <span class="text-[var(--stage-muted)]">·</span>
                             <a href="{{ route('admin.organizations.members', $org) }}" class="console-muted-link">Members</a>
                             <span class="text-[var(--stage-muted)]">·</span>
                             <a href="{{ route('admin.organizations.edit', $org) }}" class="console-link">Edit</a>

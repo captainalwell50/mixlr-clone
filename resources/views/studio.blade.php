@@ -242,21 +242,12 @@
 
             <div class="mixer-more" data-mobile-pane="more">
                 <div class="mixer-gallery">
-                    <div class="mixer-playlist-head">
-                        <h2>Listen background</h2>
-                    </div>
-                    <p class="mixer-hint">Full-screen image behind the listener page (replaces the default).</p>
-                    <div class="mixer-gallery-actions">
-                        <button type="button" id="btn-add-background" class="mixer-add-sounds">Set background</button>
-                        <input id="background-input" type="file" accept="image/*" class="hidden">
-                    </div>
-                    @if (! empty($listenBackgroundUrl))
-                        <div class="mixer-bg-preview" id="studio-bg-preview" style="background-image: url('{{ $listenBackgroundUrl }}')"></div>
-                    @else
-                        <div class="mixer-bg-preview is-empty" id="studio-bg-preview">Default background</div>
-                    @endif
+                    <p class="mixer-hint" style="margin-bottom: 0.75rem">
+                        <a href="{{ route('admin.organizations.customise', $organization) }}" class="mixer-top-link">Customise channel</a>
+                        — logo, artwork, listen background
+                    </p>
 
-                    <div class="mixer-playlist-head" style="margin-top: 1rem">
+                    <div class="mixer-playlist-head">
                         <h2>Service gallery</h2>
                     </div>
                     <p class="mixer-hint">Post photos or short video reels (30s–60s) for listeners.</p>
@@ -383,7 +374,6 @@
             data-broadcast-allowed="{{ ($broadcastAllowed ?? true) ? '1' : '0' }}"
             data-billing-url="{{ $billingUrl ?? route('billing.plans') }}"
             data-gallery-upload-url="{{ $galleryUploadUrl }}"
-            data-background-upload-url="{{ $backgroundUploadUrl }}"
             data-gallery-list-url="{{ $galleryListUrl }}"
             data-library-list-url="{{ $libraryListUrl }}"
             data-library-upload-url="{{ $libraryUploadUrl }}"

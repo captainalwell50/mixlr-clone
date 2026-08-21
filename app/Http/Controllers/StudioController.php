@@ -46,11 +46,6 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
-            'backgroundUploadUrl' => URL::temporarySignedRoute(
-                'gallery.background',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
             'galleryListUrl' => $galleryListUrl,
             'libraryListUrl' => URL::temporarySignedRoute(
                 'studio.library.index',
@@ -128,7 +123,6 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
-            'listenBackgroundUrl' => $stream->listenBackgroundUrl(),
             'recordings' => $stream->recordings()
                 ->with('event')
                 ->where('is_public', true)

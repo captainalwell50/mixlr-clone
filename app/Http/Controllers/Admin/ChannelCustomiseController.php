@@ -1,0 +1,149 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Organization;
+use App\Models\Stream;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\View\View;
+
+class ChannelCustomiseController extends Controller
+{
+    public function edit(Request $request, Organization $organization): View
+    {
+        abort_unless($request->user()?->canManageOrganization($organization), 403);
+
+        $stream = $organization->defaultStream();
+
+        return view('admin.organizations.customise', [
+            'organization' => $organization,
+            'stream' => $stream,
+            'logoUrl' => $organization->logoUrl(),
+            'artworkUrl' => $organization->artworkUrl(),
+            'listenBackgroundUrl' => $stream?->listenBackgroundUrl(),
+        ]);
+    }
+
+    public function updateLogo(Request $request, Organization $organization): RedirectResponse
+    {
+        abort_unless($request->user()?->canManageOrganization($organization), 403);
+
+        $validated = $request->validate([
+            'logo' => ['required', 'image', 'max:5120'],
+        ]);
+
+        $path = $this->storeBrandingImage($validated['logo'], $organization, 'logo');
+        $this->deleteStoredPath($organization->logo_path);
+        $organization->forceFill(['logo_path' => $path])->save();
+
+        return redirect()
+            ->route('admin.organizations.customise', $organization)
+            ->with('status', __('Channel logo updated.'));
+    }
+
+    public function destroyLogo(Request $request, Organization $organization): RedirectResponse
+    {
+        abort_unless($request->user()?->canManageOrganization($organization), 403);
+
+        $this->deleteStoredPath($organization->logo_path);
+        $organization->forceFill(['logo_path' => null])->save();
+
+        return redirect()
+            ->route('admin.organizations.customise', $organization)
+            ->with('status', __('Channel logo removed.'));
+    }
+
+    public function updateArtwork(Request $request, Organization $organization): RedirectResponse
+    {
+        abort_unless($request->user()?->canManageOrganization($organization), 403);
+
+        $validated = $request->validate([
+            'artwork' => ['required', 'image', 'max:12288'],
+        ]);
+
+        $path = $this->storeBrandingImage($validated['artwork'], $organization, 'artwork');
+        $this->deleteStoredPath($organization->artwork_path);
+        $organization->forceFill(['artwork_path' => $path])->save();
+
+        return redirect()
+            ->route('admin.organizations.customise', $organization)
+            ->with('status', __('Channel artwork updated.'));
+    }
+
+    public function destroyArtwork(Request $request, Organization $organization): RedirectResponse
+    {
+        abort_unless($request->user()?->canManageOrganization($organization), 403);
+
+        $this->deleteStoredPath($organization->artwork_path);
+        $organization->forceFill(['artwork_path' => null])->save();
+
+        return redirect()
+            ->route('admin.organizations.customise', $organization)
+            ->with('status', __('Channel artwork removed.'));
+    }
+
+    public function updateBackground(Request $request, Organization $organization): RedirectResponse
+    {
+        abort_unless($request->user()?->canManageOrganization($organization), 403);
+
+        $stream = $this->requireDefaultStream($organization);
+
+        $validated = $request->validate([
+            'background' => ['required', 'image', 'max:12288'],
+        ]);
+
+        $path = $validated['background']->store('listen-bg/'.$stream->uuid, 'public');
+        $this->deleteStoredPath($stream->listen_background_path);
+        $stream->forceFill(['listen_background_path' => $path])->save();
+
+        return redirect()
+            ->route('admin.organizations.customise', $organization)
+            ->with('status', __('Listen background updated.'));
+    }
+
+    public function destroyBackground(Request $request, Organization $organization): RedirectResponse
+    {
+        abort_unless($request->user()?->canManageOrganization($organization), 403);
+
+        $stream = $this->requireDefaultStream($organization);
+
+        $this->deleteStoredPath($stream->listen_background_path);
+        $stream->forceFill(['listen_background_path' => null])->save();
+
+        return redirect()
+            ->route('admin.organizations.customise', $organization)
+            ->with('status', __('Listen background removed.'));
+    }
+
+    private function requireDefaultStream(Organization $organization): Stream
+    {
+        $stream = $organization->defaultStream();
+        abort_unless($stream !== null, 404, 'Create a stream for this channel before setting a listen background.');
+
+        return $stream;
+    }
+
+    private function storeBrandingImage(UploadedFile $file, Organization $organization, string $kind): string
+    {
+        return $file->store('org-branding/'.$organization->id.'/'.$kind, 'public');
+    }
+
+    private function deleteStoredPath(?string $previous): void
+    {
+        if (! is_string($previous) || $previous === '') {
+            return;
+        }
+
+        if (str_starts_with($previous, 'http://')
+            || str_starts_with($previous, 'https://')
+            || str_starts_with($previous, '/')) {
+            return;
+        }
+
+        Storage::disk('public')->delete($previous);
+    }
+}

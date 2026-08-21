@@ -1,13 +1,16 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\LegalController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\EventController as AdminEventController;
+use App\Http\Controllers\Admin\ChannelCustomiseController;
 use App\Http\Controllers\Admin\OrganizationController;
 use App\Http\Controllers\Admin\OrganizationMemberController;
 use App\Http\Controllers\Admin\PlanController;
 use App\Http\Controllers\Admin\RecordingDestroyController;
 use App\Http\Controllers\Admin\RecordingDownloadController;
+use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\StreamController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\ArchiveController;
@@ -50,6 +53,91 @@ Route::get('/downloads', function () {
         'platforms' => config('downloads'),
     ]);
 })->name('downloads');
+
+// Unlisted store-listing kit (URL-only; not in public nav/footer).
+Route::get('/listing', function () {
+    $title = 'Sound Mix Live';
+    $shortDescription = 'Live audio — listen, scripture, gallery, and Studio mic publish.';
+    $fullDescription = <<<'TXT'
+Sound Mix Live is live audio for gatherings — listen on your phone, follow scripture and gallery when a channel is live, and go on air from Studio with your mic.
+
+What you get in the Android app:
+• Listen — discover live channels and keep listening with background audio
+• Scripture — follow the live scripture board for the selected channel
+• Gallery — view photos/reels shared while a channel is live
+• Profile — account, optional profile photo, Studio go-live entry
+• Studio — mic preview and go live / pause / end (full playlist mixer stays on the web Studio)
+
+Chat and hearts are on the website listen/event pages when enabled — not inside the mobile Listen tab.
+
+Privacy: https://soundmix.live/privacy
+Terms: https://soundmix.live/terms
+Support: https://soundmix.live/support
+TXT;
+
+    $base = asset('listing/play-store');
+    $assets = [
+        [
+            'label' => 'App icon',
+            'filename' => 'icon-512.png',
+            'url' => $base.'/icon-512.png',
+            'width' => 512,
+            'height' => 512,
+            'note' => 'Play Store high-res icon',
+        ],
+        [
+            'label' => 'Feature graphic',
+            'filename' => 'feature-graphic-1024x500.png',
+            'url' => $base.'/feature-graphic-1024x500.png',
+            'width' => 1024,
+            'height' => 500,
+            'note' => 'Play Console feature banner',
+        ],
+        [
+            'label' => 'Screenshot 1 — Welcome',
+            'filename' => 'screenshot-1.png',
+            'url' => $base.'/screenshot-1.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Matches app Get started (nav: Listen / Scripture / Gallery / Profile)',
+            'tall' => true,
+        ],
+        [
+            'label' => 'Screenshot — Scripture board',
+            'filename' => 'screenshot-scripture.png',
+            'url' => $base.'/screenshot-scripture.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Scripture tab — matches app nav',
+            'tall' => true,
+        ],
+        [
+            'label' => 'Screenshot — Live Gallery',
+            'filename' => 'screenshot-gallery.png',
+            'url' => $base.'/screenshot-gallery.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Gallery tab — matches app nav',
+            'tall' => true,
+        ],
+    ];
+
+    $apk = config('downloads.android_apk');
+
+    return view('listing', [
+        'title' => $title,
+        'shortDescription' => $shortDescription,
+        'fullDescription' => trim($fullDescription),
+        'assets' => $assets,
+        'appVersion' => '1.2.14',
+        'supportEmail' => config('app.support_email', 'support@soundmix.live'),
+        'apkUrl' => ($apk['available'] ?? false) ? ($apk['url'] ?? null) : null,
+    ]);
+})->name('listing');
+
+Route::get('/privacy', [LegalController::class, 'privacy'])->name('legal.privacy');
+Route::get('/terms', [LegalController::class, 'terms'])->name('legal.terms');
+Route::get('/support', [LegalController::class, 'support'])->name('legal.support');
 
 Route::get('/discover', [DiscoverController::class, 'index'])->name('discover');
 
@@ -224,6 +312,9 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/account', [AccountController::class, 'edit'])->name('account.edit');
     Route::put('/account', [AccountController::class, 'update'])->name('account.update');
+    Route::delete('/account', [AccountController::class, 'destroy'])
+        ->middleware('throttle:5,1')
+        ->name('account.destroy');
 
     Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding.show');
     Route::post('/onboarding/type', [OnboardingController::class, 'storeType'])->name('onboarding.type');
@@ -251,6 +342,9 @@ Route::middleware('auth')->group(function (): void {
 });
 
 Route::middleware(['auth', 'onboarded'])->prefix('admin')->name('admin.')->group(function (): void {
+    Route::get('settings', [SettingsController::class, 'edit'])->name('settings.edit');
+    Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
+
     Route::get('users', [UserController::class, 'index'])->name('users.index');
     Route::get('users/create', [UserController::class, 'create'])->name('users.create');
     Route::post('users', [UserController::class, 'store'])->name('users.store');
@@ -270,6 +364,13 @@ Route::middleware(['auth', 'onboarded'])->prefix('admin')->name('admin.')->group
     Route::post('organizations', [OrganizationController::class, 'store'])->name('organizations.store');
     Route::get('organizations/{organization}/edit', [OrganizationController::class, 'edit'])->name('organizations.edit');
     Route::put('organizations/{organization}', [OrganizationController::class, 'update'])->name('organizations.update');
+    Route::get('organizations/{organization}/customise', [ChannelCustomiseController::class, 'edit'])->name('organizations.customise');
+    Route::post('organizations/{organization}/customise/logo', [ChannelCustomiseController::class, 'updateLogo'])->name('organizations.customise.logo');
+    Route::delete('organizations/{organization}/customise/logo', [ChannelCustomiseController::class, 'destroyLogo'])->name('organizations.customise.logo.destroy');
+    Route::post('organizations/{organization}/customise/artwork', [ChannelCustomiseController::class, 'updateArtwork'])->name('organizations.customise.artwork');
+    Route::delete('organizations/{organization}/customise/artwork', [ChannelCustomiseController::class, 'destroyArtwork'])->name('organizations.customise.artwork.destroy');
+    Route::post('organizations/{organization}/customise/background', [ChannelCustomiseController::class, 'updateBackground'])->name('organizations.customise.background');
+    Route::delete('organizations/{organization}/customise/background', [ChannelCustomiseController::class, 'destroyBackground'])->name('organizations.customise.background.destroy');
 
     Route::get('organizations/{organization}/members', [OrganizationMemberController::class, 'index'])->name('organizations.members');
     Route::post('organizations/{organization}/members', [OrganizationMemberController::class, 'store'])->name('organizations.members.store');
