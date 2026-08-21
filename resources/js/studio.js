@@ -2023,8 +2023,6 @@ async function teardownLive() {
 const libraryListEl = document.getElementById('library-list');
 const librarySearchEl = document.getElementById('library-search');
 const libraryDestinationEl = document.getElementById('library-destination');
-const libraryStorageMeterEl = document.getElementById('library-storage-meter');
-const libraryDriveStatusEl = document.getElementById('library-drive-status');
 const btnDriveConnect = document.getElementById('btn-drive-connect');
 const btnDriveBrowse = document.getElementById('btn-drive-browse');
 const libraryListUrl = root?.dataset.libraryListUrl;
@@ -2201,9 +2199,6 @@ async function refreshLibrary() {
         }
         const data = await res.json();
         libraryAssets = Array.isArray(data.assets) ? data.assets : [];
-        if (data.storage && libraryStorageMeterEl) {
-            libraryStorageMeterEl.textContent = `Platform storage: ${data.storage.used_label} of ${data.storage.limit_label}`;
-        }
         if (data.drive) {
             libraryDrive = data.drive;
             updateDriveUi();
@@ -2217,11 +2212,6 @@ async function refreshLibrary() {
 }
 
 function updateDriveUi() {
-    if (libraryDriveStatusEl) {
-        libraryDriveStatusEl.textContent = libraryDrive.connected
-            ? `Google Drive: connected${libraryDrive.email ? ` (${libraryDrive.email})` : ''}`
-            : 'Google Drive: not connected — uploads to Drive need Connect Drive (login).';
-    }
     if (btnDriveConnect) {
         btnDriveConnect.hidden = !libraryDrive.connect_url || libraryDrive.connected;
         btnDriveConnect.onclick = () => {

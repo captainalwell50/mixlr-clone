@@ -210,9 +210,6 @@
                 <div class="mixer-playlist-head">
                     <h2>Audio library</h2>
                 </div>
-                <p class="mixer-hint mixer-hint--desktop">Saved on this stream — search and queue into the session playlist. Use platform storage (counts toward your plan) or Google Drive (your quota).</p>
-                <p class="mixer-hint" id="library-storage-meter">Platform storage: …</p>
-                <p class="mixer-hint" id="library-drive-status">Google Drive: checking…</p>
                 <div class="mixer-library-toolbar">
                     <label class="sr-only" for="library-search">Search library</label>
                     <input id="library-search" class="mixer-library-search" type="search" placeholder="Search songs…" autocomplete="off">
@@ -244,7 +241,6 @@
                 <div class="mixer-gallery">
                     <p class="mixer-hint" style="margin-bottom: 0.75rem">
                         <a href="{{ route('admin.organizations.customise', $organization) }}" class="mixer-top-link">Customise channel</a>
-                        — logo, artwork, listen background
                     </p>
 
                     <div class="mixer-playlist-head">
