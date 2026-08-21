@@ -356,7 +356,7 @@
                 </p>
                 <p id="studio-status" class="mixer-status" role="status">Allow microphone access when prompted.</p>
                 <div class="mixer-listen-row">
-                    <p class="mixer-hint" style="margin: 0 0 0.35rem">Event / channel link</p>
+                    <p class="mixer-hint">Event / channel link</p>
                     <code id="event-url" title="{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}">{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}</code>
                     <code id="channel-url" class="hidden" title="{{ $channelUrl }}">{{ $channelUrl }}</code>
                     <div class="mixer-share-actions">
