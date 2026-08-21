@@ -1767,7 +1767,7 @@ async function primeMicrophone({ interactive = false } = {}) {
         setStatus(
             isMobileUa()
                 ? `Microphone ready (${micCount} input${micCount === 1 ? '' : 's'}). Pick Input 1, then Go on air.`
-                : 'Ready. Cue is off — Studio stays silent. Go on air when ready; use the listen link (or cue + headphones) to monitor.',
+                : `Microphone ready (${micCount} input${micCount === 1 ? '' : 's'}). Go on air when ready.`,
         );
         return true;
     } catch (e) {

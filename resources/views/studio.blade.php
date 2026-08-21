@@ -312,9 +312,6 @@
                     </div>
                     <p class="mixer-hint" id="studio-local-recording-live" hidden>Recording locally… network drops won’t cut this file.</p>
                 </div>
-                <p class="mixer-hint mixer-hint--desktop">
-                    Cue (headphones) is off by default — Studio stays silent. Under Master, set broadcast layout and cue output, then turn a channel’s CUE on. Master sets overall mix volume for Input 1, Input 2, and Playlist.
-                </p>
                 <p id="studio-status" class="mixer-status" role="status">Allow microphone access when prompted.</p>
                 <div class="mixer-listen-row">
                     <p class="mixer-hint">Event / channel link</p>
