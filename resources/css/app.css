@@ -4752,6 +4752,16 @@ a.stage-platform:hover {
 }
 
 /* ——— Studio mixer ——— */
+/* Lock the Studio document to the viewport so the console can fill height. */
+html:has(.mixer),
+body.stage-body:has(.mixer) {
+    height: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    margin: 0;
+}
+
 .mixer {
     --mixer-bg: #0c0d10;
     --mixer-panel: #14161c;
@@ -4760,6 +4770,9 @@ a.stage-platform:hover {
     --mixer-text: #f2f2f4;
     --mixer-muted: rgba(242, 242, 244, 0.55);
     --mixer-danger: #e11d3a;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
     height: 100dvh;
     max-height: 100dvh;
     overflow: hidden;
@@ -4771,6 +4784,7 @@ a.stage-platform:hover {
 }
 
 .mixer-topbar {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -4896,6 +4910,7 @@ a.stage-platform:hover {
 
 .mixer-hero {
     position: relative;
+    flex: 0 0 auto;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 1rem;
@@ -4976,7 +4991,7 @@ a.stage-platform:hover {
 }
 
 .mixer-board {
-    flex: 1;
+    flex: 1 1 auto;
     display: grid;
     grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.95fr);
     gap: 0;
@@ -4991,6 +5006,7 @@ a.stage-platform:hover {
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    height: 100%;
     overflow-x: hidden;
     overflow-y: auto;
     background: #101218;
@@ -5004,13 +5020,15 @@ a.stage-platform:hover {
     border-top: 1px solid var(--mixer-line);
 }
 
-/* Hardware-style mixing console (left bay) — fixed height, does not grow with page */
+/* Hardware-style mixing console (left bay) — fills board height; feet stay visible */
 .mixer-deck {
     display: flex;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
     min-height: 0;
+    height: 100%;
     padding: 0.85rem;
-    overflow: auto;
+    overflow: hidden;
     background:
         radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.04), transparent 55%),
         linear-gradient(180deg, #1a1d24 0%, #101218 55%, #0c0e13 100%);
@@ -5020,10 +5038,12 @@ a.stage-platform:hover {
 .mixer-chassis {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
     width: 100%;
-    height: auto;
     min-height: 0;
+    height: 100%;
     max-height: 100%;
+    overflow: hidden;
     border-radius: 0.65rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background:
@@ -5035,6 +5055,7 @@ a.stage-platform:hover {
 }
 
 .mixer-chassis-rail {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -5066,11 +5087,16 @@ a.stage-platform:hover {
 }
 
 .mixer-strips {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(6.5rem, 0.95fr);
+    grid-template-rows: minmax(0, 1fr);
     gap: 0;
-    padding: 0.35rem;
+    min-height: 0;
+    height: 100%;
+    align-items: stretch;
+    padding: 0.45rem;
+    overflow: hidden;
 }
 
 .mixer-strip {
@@ -5079,7 +5105,10 @@ a.stage-platform:hover {
     align-items: stretch;
     gap: 0.45rem;
     min-width: 0;
-    padding: 0.55rem 0.45rem 0.6rem;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    padding: 0.55rem 0.45rem 0.95rem;
     background:
         linear-gradient(180deg, #1b1f28 0%, #12151c 100%);
     border-right: 1px solid rgba(255, 255, 255, 0.06);
@@ -5106,6 +5135,7 @@ a.stage-platform:hover {
     display: flex;
     align-items: center;
     gap: 0.35rem;
+    flex: 0 0 auto;
     min-width: 0;
     padding: 0.3rem 0.35rem;
     border-radius: 0.25rem;
@@ -5142,6 +5172,7 @@ a.stage-platform:hover {
 .mixer-meterbridge {
     display: flex;
     justify-content: center;
+    flex: 0 0 auto;
     padding: 0.2rem 0;
 }
 
@@ -5174,16 +5205,19 @@ a.stage-platform:hover {
 }
 
 .mixer-fader-well {
-    --fader-travel: 19.5rem;
-    flex: 0 0 auto;
+    /* Travel tracks the live well height (rotated range uses width as throw). */
+    --fader-travel: 12rem;
+    --fader-travel: calc(100cqh - 0.7rem);
+    container-type: size;
+    flex: 1 1 auto;
     display: flex;
     align-items: stretch;
     justify-content: center;
     gap: 0.35rem;
-    height: 21rem;
-    min-height: 21rem;
-    max-height: 21rem;
-    padding: 0.35rem 0.15rem;
+    min-height: 7rem;
+    height: auto;
+    max-height: none;
+    padding: 0.45rem 0.15rem;
     border-radius: 0.35rem;
     background:
         linear-gradient(180deg, #0d0f14, #181c24);
@@ -5195,12 +5229,9 @@ a.stage-platform:hover {
     isolation: isolate;
 }
 
-/* Master is shorter so layout + cue fields sit clear below. */
+/* Master shares strip height; foot fields naturally shorten this well. */
 .mixer-fader-well--master {
-    --fader-travel: 9.75rem;
-    height: 11.25rem;
-    min-height: 11.25rem;
-    max-height: 11.25rem;
+    min-height: 5.5rem;
 }
 
 .mixer-fader-slot {
@@ -5219,6 +5250,7 @@ a.stage-platform:hover {
     flex-direction: column;
     gap: 0.35rem;
     flex: 0 0 auto;
+    margin-top: auto;
     background: transparent;
 }
 
@@ -5228,6 +5260,12 @@ a.stage-platform:hover {
     gap: 0.2rem;
     margin: 0;
     min-width: 0;
+    flex: 0 0 auto;
+}
+
+/* Keep SOURCE / QUEUE foot controls pinned below the flexible fader. */
+.mixer-field--source {
+    margin-top: auto;
 }
 
 .mixer-field-label {
@@ -5312,6 +5350,8 @@ a.stage-platform:hover {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    align-self: stretch;
+    height: 100%;
     padding: 0.15rem 0;
     font-size: 0.52rem;
     font-weight: 700;
@@ -5383,6 +5423,7 @@ a.stage-platform:hover {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.3rem;
+    flex: 0 0 auto;
     min-height: 1.7rem;
 }
 
@@ -5713,6 +5754,7 @@ a.stage-platform:hover {
 .mixer-mic-enable {
     display: flex;
     flex-direction: column;
+    flex: 0 0 auto;
     gap: 0.4rem;
     margin: 0 0 0.65rem;
     padding: 0.75rem 0.85rem;
@@ -5775,6 +5817,8 @@ a.stage-platform:hover {
 }
 
 .mixer-bar {
+    flex: 0 0 auto;
+    margin-top: auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
@@ -5891,17 +5935,51 @@ a.stage-platform:hover {
     .mixer-board {
         grid-template-columns: 1fr;
         overflow: auto;
+        align-content: start;
     }
     .mixer-deck {
+        height: auto;
+        min-height: min(70dvh, 36rem);
+        overflow: auto;
         border-right: 0;
         border-bottom: 1px solid var(--mixer-line);
     }
+    .mixer-chassis {
+        height: auto;
+        min-height: 100%;
+        max-height: none;
+        overflow: visible;
+    }
     .mixer-rail {
         overflow: visible;
+        height: auto;
     }
     .mixer-strips {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        min-height: 0;
+        height: auto;
+        min-height: 22rem;
+        overflow: visible;
+        align-items: stretch;
+    }
+    .mixer-strip,
+    .mixer-strip--out {
+        height: auto;
+        min-height: 22rem;
+        overflow: visible;
+    }
+    .mixer-fader-well {
+        --fader-travel: 14rem;
+        flex: 0 0 auto;
+        container-type: normal;
+        height: 15.5rem;
+        min-height: 15.5rem;
+        max-height: 15.5rem;
+    }
+    .mixer-fader-well--master {
+        --fader-travel: 9.75rem;
+        height: 11.25rem;
+        min-height: 11.25rem;
+        max-height: 11.25rem;
     }
     .mixer-strip--out {
         grid-column: 1 / -1;
@@ -6039,8 +6117,31 @@ a.stage-platform:hover {
         gap: 0.35rem;
     }
 
+    .mixer-deck {
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .mixer-chassis {
+        height: auto;
+        min-height: 100%;
+        max-height: none;
+        overflow: visible;
+    }
+    .mixer-strips {
+        height: auto;
+        min-height: 0;
+        overflow: visible;
+        align-items: start;
+    }
+    .mixer-strip,
+    .mixer-strip--out {
+        height: auto;
+        overflow: visible;
+    }
     .mixer-fader-well {
         --fader-travel: 9.5rem;
+        flex: 0 0 auto;
+        container-type: normal;
         height: 10.75rem;
         min-height: 10.75rem;
         max-height: 10.75rem;
@@ -6112,4 +6213,246 @@ a.stage-platform:hover {
     .mixer-more {
         overflow-x: hidden;
     }
+}
+
+/* Legal / support marketing pages */
+.mkt-legal {
+    max-width: 42rem;
+}
+
+.mkt-legal h2 {
+    margin: 2rem 0 0.65rem;
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: var(--stage-cream);
+}
+
+.mkt-legal h2:first-child {
+    margin-top: 0;
+}
+
+.mkt-legal p,
+.mkt-legal li {
+    color: var(--stage-muted);
+    line-height: 1.55;
+    font-size: 1rem;
+}
+
+.mkt-legal ul {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+}
+
+.mkt-legal a {
+    color: var(--stage-accent, #3d9b7a);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.mkt-support-email {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.mkt-footer-support {
+    margin: 1rem 0 0;
+    font-size: 0.85rem;
+    color: var(--stage-muted);
+}
+
+.mkt-footer-support a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* ——— Unlisted store listing kit (/listing) ——— */
+.listing-page {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: 0 1.5rem 4.5rem;
+}
+
+.listing-hero {
+    padding: 3.25rem 0 1.5rem;
+}
+
+.listing-meta {
+    margin: 1rem 0 0;
+    font-size: 0.9rem;
+    color: var(--stage-muted);
+}
+
+.listing-meta code {
+    font-size: 0.85em;
+    color: color-mix(in srgb, var(--stage-cream) 80%, var(--stage-accent));
+}
+
+.listing-section {
+    padding: 1.75rem 0 0.5rem;
+    border-top: 1px solid color-mix(in srgb, var(--stage-cream) 10%, transparent);
+}
+
+.listing-section-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--stage-cream);
+}
+
+.listing-section-lede {
+    margin: 0.4rem 0 0;
+    color: var(--stage-muted);
+    font-size: 0.95rem;
+    line-height: 1.45;
+}
+
+.listing-field {
+    margin-top: 1.35rem;
+}
+
+.listing-field-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.4rem;
+}
+
+.listing-field-head h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--stage-cream);
+}
+
+.listing-char {
+    font-size: 0.8rem;
+    color: var(--stage-muted);
+    white-space: nowrap;
+}
+
+.listing-char.is-over {
+    color: #f87171;
+}
+
+.listing-copy {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    border-radius: 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 12%, transparent);
+    background: color-mix(in srgb, #0f172a 70%, transparent);
+    color: var(--stage-cream);
+    font-family: var(--font-sans, "Source Sans 3", system-ui, sans-serif);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.listing-copy-full {
+    max-height: 22rem;
+    overflow: auto;
+}
+
+.listing-copy-btn {
+    margin-top: 0.55rem;
+}
+
+.listing-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 1rem 1.25rem;
+    margin: 1.5rem 0 0;
+}
+
+.listing-meta-grid dt {
+    margin: 0;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--stage-muted);
+}
+
+.listing-meta-grid dd {
+    margin: 0.2rem 0 0;
+    font-size: 0.95rem;
+    color: var(--stage-cream);
+    word-break: break-word;
+}
+
+.listing-meta-grid a {
+    color: var(--stage-accent);
+}
+
+.listing-assets {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+}
+
+.listing-asset {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.listing-asset-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 10rem;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--stage-cream) 12%, transparent);
+    background: color-mix(in srgb, #0f172a 55%, transparent);
+    overflow: hidden;
+}
+
+.listing-asset-preview img {
+    max-width: 100%;
+    height: auto;
+    max-height: 12rem;
+    object-fit: contain;
+    border-radius: 0.35rem;
+}
+
+.listing-asset-preview img.is-tall {
+    max-height: 18rem;
+}
+
+.listing-asset figcaption {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    color: var(--stage-muted);
+}
+
+.listing-asset figcaption strong {
+    color: var(--stage-cream);
+    font-size: 0.95rem;
+}
+
+.listing-dl {
+    align-self: flex-start;
+    margin-top: 0.35rem;
+}
+
+.listing-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    margin-top: 1rem;
+}
+
+.listing-soon {
+    font-size: 0.9rem;
+    color: var(--stage-muted);
 }
