@@ -1947,7 +1947,7 @@ btnEnd?.addEventListener('click', async () => {
             currentEvent = { ...ended, status: 'ended' };
         }
         if (pendingLocalRecording) {
-            setStatus('Event ended — uploading podcast…');
+            setStatus('Event ended — uploading recording…');
             const uploaded = await uploadLocalRecording();
             if (!uploaded) {
                 setStatus(
@@ -2609,7 +2609,7 @@ function stopLocalRecording() {
             if (blob.size > 0) {
                 pendingLocalRecording = blob;
                 pendingLocalDurationSec = durationSec;
-                setStatus('Local recording ready — Upload to Podcasts, Save locally, or Discard.');
+                setStatus('Local recording ready — Upload, Save locally, or Discard.');
             }
             refreshLocalRecordingUi();
             resolve();
@@ -2645,39 +2645,6 @@ function downloadLocalRecording() {
     setStatus('Saved a copy on this device.');
 }
 
-function prependStudioRecordingRow(payload) {
-    if (!studioRecordings || !payload) {
-        return;
-    }
-    document.getElementById('studio-recordings-empty')?.remove();
-    const row = document.createElement('div');
-    row.className = 'mixer-recording-row';
-    row.dataset.recordingId = String(payload.id);
-    row.innerHTML = `
-        <div class="mixer-recording-copy">
-            <p class="mixer-recording-title"></p>
-            <p class="mixer-recording-meta"></p>
-        </div>
-        <div class="mixer-recording-actions">
-            <a class="mixer-recording-link" target="_blank" rel="noopener">Play</a>
-            <button type="button" class="mixer-recording-link mixer-recording-rename">Rename</button>
-        </div>
-    `;
-    row.querySelector('.mixer-recording-title').textContent = payload.title;
-    const when = payload.when ? `${payload.when} · ` : '';
-    row.querySelector('.mixer-recording-meta').textContent = `${when}${payload.meta || ''}`.trim();
-    const play = row.querySelector('a.mixer-recording-link');
-    if (play instanceof HTMLAnchorElement) {
-        play.href = payload.play_url;
-    }
-    const rename = row.querySelector('.mixer-recording-rename');
-    if (rename instanceof HTMLButtonElement) {
-        rename.dataset.updateUrl = payload.update_url || '';
-        rename.dataset.title = payload.title || '';
-    }
-    studioRecordings.prepend(row);
-}
-
 /**
  * @returns {Promise<boolean>}
  */
@@ -2692,7 +2659,7 @@ async function uploadLocalRecording() {
     if (btnUploadRecording) {
         btnUploadRecording.disabled = true;
     }
-    setStatus('Uploading recording to Podcasts…');
+    setStatus('Uploading recording…');
     try {
         const ext = pendingLocalMime.includes('mp4') ? 'm4a' : 'webm';
         const body = new FormData();
@@ -2701,9 +2668,9 @@ async function uploadLocalRecording() {
         if (currentEvent?.id) {
             body.append('event_id', String(currentEvent.id));
         }
-        const podcastTitle = (localRecordingTitleInput?.value || currentEvent?.title || '').trim();
-        if (podcastTitle) {
-            body.append('title', podcastTitle);
+        const recordingTitle = (localRecordingTitleInput?.value || currentEvent?.title || '').trim();
+        if (recordingTitle) {
+            body.append('title', recordingTitle);
         }
         const res = await fetch(recordingUploadUrl, {
             method: 'POST',
@@ -2718,7 +2685,6 @@ async function uploadLocalRecording() {
         if (!res.ok) {
             throw new Error(data.message || data.errors?.audio?.[0] || data.errors?.storage?.[0] || 'Upload failed');
         }
-        prependStudioRecordingRow(data.recording);
         pendingLocalRecording = null;
         pendingLocalDurationSec = 0;
         if (localRecordingTitleInput) {
@@ -2727,8 +2693,8 @@ async function uploadLocalRecording() {
         refreshLocalRecordingUi();
         setStatus(
             currentEvent?.url
-                ? 'Podcast uploaded to this event.'
-                : 'Podcast uploaded — it’s now in Podcasts.',
+                ? 'Recording uploaded to this event.'
+                : 'Recording uploaded.',
         );
         return true;
     } catch (e) {
@@ -2761,62 +2727,10 @@ btnDiscardRecording?.addEventListener('click', () => {
     if (!pendingLocalRecording) {
         return;
     }
-    if (!window.confirm('Discard this local recording? It will not appear in Podcasts.')) {
+    if (!window.confirm('Discard this local recording? It will not be uploaded.')) {
         return;
     }
     discardLocalRecording();
-});
-
-const studioRecordings = document.getElementById('studio-recordings');
-studioRecordings?.addEventListener('click', async (ev) => {
-    const target = ev.target instanceof Element ? ev.target : null;
-    if (!target) {
-        return;
-    }
-
-    const renameBtn = target.closest('.mixer-recording-rename');
-    if (renameBtn instanceof HTMLButtonElement) {
-        const url = renameBtn.dataset.updateUrl;
-        const row = renameBtn.closest('.mixer-recording-row');
-        const titleEl = row?.querySelector('.mixer-recording-title');
-        if (!url || !row || !titleEl) {
-            return;
-        }
-        const next = window.prompt('Podcast title', renameBtn.dataset.title || titleEl.textContent || '');
-        if (next === null) {
-            return;
-        }
-        const trimmed = next.trim();
-        if (!trimmed) {
-            setStatus('Title cannot be empty.');
-            return;
-        }
-        renameBtn.disabled = true;
-        try {
-            const res = await fetch(url, {
-                method: 'PATCH',
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': galleryCsrf || '',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({ title: trimmed }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                throw new Error(data.message || 'rename failed');
-            }
-            titleEl.textContent = data.recording?.title || trimmed;
-            renameBtn.dataset.title = data.recording?.title || trimmed;
-            setStatus('Podcast title saved.');
-        } catch (e) {
-            setStatus(e instanceof Error ? e.message : 'Could not rename podcast.');
-        } finally {
-            renameBtn.disabled = false;
-        }
-        return;
-    }
 });
 
 window.addEventListener('pagehide', () => {

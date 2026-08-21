@@ -123,12 +123,6 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
-            'recordings' => $stream->recordings()
-                ->with('event')
-                ->where('is_public', true)
-                ->latest('completed_at')
-                ->limit(30)
-                ->get(),
             'openEvent' => $openEvent,
             'galleryImages' => $openEvent
                 ? $stream->serviceGalleryImages($openEvent->id)->limit(20)->get()

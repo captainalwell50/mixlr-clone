@@ -302,7 +302,7 @@
                     <div class="mixer-local-recording" id="studio-local-recording" hidden style="margin-top: 1rem">
                         <p class="mixer-recording-title" id="studio-local-recording-title">Local session ready</p>
                         <p class="mixer-recording-meta" id="studio-local-recording-meta"></p>
-                        <label class="mixer-hint" for="local-recording-title">Podcast title (optional)</label>
+                        <label class="mixer-hint" for="local-recording-title">Recording title (optional)</label>
                         <input id="local-recording-title" type="text" maxlength="255" placeholder="e.g. Sunday Morning Service" autocomplete="off">
                         <div class="mixer-recording-actions">
                             <button type="button" class="mixer-recording-upload" id="btn-upload-recording">Upload</button>
@@ -311,27 +311,6 @@
                         </div>
                     </div>
                     <p class="mixer-hint" id="studio-local-recording-live" hidden>Recording locally… network drops won’t cut this file.</p>
-                    <div class="mixer-recordings" id="studio-recordings" style="margin-top: 1rem">
-                        @forelse ($recordings as $recording)
-                            <div class="mixer-recording-row" data-recording-id="{{ $recording->id }}">
-                                <div class="mixer-recording-copy">
-                                    <p class="mixer-recording-title">{{ $recording->displayTitle() }}</p>
-                                    <p class="mixer-recording-meta">{{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }} · {{ $recording->durationLabel() }} · {{ $recording->sizeLabel() }}</p>
-                                </div>
-                                <div class="mixer-recording-actions">
-                                    <a href="{{ route('archive.play', $recording) }}" target="_blank" rel="noopener" class="mixer-recording-link">Play</a>
-                                    <button
-                                        type="button"
-                                        class="mixer-recording-link mixer-recording-rename"
-                                        data-update-url="{{ URL::temporarySignedRoute('recordings.update', now()->addHours(12), ['stream' => $stream, 'recording' => $recording]) }}"
-                                        data-title="{{ $recording->displayTitle() }}"
-                                    >Rename</button>
-                                </div>
-                            </div>
-                        @empty
-                            <p class="mixer-hint" id="studio-recordings-empty">No uploaded recordings yet for this stream.</p>
-                        @endforelse
-                    </div>
                 </div>
                 <p class="mixer-hint mixer-hint--desktop">
                     Cue (headphones) is off by default — Studio stays silent. Under Master, set broadcast layout and cue output, then turn a channel’s CUE on. Master sets overall mix volume for Input 1, Input 2, and Playlist.

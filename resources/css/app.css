@@ -1440,34 +1440,6 @@ a.stage-platform:hover {
     object-fit: cover;
 }
 
-.mixer-recordings {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    margin-top: 0.55rem;
-    max-height: 14rem;
-    overflow-y: auto;
-}
-
-.mixer-recording-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.55rem 0.65rem;
-    min-width: 0;
-    max-width: 100%;
-    padding: 0.55rem 0.65rem;
-    border-radius: 0.55rem;
-    border: 1px solid color-mix(in srgb, var(--stage-cream) 10%, transparent);
-    background: color-mix(in srgb, var(--stage-ink) 55%, transparent);
-}
-
-.mixer-recording-copy {
-    flex: 1 1 10rem;
-    min-width: 0;
-}
-
 .mixer-recording-title {
     margin: 0;
     font-size: 0.8rem;
