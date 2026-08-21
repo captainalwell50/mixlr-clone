@@ -207,46 +207,42 @@
 
             <div class="mixer-rail">
             <div class="mixer-playlist" data-mobile-pane="sounds">
-                <div class="mixer-playlist-head">
-                    <h2>Audio library</h2>
-                </div>
-                <div class="mixer-library-toolbar">
-                    <label class="sr-only" for="library-search">Search library</label>
-                    <input id="library-search" class="mixer-library-search" type="search" placeholder="Search songs…" autocomplete="off">
-                    <label class="sr-only" for="library-destination">Save to</label>
-                    <select id="library-destination" class="mixer-library-search" title="Where to save uploads" style="max-width: 9.5rem">
-                        <option value="platform">Platform</option>
-                        <option value="drive">Google Drive</option>
-                        <option value="local">Server disk</option>
-                    </select>
-                    <button type="button" id="btn-upload-library" class="mixer-add-sounds">+ Upload</button>
-                    <button type="button" id="btn-drive-connect" class="mixer-add-sounds" hidden>Connect Drive</button>
-                    <button type="button" id="btn-drive-browse" class="mixer-add-sounds" hidden>Import Drive</button>
-                    <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
-                </div>
-                <div class="mixer-library-list" id="library-list" role="list"></div>
+                <section class="mixer-card" aria-labelledby="studio-audio-library-heading">
+                    <div class="mixer-playlist-head">
+                        <h2 id="studio-audio-library-heading">Audio library</h2>
+                    </div>
+                    <div class="mixer-library-toolbar">
+                        <label class="sr-only" for="library-search">Search library</label>
+                        <input id="library-search" class="mixer-library-search" type="search" placeholder="Search songs…" autocomplete="off">
+                        <label class="sr-only" for="library-destination">Save to</label>
+                        <select id="library-destination" class="mixer-library-search" title="Where to save uploads" style="max-width: 9.5rem">
+                            <option value="platform">Platform</option>
+                            <option value="drive">Google Drive</option>
+                            <option value="local">Server disk</option>
+                        </select>
+                        <button type="button" id="btn-upload-library" class="mixer-add-sounds">+ Upload</button>
+                        <button type="button" id="btn-drive-connect" class="mixer-add-sounds" hidden>Connect Drive</button>
+                        <button type="button" id="btn-drive-browse" class="mixer-add-sounds" hidden>Import Drive</button>
+                        <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" class="hidden" multiple>
+                    </div>
+                    <div class="mixer-library-list" id="library-list" role="list"></div>
 
-                <div class="mixer-playlist-head" style="margin-top: 0.75rem">
-                    <h2>Session playlist</h2>
-                    <time id="playlist-duration" datetime="PT0S">00:00:00</time>
-                </div>
-                <p class="mixer-hint mixer-hint--desktop">Queued for this Studio session. Queue from the library above, then Play.</p>
-                <div class="mixer-playlist-list" id="audio-channels"></div>
-                <div class="mixer-playlist-actions">
-                    <button type="button" id="btn-add-file" class="mixer-add-sounds">+ Upload &amp; queue</button>
-                </div>
+                    <div class="mixer-playlist-head mixer-card-subhead">
+                        <h2>Session playlist</h2>
+                        <time id="playlist-duration" datetime="PT0S">00:00:00</time>
+                    </div>
+                    <div class="mixer-playlist-list" id="audio-channels"></div>
+                    <div class="mixer-playlist-actions">
+                        <button type="button" id="btn-add-file" class="mixer-add-sounds">+ Upload &amp; queue</button>
+                    </div>
+                </section>
             </div>
 
             <div class="mixer-more" data-mobile-pane="more">
-                <div class="mixer-gallery">
-                    <p class="mixer-hint" style="margin-bottom: 0.75rem">
-                        <a href="{{ route('admin.organizations.customise', $organization) }}" class="mixer-top-link">Customise channel</a>
-                    </p>
-
+                <section class="mixer-card mixer-gallery" aria-labelledby="studio-gallery-heading">
                     <div class="mixer-playlist-head">
-                        <h2>Service gallery</h2>
+                        <h2 id="studio-gallery-heading">Service gallery</h2>
                     </div>
-                    <p class="mixer-hint">Post photos or short video reels (30s–60s) for listeners.</p>
                     <div class="mixer-gallery-actions">
                         <button type="button" id="btn-add-gallery" class="mixer-add-sounds">+ Add photo</button>
                         <button type="button" id="btn-add-reel" class="mixer-add-sounds">+ Video reel</button>
@@ -265,13 +261,14 @@
                             </figure>
                         @endforeach
                     </div>
+                </section>
 
-                    @if ($scriptureEnabled ?? false)
-                        <div class="mixer-playlist-head" style="margin-top: 1rem">
-                            <h2>Scripture</h2>
+                @if ($scriptureEnabled ?? false)
+                    <section class="mixer-card" aria-labelledby="studio-scripture-heading">
+                        <div class="mixer-playlist-head">
+                            <h2 id="studio-scripture-heading">Scripture</h2>
                         </div>
                         <div id="studio-scripture" class="studio-scripture">
-                            <p class="mixer-hint">Show KJV verses on the listen page left panel (EasyWorship-style). Type a reference or let Studio listen for spoken scripture.</p>
                             <label class="sr-only" for="scripture-search">Scripture reference</label>
                             <input id="scripture-search" class="mixer-library-search" type="search" placeholder="e.g. John 3:16" autocomplete="off">
                             <div id="scripture-suggestions" class="scripture-suggestions" role="listbox"></div>
@@ -293,31 +290,37 @@
                             </div>
                             <p id="scripture-status" class="mixer-hint" role="status">No scripture on listen</p>
                         </div>
-                    @endif
+                    </section>
+                @endif
 
-                    <div class="mixer-local-recording" id="studio-local-recording" hidden style="margin-top: 1rem">
-                        <p class="mixer-recording-title" id="studio-local-recording-title">Local session ready</p>
-                        <p class="mixer-recording-meta" id="studio-local-recording-meta"></p>
-                        <label class="mixer-hint" for="local-recording-title">Recording title (optional)</label>
-                        <input id="local-recording-title" type="text" maxlength="255" placeholder="e.g. Sunday Morning Service" autocomplete="off">
-                        <div class="mixer-recording-actions">
-                            <button type="button" class="mixer-recording-upload" id="btn-upload-recording">Upload</button>
-                            <button type="button" class="mixer-recording-link" id="btn-download-recording">Save locally</button>
-                            <button type="button" class="mixer-recording-delete" id="btn-discard-recording">Discard</button>
+                <div class="mixer-local-recording mixer-card" id="studio-local-recording" hidden>
+                    <p class="mixer-recording-title" id="studio-local-recording-title">Local session ready</p>
+                    <p class="mixer-recording-meta" id="studio-local-recording-meta"></p>
+                    <label class="mixer-hint" for="local-recording-title">Recording title (optional)</label>
+                    <input id="local-recording-title" type="text" maxlength="255" placeholder="e.g. Sunday Morning Service" autocomplete="off">
+                    <div class="mixer-recording-actions">
+                        <button type="button" class="mixer-recording-upload" id="btn-upload-recording">Upload</button>
+                        <button type="button" class="mixer-recording-link" id="btn-download-recording">Save locally</button>
+                        <button type="button" class="mixer-recording-delete" id="btn-discard-recording">Discard</button>
+                    </div>
+                </div>
+                <p class="mixer-hint" id="studio-local-recording-live" hidden>Recording locally… network drops won’t cut this file.</p>
+
+                <p id="studio-status" class="mixer-status" role="status">Allow microphone access when prompted.</p>
+
+                <section class="mixer-card mixer-card--share" aria-labelledby="studio-share-heading">
+                    <div class="mixer-playlist-head">
+                        <h2 id="studio-share-heading">Event link</h2>
+                    </div>
+                    <div class="mixer-listen-row">
+                        <code id="event-url" title="{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}">{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}</code>
+                        <code id="channel-url" hidden title="{{ $channelUrl }}">{{ $channelUrl }}</code>
+                        <div class="mixer-share-actions">
+                            <button type="button" class="mixer-add-sounds" id="btn-share-channel-main">Share</button>
+                            <button type="button" class="mixer-add-sounds" id="btn-copy-channel">Copy</button>
                         </div>
                     </div>
-                    <p class="mixer-hint" id="studio-local-recording-live" hidden>Recording locally… network drops won’t cut this file.</p>
-                </div>
-                <p id="studio-status" class="mixer-status" role="status">Allow microphone access when prompted.</p>
-                <div class="mixer-listen-row">
-                    <p class="mixer-hint">Event / channel link</p>
-                    <code id="event-url" title="{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}">{{ $openEvent ? route('events.show', $openEvent) : $channelUrl }}</code>
-                    <code id="channel-url" title="{{ $channelUrl }}">{{ $channelUrl }}</code>
-                    <div class="mixer-share-actions">
-                        <button type="button" class="mixer-add-sounds" id="btn-share-channel-main">Share</button>
-                        <button type="button" class="mixer-add-sounds" id="btn-copy-channel">Copy</button>
-                    </div>
-                </div>
+                </section>
             </div>
             </div>
         </section>
