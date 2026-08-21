@@ -1763,12 +1763,7 @@ async function primeMicrophone({ interactive = false } = {}) {
         await loadDevices();
         setMicEnableVisible(false);
         setToggle(auxMuteBtn, auxMuted);
-        const micCount = audioSelect?.options?.length || 0;
-        setStatus(
-            isMobileUa()
-                ? `Microphone ready (${micCount} input${micCount === 1 ? '' : 's'}). Pick Input 1, then Go on air.`
-                : `Microphone ready (${micCount} input${micCount === 1 ? '' : 's'}). Go on air when ready.`,
-        );
+        setStatus('');
         return true;
     } catch (e) {
         micPrimed = false;
