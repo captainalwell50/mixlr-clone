@@ -298,6 +298,7 @@ class _ListenScreenState extends State<ListenScreen> {
                                             if (listen.scriptureEnabled)
                                               ScriptureArtOverlay(
                                                 cue: listen.scripture,
+                                                song: listen.song,
                                               ),
                                           ],
                                         ),

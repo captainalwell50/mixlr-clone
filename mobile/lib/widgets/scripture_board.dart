@@ -38,9 +38,10 @@ class ScriptureBoardCard extends StatelessWidget {
 
 /// EasyWorship-style plate over listen artwork (matches web portal-art slide).
 class ScriptureArtOverlay extends StatefulWidget {
-  const ScriptureArtOverlay({super.key, this.cue});
+  const ScriptureArtOverlay({super.key, this.cue, this.song});
 
   final ScriptureCue? cue;
+  final SongCue? song;
 
   @override
   State<ScriptureArtOverlay> createState() => _ScriptureArtOverlayState();
@@ -49,6 +50,11 @@ class ScriptureArtOverlay extends StatefulWidget {
 class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
   final ScrollController _scroll = ScrollController();
   bool _showScrollCue = false;
+
+  bool get _hasSong =>
+      widget.song != null &&
+      widget.song!.title.isNotEmpty &&
+      widget.song!.text.isNotEmpty;
 
   @override
   void initState() {
@@ -60,8 +66,11 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
   @override
   void didUpdateWidget(covariant ScriptureArtOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.cue?.text != widget.cue?.text ||
-        oldWidget.cue?.ref != widget.cue?.ref) {
+    final oldKey =
+        '${oldWidget.song?.title}|${oldWidget.song?.text}|${oldWidget.song?.slideIndex}|${oldWidget.cue?.ref}|${oldWidget.cue?.text}';
+    final newKey =
+        '${widget.song?.title}|${widget.song?.text}|${widget.song?.slideIndex}|${widget.cue?.ref}|${widget.cue?.text}';
+    if (oldKey != newKey) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _syncScrollCue());
     }
   }
@@ -86,6 +95,13 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    final boardLabel = _hasSong ? 'SONG / ANNOUNCEMENT' : 'SCRIPTURE BOARD';
+    final badge = _hasSong
+        ? ((widget.song!.slideCount > 1)
+            ? '${widget.song!.slideIndex + 1}/${widget.song!.slideCount}'
+            : 'LIVE')
+        : (widget.cue?.version ?? 'KJV');
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
@@ -105,13 +121,13 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
           Row(
             children: [
               Icon(
-                Icons.menu_book_rounded,
+                _hasSong ? Icons.lyrics_rounded : Icons.menu_book_rounded,
                 size: 18,
                 color: LiveMixTheme.accentBright.withOpacity(0.95),
               ),
               const SizedBox(width: 8),
               Text(
-                'SCRIPTURE BOARD',
+                boardLabel,
                 style: GoogleFonts.outfit(
                   color: LiveMixTheme.accentBright,
                   fontSize: 12,
@@ -130,7 +146,7 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
                   ),
                 ),
                 child: Text(
-                  widget.cue?.version ?? 'KJV',
+                  badge,
                   style: GoogleFonts.outfit(
                     color: LiveMixTheme.accentBright,
                     fontSize: 11,
@@ -154,7 +170,9 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
                     controller: _scroll,
                     physics: const BouncingScrollPhysics(),
                     padding: EdgeInsets.only(bottom: _showScrollCue ? 28 : 4),
-                    child: _ScriptureBody(cue: widget.cue, compact: true),
+                    child: _hasSong
+                        ? _SongBody(song: widget.song, compact: true)
+                        : _ScriptureBody(cue: widget.cue, compact: true),
                   ),
                 ),
                 if (_showScrollCue)
@@ -205,6 +223,52 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SongBody extends StatelessWidget {
+  const _SongBody({required this.song, required this.compact});
+
+  final SongCue? song;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    if (song == null) {
+      return Text(
+        'Waiting for the next slide…',
+        style: GoogleFonts.outfit(
+          color: LiveMixTheme.mute,
+          fontSize: compact ? 17 : 16,
+          height: 1.4,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          song!.title,
+          style: GoogleFonts.outfit(
+            color: LiveMixTheme.mist,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+          ),
+        ),
+        SizedBox(height: compact ? 10 : 12),
+        Text(
+          song!.text,
+          style: GoogleFonts.outfit(
+            color: LiveMixTheme.mist.withOpacity(0.94),
+            fontSize: compact ? 18 : 17,
+            height: 1.5,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }

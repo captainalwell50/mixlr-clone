@@ -270,7 +270,7 @@
                         </div>
                         <div id="studio-scripture" class="studio-scripture">
                             <label class="sr-only" for="scripture-search">Scripture reference</label>
-                            <input id="scripture-search" class="mixer-library-search" type="search" placeholder="e.g. John 3:16" autocomplete="off">
+                            <input id="scripture-search" class="mixer-library-search" type="search" placeholder="e.g. John 3:16" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="scripture-suggestions" aria-expanded="false">
                             <div id="scripture-suggestions" class="scripture-suggestions" role="listbox"></div>
                             <div class="mixer-gallery-actions">
                                 <button type="button" id="btn-scripture-show" class="mixer-add-sounds">Show on listen</button>
@@ -289,6 +289,33 @@
                                 </div>
                             </div>
                             <p id="scripture-status" class="mixer-hint" role="status">No scripture on listen</p>
+                        </div>
+                    </section>
+
+                    <section class="mixer-card" aria-labelledby="studio-songs-heading">
+                        <div class="mixer-playlist-head">
+                            <h2 id="studio-songs-heading">Song</h2>
+                        </div>
+                        <div id="studio-songs" class="studio-songs">
+                            <div class="mixer-gallery-actions">
+                                <button type="button" id="btn-song-new" class="mixer-add-sounds">New</button>
+                                <button type="button" id="btn-song-prev" class="mixer-add-sounds">Prev slide</button>
+                                <button type="button" id="btn-song-next" class="mixer-add-sounds">Next slide</button>
+                                <button type="button" id="btn-song-clear" class="mixer-add-sounds">Clear</button>
+                            </div>
+                            <p id="song-live-meta" class="song-live-meta" hidden></p>
+                            <div id="song-form" class="song-form" hidden>
+                                <label class="sr-only" for="song-title">Title</label>
+                                <input id="song-title" class="mixer-library-search" type="text" placeholder="Title" maxlength="160" autocomplete="off">
+                                <label class="sr-only" for="song-body">Slides</label>
+                                <textarea id="song-body" class="song-body-input" rows="6" placeholder="Slide text — blank line between slides"></textarea>
+                                <div class="mixer-gallery-actions">
+                                    <button type="button" id="btn-song-save" class="mixer-btn-start">Save</button>
+                                    <button type="button" id="btn-song-cancel" class="mixer-btn-secondary">Cancel</button>
+                                </div>
+                            </div>
+                            <div id="song-list" class="song-list"></div>
+                            <p id="song-status" class="mixer-hint" role="status">No song on listen</p>
                         </div>
                     </section>
                 @endif
@@ -366,6 +393,12 @@
                 data-scripture-store-url="{{ $scriptureStoreUrl }}"
                 data-scripture-destroy-url="{{ $scriptureDestroyUrl }}"
                 data-scripture-suggest-url="{{ $scriptureSuggestUrl }}"
+                data-songs-index-url="{{ $songsIndexUrl }}"
+                data-songs-store-url="{{ $songsStoreUrl }}"
+                data-songs-cue-clear-url="{{ $songsCueClearUrl }}"
+                data-songs-cue-next-url="{{ $songsCueNextUrl }}"
+                data-songs-cue-previous-url="{{ $songsCuePreviousUrl }}"
+                data-songs-show-url="{{ $songsShowUrl }}"
             @endif
             data-open-event-id="{{ $openEvent?->id }}"
             data-open-event-title="{{ $openEvent?->title }}"

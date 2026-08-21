@@ -320,4 +320,115 @@ class ApiClient {
     );
     await _json(response, fallback: 'Could not clear scripture');
   }
+
+  Future<({List<DisplaySongItem> songs, SongCue? cue})> songsIndex(
+    String streamUuid,
+  ) async {
+    final response = await _client.get(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs'),
+      headers: _headers(auth: true),
+    );
+    final data = await _json(response, fallback: 'Could not load songs');
+    final songs = (data['songs'] as List<dynamic>? ?? [])
+        .map((e) => DisplaySongItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final cueRaw = data['cue'];
+    final cue = cueRaw is Map<String, dynamic> ? SongCue.fromJson(cueRaw) : null;
+    return (songs: songs, cue: cue);
+  }
+
+  Future<DisplaySongItem> songStore(
+    String streamUuid, {
+    required String title,
+    required String body,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: jsonEncode({'title': title, 'body': body}),
+    );
+    final data = await _json(response, fallback: 'Could not save song');
+    final song = data['song'];
+    if (song is! Map<String, dynamic>) {
+      throw ApiException('Could not save song');
+    }
+    return DisplaySongItem.fromJson(song);
+  }
+
+  Future<DisplaySongItem> songUpdate(
+    String streamUuid,
+    int songId, {
+    required String title,
+    required String body,
+  }) async {
+    final response = await _client.put(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/$songId'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: jsonEncode({'title': title, 'body': body}),
+    );
+    final data = await _json(response, fallback: 'Could not update song');
+    final song = data['song'];
+    if (song is! Map<String, dynamic>) {
+      throw ApiException('Could not update song');
+    }
+    return DisplaySongItem.fromJson(song);
+  }
+
+  Future<void> songDelete(String streamUuid, int songId) async {
+    final response = await _client.delete(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/$songId'),
+      headers: _headers(auth: true),
+    );
+    await _json(response, fallback: 'Could not delete song');
+  }
+
+  Future<SongCue> songCue(String streamUuid, int songId, {int slideIndex = 0}) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/$songId/cue'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: jsonEncode({'slide_index': slideIndex}),
+    );
+    final data = await _json(response, fallback: 'Could not cue song');
+    final song = data['song'];
+    if (song is! Map<String, dynamic>) {
+      throw ApiException('Could not cue song');
+    }
+    return SongCue.fromJson(song);
+  }
+
+  Future<SongCue> songNext(String streamUuid) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/cue/next'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: '{}',
+    );
+    final data = await _json(response, fallback: 'Could not advance slide');
+    final song = data['song'];
+    if (song is! Map<String, dynamic>) {
+      throw ApiException('Could not advance slide');
+    }
+    return SongCue.fromJson(song);
+  }
+
+  Future<SongCue> songPrevious(String streamUuid) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/cue/previous'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: '{}',
+    );
+    final data = await _json(response, fallback: 'Could not go to previous slide');
+    final song = data['song'];
+    if (song is! Map<String, dynamic>) {
+      throw ApiException('Could not go to previous slide');
+    }
+    return SongCue.fromJson(song);
+  }
+
+  Future<void> songClear(String streamUuid) async {
+    final response = await _client.delete(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/cue'),
+      headers: _headers(auth: true),
+    );
+    await _json(response, fallback: 'Could not clear song');
+  }
 }

@@ -43,4 +43,23 @@ class KjvBibleServiceTest extends TestCase
         $this->assertSame('1 John', $bible->normalizeBookName('1 Jn'));
         $this->assertSame('Revelation', $bible->normalizeBookName('Rev'));
     }
+
+    public function test_suggest_books_and_chapter_verses(): void
+    {
+        $bible = new KjvBibleService;
+
+        $books = $bible->suggest('Jn');
+        $this->assertNotEmpty($books);
+        $this->assertSame('John 1:1', $books[0]['ref']);
+
+        $chapter = $bible->suggest('John 3');
+        $this->assertNotEmpty($chapter);
+        $this->assertSame('John 3:1', $chapter[0]['ref']);
+        $this->assertStringContainsString('ruler of the Jews', $chapter[0]['preview']);
+
+        $exact = $bible->suggest('John 3:16');
+        $this->assertCount(1, $exact);
+        $this->assertSame('John 3:16', $exact[0]['ref']);
+        $this->assertStringContainsString('God so loved the world', $exact[0]['preview']);
+    }
 }

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\CreatorApiController;
 use App\Http\Controllers\Api\ListenApiController;
 use App\Http\Controllers\Api\GalleryApiController;
 use App\Http\Controllers\Api\ScriptureApiController;
+use App\Http\Controllers\Api\SongApiController;
 use App\Http\Controllers\Api\StudioLibraryApiController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\StreamEngageController;
@@ -77,6 +78,25 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/streams/{stream}/scripture', [ScriptureApiController::class, 'store'])
             ->middleware('throttle:60,1');
         Route::delete('/streams/{stream}/scripture', [ScriptureApiController::class, 'destroy'])
+            ->middleware('throttle:60,1');
+
+        Route::get('/streams/{stream}/songs', [SongApiController::class, 'index'])
+            ->middleware('throttle:120,1');
+        Route::post('/streams/{stream}/songs', [SongApiController::class, 'store'])
+            ->middleware('throttle:60,1');
+        Route::get('/streams/{stream}/songs/cue', [SongApiController::class, 'show'])
+            ->middleware('throttle:listen-poll');
+        Route::post('/streams/{stream}/songs/cue/next', [SongApiController::class, 'next'])
+            ->middleware('throttle:60,1');
+        Route::post('/streams/{stream}/songs/cue/previous', [SongApiController::class, 'previous'])
+            ->middleware('throttle:60,1');
+        Route::delete('/streams/{stream}/songs/cue', [SongApiController::class, 'clear'])
+            ->middleware('throttle:60,1');
+        Route::put('/streams/{stream}/songs/{song}', [SongApiController::class, 'update'])
+            ->middleware('throttle:60,1');
+        Route::delete('/streams/{stream}/songs/{song}', [SongApiController::class, 'destroy'])
+            ->middleware('throttle:60,1');
+        Route::post('/streams/{stream}/songs/{song}/cue', [SongApiController::class, 'cue'])
             ->middleware('throttle:60,1');
 
         Route::post('/listen/{stream}/like', [StreamEngageController::class, 'like'])

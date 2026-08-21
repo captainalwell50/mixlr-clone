@@ -59,6 +59,7 @@
                             id="listen-root"
                             data-hls-url="{{ $hlsUrl }}"
                             data-whep-url="{{ $whepUrl }}"
+                            data-prefer-hls="{{ ! empty($preferHls) ? '1' : '0' }}"
                             data-stream-status="live"
                             data-status-url="{{ route('events.status', $event) }}"
                             @if ($event->stream)
@@ -172,8 +173,8 @@
                 </div>
 
                 <div class="portal-cards stage-rise-delay">
-                    <div class="portal-card portal-art{{ filled($event->scripture_ref) ? ' has-scripture' : '' }}" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork">
-                        <div id="scripture-slide" class="scripture-slide" @if (! filled($event->scripture_ref)) hidden @endif>
+                    <div class="portal-card portal-art{{ filled($event->song_title) ? ' has-song' : (filled($event->scripture_ref) ? ' has-scripture' : '') }}" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork">
+                        <div id="scripture-slide" class="scripture-slide" @if (filled($event->song_title) || ! filled($event->scripture_ref)) hidden @endif>
                             <div class="scripture-body">
                                 <div class="scripture-body-inner">
                                     <div class="scripture-heading">
@@ -181,6 +182,22 @@
                                         <p class="scripture-ref">{{ $event->scripture_ref }}<span class="scripture-version"> (KJV)</span></p>
                                     </div>
                                     <p class="scripture-text">{{ $event->scripture_text }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="song-slide" class="scripture-slide song-slide" @if (! filled($event->song_title)) hidden @endif>
+                            <div class="scripture-body">
+                                <div class="scripture-body-inner">
+                                    <div class="scripture-heading">
+                                        <p class="scripture-board-name">Song / Announcement</p>
+                                        <p class="scripture-ref">{{ $event->song_title }}</p>
+                                        <p class="song-slide-meta">
+                                            @if (filled($event->song_title) && (int) ($event->song_slide_count ?? 1) > 1)
+                                                {{ ((int) ($event->song_slide_index ?? 0)) + 1 }} / {{ (int) $event->song_slide_count }}
+                                            @endif
+                                        </p>
+                                    </div>
+                                    <p class="scripture-text">{{ $event->song_text }}</p>
                                 </div>
                             </div>
                         </div>

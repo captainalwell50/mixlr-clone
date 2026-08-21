@@ -1,8 +1,10 @@
-const POLL_MS = 5000;
+// Keep tight while live — scripture/song are poll-only (no websocket). Rate limit: listen-poll 900/min.
+const POLL_MS = 1500;
 const DEFAULT_VERSION = 'KJV';
 
 /**
- * Poll current scripture and drive the EasyWorship-style portal-art slide.
+ * Poll current scripture / song and drive the EasyWorship-style portal-art slide.
+ * Song cue takes precedence when both are live.
  */
 export function bindScriptureListen(root) {
     const host = root?.dataset?.scriptureUrl
@@ -13,18 +15,22 @@ export function bindScriptureListen(root) {
         return;
     }
 
-    const slide = document.getElementById('scripture-slide');
-    const refEl = slide?.querySelector('.scripture-ref');
-    const textEl = slide?.querySelector('.scripture-text');
+    const scriptureSlide = document.getElementById('scripture-slide');
+    const songSlide = document.getElementById('song-slide');
+    const scriptureRefEl = scriptureSlide?.querySelector('.scripture-ref');
+    const scriptureTextEl = scriptureSlide?.querySelector('.scripture-text');
+    const songTitleEl = songSlide?.querySelector('.scripture-ref');
+    const songTextEl = songSlide?.querySelector('.scripture-text');
+    const songMetaEl = songSlide?.querySelector('.song-slide-meta');
     const art = document.querySelector('.portal-art');
-    if (!slide || !refEl || !textEl) {
+    if (!scriptureSlide || !scriptureRefEl || !scriptureTextEl) {
         return;
     }
 
     let lastKey = '';
     let timer = null;
 
-    function setReference(ref, version) {
+    function setReference(refEl, ref, version) {
         const label = (version || DEFAULT_VERSION).trim() || DEFAULT_VERSION;
         refEl.replaceChildren();
         refEl.append(document.createTextNode(ref));
@@ -32,6 +38,25 @@ export function bindScriptureListen(root) {
         ver.className = 'scripture-version';
         ver.textContent = ` (${label})`;
         refEl.append(ver);
+    }
+
+    function hideAll() {
+        scriptureSlide.hidden = true;
+        if (songSlide) {
+            songSlide.hidden = true;
+        }
+        art?.classList.remove('has-scripture', 'has-song');
+        scriptureRefEl.replaceChildren();
+        scriptureTextEl.textContent = '';
+        if (songTitleEl) {
+            songTitleEl.replaceChildren();
+        }
+        if (songTextEl) {
+            songTextEl.textContent = '';
+        }
+        if (songMetaEl) {
+            songMetaEl.textContent = '';
+        }
     }
 
     async function tick() {
@@ -49,25 +74,48 @@ export function bindScriptureListen(root) {
                 return;
             }
             const scripture = data.scripture;
-            const key = scripture
-                ? `${scripture.ref}\n${scripture.text}\n${scripture.version || ''}\n${scripture.updated_at || ''}`
-                : '';
+            const song = data.song;
+            const key = [
+                song
+                    ? `song:${song.title}\n${song.text}\n${song.slide_index}\n${song.updated_at || ''}`
+                    : '',
+                scripture
+                    ? `scripture:${scripture.ref}\n${scripture.text}\n${scripture.version || ''}\n${scripture.updated_at || ''}`
+                    : '',
+            ].join('|');
             if (key === lastKey) {
                 return;
             }
             lastKey = key;
 
-            if (!scripture?.ref || !scripture?.text) {
-                slide.hidden = true;
+            if (song?.title && song?.text && songSlide && songTitleEl && songTextEl) {
+                scriptureSlide.hidden = true;
+                songTitleEl.textContent = song.title;
+                songTextEl.textContent = song.text;
+                if (songMetaEl) {
+                    const n = (song.slide_index ?? 0) + 1;
+                    const total = song.slide_count || 1;
+                    songMetaEl.textContent = total > 1 ? `${n} / ${total}` : '';
+                }
+                songSlide.hidden = false;
+                art?.classList.add('has-song');
                 art?.classList.remove('has-scripture');
-                refEl.replaceChildren();
-                textEl.textContent = '';
                 return;
             }
 
-            setReference(scripture.ref, scripture.version);
-            textEl.textContent = scripture.text;
-            slide.hidden = false;
+            if (songSlide) {
+                songSlide.hidden = true;
+            }
+            art?.classList.remove('has-song');
+
+            if (!scripture?.ref || !scripture?.text) {
+                hideAll();
+                return;
+            }
+
+            setReference(scriptureRefEl, scripture.ref, scripture.version);
+            scriptureTextEl.textContent = scripture.text;
+            scriptureSlide.hidden = false;
             art?.classList.add('has-scripture');
         } catch {
             /* ignore transient errors */

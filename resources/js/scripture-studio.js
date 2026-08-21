@@ -373,6 +373,14 @@ export function bindScriptureStudio(root) {
     }
 
     function showConfirm(ref) {
+        // Same ref already pending — do not reset the auto-cue timer (STT often re-emits).
+        if (ref === pendingRef && confirmTimer) {
+            if (confirmRefEl) {
+                confirmRefEl.textContent = ref;
+            }
+            confirmEl?.removeAttribute('hidden');
+            return;
+        }
         pendingRef = ref;
         if (confirmRefEl) {
             confirmRefEl.textContent = ref;
@@ -381,10 +389,11 @@ export function bindScriptureStudio(root) {
         if (confirmTimer) {
             window.clearTimeout(confirmTimer);
         }
+        // Brief dismiss window; keep short so listen clients see the cue quickly.
         confirmTimer = window.setTimeout(() => {
             void cue(ref);
             hideConfirm();
-        }, 4000);
+        }, 1200);
     }
 
     async function cue(ref) {
@@ -443,12 +452,57 @@ export function bindScriptureStudio(root) {
     }
 
     let suggestTimer = null;
+    let activeSuggestIndex = -1;
+
+    function suggestItems() {
+        return suggestEl
+            ? Array.from(suggestEl.querySelectorAll('.scripture-suggest-item'))
+            : [];
+    }
+
+    function setActiveSuggest(index) {
+        const items = suggestItems();
+        activeSuggestIndex = index;
+        items.forEach((el, i) => {
+            el.classList.toggle('is-active', i === index);
+            if (i === index) {
+                el.setAttribute('aria-selected', 'true');
+            } else {
+                el.removeAttribute('aria-selected');
+            }
+        });
+        if (index >= 0 && items[index]) {
+            items[index].scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    function clearSuggestions() {
+        if (suggestEl) {
+            suggestEl.innerHTML = '';
+        }
+        activeSuggestIndex = -1;
+    }
+
+    function applySuggestion(ref, { cueNow = true } = {}) {
+        if (!ref) {
+            return;
+        }
+        if (input) {
+            input.value = ref;
+        }
+        selectedRef = ref;
+        clearSuggestions();
+        if (cueNow) {
+            void cue(ref);
+        }
+    }
+
     async function runSuggest(q) {
         if (!suggestUrl || !suggestEl) {
             return;
         }
         if (!q.trim()) {
-            suggestEl.innerHTML = '';
+            clearSuggestions();
             return;
         }
         try {
@@ -460,10 +514,11 @@ export function bindScriptureStudio(root) {
             });
             const data = await res.json();
             const items = data.suggestions || [];
+            activeSuggestIndex = -1;
             suggestEl.innerHTML = items
                 .map(
-                    (s) =>
-                        `<button type="button" class="scripture-suggest-item" data-ref="${s.ref.replace(/"/g, '&quot;')}">` +
+                    (s, i) =>
+                        `<button type="button" class="scripture-suggest-item" role="option" id="scripture-suggest-${i}" data-ref="${s.ref.replace(/"/g, '&quot;')}">` +
                         `<strong>${s.ref}</strong><span>${s.preview || ''}</span></button>`,
                 )
                 .join('');
@@ -481,9 +536,39 @@ export function bindScriptureStudio(root) {
     });
 
     input?.addEventListener('keydown', (ev) => {
+        const items = suggestItems();
+        if (ev.key === 'ArrowDown' && items.length) {
+            ev.preventDefault();
+            const next = activeSuggestIndex < items.length - 1 ? activeSuggestIndex + 1 : 0;
+            setActiveSuggest(next);
+            return;
+        }
+        if (ev.key === 'ArrowUp' && items.length) {
+            ev.preventDefault();
+            const next = activeSuggestIndex > 0 ? activeSuggestIndex - 1 : items.length - 1;
+            setActiveSuggest(next);
+            return;
+        }
+        if (ev.key === 'Escape') {
+            if (items.length) {
+                ev.preventDefault();
+                clearSuggestions();
+            }
+            return;
+        }
         if (ev.key === 'Enter') {
             ev.preventDefault();
+            if (activeSuggestIndex >= 0 && items[activeSuggestIndex]) {
+                const ref = items[activeSuggestIndex].dataset.ref || '';
+                applySuggestion(ref, { cueNow: true });
+                return;
+            }
             void cue(input.value.trim());
+        }
+        if (ev.key === 'Tab' && activeSuggestIndex >= 0 && items[activeSuggestIndex]) {
+            ev.preventDefault();
+            const ref = items[activeSuggestIndex].dataset.ref || '';
+            applySuggestion(ref, { cueNow: false });
         }
     });
 
@@ -492,13 +577,21 @@ export function bindScriptureStudio(root) {
         if (!btn || !(btn instanceof HTMLElement)) {
             return;
         }
-        const ref = btn.dataset.ref || '';
-        if (input) {
-            input.value = ref;
+        applySuggestion(btn.dataset.ref || '', { cueNow: true });
+    });
+
+    document.addEventListener('click', (ev) => {
+        if (!suggestEl || !input) {
+            return;
         }
-        selectedRef = ref;
-        suggestEl.innerHTML = '';
-        void cue(ref);
+        const target = ev.target;
+        if (!(target instanceof Node)) {
+            return;
+        }
+        if (suggestEl.contains(target) || input.contains(target)) {
+            return;
+        }
+        clearSuggestions();
     });
 
     btnShow?.addEventListener('click', () => void cue((input?.value || selectedRef).trim()));

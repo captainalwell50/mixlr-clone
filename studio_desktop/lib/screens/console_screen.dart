@@ -14,6 +14,7 @@ import '../services/mixer_bridge.dart';
 import '../theme.dart';
 import '../widgets/console_chassis.dart';
 import '../widgets/scripture_panel.dart';
+import '../widgets/song_panel.dart';
 
 class ConsoleScreen extends StatefulWidget {
   const ConsoleScreen({super.key});
@@ -1148,6 +1149,8 @@ class _AdvancePanel extends StatelessWidget {
         children: [
           if (scriptureEnabled && streamUuid != null) ...[
             ScripturePanel(api: api, streamUuid: streamUuid!),
+            const SizedBox(height: 16),
+            SongPanel(api: api, streamUuid: streamUuid!),
             const SizedBox(height: 16),
           ],
           Row(

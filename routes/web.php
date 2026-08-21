@@ -31,6 +31,7 @@ use App\Http\Controllers\PaystackWebhookController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlayController;
 use App\Http\Controllers\ScriptureController;
+use App\Http\Controllers\SongController;
 use App\Http\Controllers\StudioSessionController;
 use App\Http\Controllers\StreamEngageController;
 use App\Http\Controllers\StudioAudioLibraryController;
@@ -131,6 +132,9 @@ Route::get('/listen/{stream}/gallery', [GalleryController::class, 'index'])
 Route::get('/listen/{stream}/scripture', [ScriptureController::class, 'show'])
     ->middleware('throttle:listen-poll')
     ->name('scripture.show');
+Route::get('/listen/{stream}/song', [SongController::class, 'show'])
+    ->middleware('throttle:listen-poll')
+    ->name('song.show');
 Route::post('/listen/{stream}/gallery', [GalleryController::class, 'store'])
     ->middleware('throttle:30,1')
     ->name('gallery.store');
@@ -196,6 +200,34 @@ Route::post('/studio/{stream}/scripture', [ScriptureController::class, 'store'])
 Route::delete('/studio/{stream}/scripture', [ScriptureController::class, 'destroy'])
     ->middleware('throttle:60,1')
     ->name('studio.scripture.destroy');
+
+Route::get('/studio/{stream}/songs', [SongController::class, 'index'])
+    ->middleware('throttle:120,1')
+    ->name('studio.songs.index');
+Route::post('/studio/{stream}/songs', [SongController::class, 'store'])
+    ->middleware('throttle:60,1')
+    ->name('studio.songs.store');
+Route::get('/studio/{stream}/songs/cue', [SongController::class, 'show'])
+    ->middleware('throttle:listen-poll')
+    ->name('studio.songs.show');
+Route::post('/studio/{stream}/songs/cue/next', [SongController::class, 'next'])
+    ->middleware('throttle:60,1')
+    ->name('studio.songs.next');
+Route::post('/studio/{stream}/songs/cue/previous', [SongController::class, 'previous'])
+    ->middleware('throttle:60,1')
+    ->name('studio.songs.previous');
+Route::delete('/studio/{stream}/songs/cue', [SongController::class, 'clear'])
+    ->middleware('throttle:60,1')
+    ->name('studio.songs.clear');
+Route::put('/studio/{stream}/songs/{song}', [SongController::class, 'update'])
+    ->middleware('throttle:60,1')
+    ->name('studio.songs.update');
+Route::delete('/studio/{stream}/songs/{song}', [SongController::class, 'destroy'])
+    ->middleware('throttle:60,1')
+    ->name('studio.songs.destroy');
+Route::post('/studio/{stream}/songs/{song}/cue', [SongController::class, 'cue'])
+    ->middleware('throttle:60,1')
+    ->name('studio.songs.cue');
 
 Route::get('/studio/{stream}/desktop-mixer', [StudioDesktopMixerController::class, 'show'])
     ->middleware('throttle:60,1')

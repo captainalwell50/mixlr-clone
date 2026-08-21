@@ -1,5 +1,6 @@
 import './bootstrap';
 import { bindScriptureStudio } from './scripture-studio';
+import { bindSongStudio } from './song-studio';
 
 const root = document.getElementById('studio-root');
 const whipUrl = root?.dataset.whipUrl;
@@ -2697,6 +2698,7 @@ btnUploadRecording?.addEventListener('click', async () => {
 
 refreshSessionButtons();
 bindScriptureStudio(root);
+bindSongStudio(root);
 if (currentEvent?.status === 'live' && !isLive) {
     setStatus('Page refreshed — hit Reconnect to keep this live event on air.');
 } else if (sessionPaused) {

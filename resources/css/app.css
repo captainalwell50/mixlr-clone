@@ -615,7 +615,8 @@ a.stage-platform:hover {
     background: #1a1a1a center/cover no-repeat;
 }
 
-.portal-art.has-scripture {
+.portal-art.has-scripture,
+.portal-art.has-song {
     background-color: #0b1220;
 }
 
@@ -652,6 +653,19 @@ a.stage-platform:hover {
 
 .scripture-slide[hidden] {
     display: none !important;
+}
+
+.song-slide {
+    z-index: 2;
+}
+
+.song-slide-meta {
+    margin: 0;
+    font-family: "Source Sans 3", "Segoe UI", sans-serif;
+    font-size: clamp(0.68rem, 1.1vw, 0.78rem);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, #f7f4ee 55%, var(--stage-accent, #14b8a6));
 }
 
 /* Dark plate + scroll viewport — ref and verse stay inside this box */
@@ -822,6 +836,12 @@ a.stage-platform:hover {
     cursor: pointer;
 }
 
+.scripture-suggest-item.is-active,
+.scripture-suggest-item:hover {
+    border-color: color-mix(in srgb, var(--stage-accent, #14b8a6) 55%, transparent);
+    background: color-mix(in srgb, var(--stage-accent, #14b8a6) 16%, #0f172a);
+}
+
 .scripture-suggest-item strong {
     font-size: 0.92rem;
 }
@@ -830,6 +850,74 @@ a.stage-platform:hover {
     font-size: 0.78rem;
     opacity: 0.75;
     line-height: 1.35;
+}
+
+.studio-songs {
+    margin-top: 0.35rem;
+    display: grid;
+    gap: 0.65rem;
+}
+
+.song-live-meta {
+    margin: 0;
+    font-size: 0.82rem;
+    color: color-mix(in srgb, currentColor 72%, var(--stage-accent, #14b8a6));
+}
+
+.song-form {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.song-body-input {
+    width: 100%;
+    min-height: 7.5rem;
+    resize: vertical;
+    border-radius: 0.55rem;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    background: color-mix(in srgb, #0f172a 70%, transparent);
+    color: inherit;
+    padding: 0.65rem 0.75rem;
+    font: inherit;
+    line-height: 1.4;
+}
+
+.song-list {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.song-list-item {
+    display: grid;
+    gap: 0.45rem;
+    border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+    border-radius: 0.55rem;
+    padding: 0.55rem 0.65rem;
+    background: color-mix(in srgb, #0f172a 45%, transparent);
+}
+
+.song-list-item.is-live {
+    border-color: color-mix(in srgb, var(--stage-accent, #14b8a6) 50%, transparent);
+}
+
+.song-list-main {
+    display: grid;
+    gap: 0.1rem;
+}
+
+.song-list-main strong {
+    font-size: 0.92rem;
+}
+
+.song-list-main span {
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+
+.song-list-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
 }
 
 .scripture-confirm {

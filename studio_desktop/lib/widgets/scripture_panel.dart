@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -33,6 +34,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
   Timer? _confirmTimer;
   Timer? _restartTimer;
   List<ScriptureSuggestion> _suggestions = const [];
+  int _activeSuggest = -1;
   ScriptureCue? _current;
   String _status = 'No scripture on listen';
   String? _pendingRef;
@@ -203,7 +205,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
           cancelOnError: false,
           localeId: 'en_US',
           listenFor: const Duration(minutes: 2),
-          pauseFor: const Duration(seconds: 8),
+          // Shorter pause so finals flush sooner mid-reference without killing dictation.
+          pauseFor: const Duration(seconds: 4),
         ),
       );
       if (!mounted || !_wantListen) return;
@@ -239,10 +242,16 @@ class _ScripturePanelState extends State<ScripturePanel> {
         if (cue != null) {
           _controller.text = cue.ref;
           _status = 'Showing ${cue.ref} on listen';
+        } else {
+          _status = 'No scripture on listen';
         }
       });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _status = e.message);
     } catch (_) {
-      /* ignore */
+      if (!mounted) return;
+      setState(() => _status = 'Could not load scripture. Check your connection.');
     }
   }
 
@@ -251,14 +260,31 @@ class _ScripturePanelState extends State<ScripturePanel> {
     _suggestTimer = Timer(const Duration(milliseconds: 250), () async {
       final q = value.trim();
       if (q.isEmpty) {
-        if (mounted) setState(() => _suggestions = const []);
+        if (mounted) {
+          setState(() {
+            _suggestions = const [];
+            _activeSuggest = -1;
+          });
+        }
         return;
       }
       try {
         final items = await widget.api.scriptureSuggest(widget.streamUuid, q);
-        if (mounted) setState(() => _suggestions = items);
+        if (mounted) {
+          setState(() {
+            _suggestions = items;
+            _activeSuggest = items.isEmpty ? -1 : 0;
+            if (items.isEmpty && q.length >= 3) {
+              _status = 'No matching verses for “$q”.';
+            }
+          });
+        }
+      } on ApiException catch (e) {
+        if (mounted) setState(() => _status = e.message);
       } catch (_) {
-        /* ignore */
+        if (mounted) {
+          setState(() => _status = 'Scripture search failed. Try again.');
+        }
       }
     });
   }
@@ -280,6 +306,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
         _current = cue;
         _controller.text = cue.ref;
         _suggestions = const [];
+        _activeSuggest = -1;
         _pendingRef = null;
         _status = 'Showing ${cue.ref} on listen';
       });
@@ -315,7 +342,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
       _pendingRef = ref;
       _status = 'Heard: $ref';
     });
-    _confirmTimer = Timer(const Duration(seconds: 4), () {
+    // Brief window to dismiss a wrong parse; keep short so listen clients see the cue fast.
+    _confirmTimer = Timer(const Duration(milliseconds: 1200), () {
       if (_pendingRef == ref) {
         unawaited(_show(ref));
       }
@@ -499,31 +527,66 @@ class _ScripturePanelState extends State<ScripturePanel> {
               letterSpacing: 1.2,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Show KJV verses on the listen page left panel. Type a reference or listen for spoken scripture.',
-            style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 13, height: 1.35),
-          ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _controller,
-            onChanged: _onQueryChanged,
-            onSubmitted: (_) => _show(),
-            style: GoogleFonts.outfit(color: StudioTheme.cream, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'e.g. John 3:16',
-              hintStyle: GoogleFonts.outfit(color: StudioTheme.mute),
-              filled: true,
-              fillColor: StudioTheme.ink.withOpacity(0.55),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: StudioTheme.line),
+          Focus(
+            onKeyEvent: (node, event) {
+              if (event is! KeyDownEvent) return KeyEventResult.ignored;
+              if (_suggestions.isEmpty) return KeyEventResult.ignored;
+              if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                setState(() {
+                  _activeSuggest = (_activeSuggest + 1) % _suggestions.length;
+                });
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                setState(() {
+                  _activeSuggest = (_activeSuggest - 1 + _suggestions.length) %
+                      _suggestions.length;
+                });
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.escape) {
+                setState(() {
+                  _suggestions = const [];
+                  _activeSuggest = -1;
+                });
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.enter &&
+                  _activeSuggest >= 0 &&
+                  _activeSuggest < _suggestions.length) {
+                unawaited(_show(_suggestions[_activeSuggest].ref));
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: TextField(
+              controller: _controller,
+              onChanged: _onQueryChanged,
+              onSubmitted: (_) {
+                if (_activeSuggest >= 0 &&
+                    _activeSuggest < _suggestions.length) {
+                  unawaited(_show(_suggestions[_activeSuggest].ref));
+                } else {
+                  unawaited(_show());
+                }
+              },
+              style: GoogleFonts.outfit(color: StudioTheme.cream, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'e.g. John 3:16',
+                hintStyle: GoogleFonts.outfit(color: StudioTheme.mute),
+                filled: true,
+                fillColor: StudioTheme.ink.withOpacity(0.55),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: StudioTheme.line),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: StudioTheme.line),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: StudioTheme.line),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
           if (_suggestions.isNotEmpty) ...[
@@ -536,8 +599,11 @@ class _ScripturePanelState extends State<ScripturePanel> {
                 separatorBuilder: (_, __) => const SizedBox(height: 6),
                 itemBuilder: (context, i) {
                   final s = _suggestions[i];
+                  final active = i == _activeSuggest;
                   return Material(
-                    color: StudioTheme.ink.withOpacity(0.7),
+                    color: active
+                        ? StudioTheme.accent.withOpacity(0.18)
+                        : StudioTheme.ink.withOpacity(0.7),
                     borderRadius: BorderRadius.circular(10),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(10),

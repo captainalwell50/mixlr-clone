@@ -266,23 +266,33 @@ class ApiClient {
     return data['likes'] as int? ?? 0;
   }
 
-  /// Public listen-portal scripture poll (same as web `/listen/{uuid}/scripture`).
-  Future<({bool enabled, ScriptureCue? cue})> scripture(String streamUuid) async {
+  /// Public listen-portal scripture/song poll (same as web `/listen/{uuid}/scripture`).
+  Future<({bool enabled, ScriptureCue? cue, SongCue? song})> scripture(
+    String streamUuid,
+  ) async {
     final response = await _client.get(
       Uri.parse('${AppConfig.apiBase}/listen/$streamUuid/scripture'),
       headers: _headers(auth: _token != null),
     );
     final data = await _json(response, fallback: 'Could not load scripture');
     final enabled = data['enabled'] as bool? ?? false;
+    ScriptureCue? cue;
     final raw = data['scripture'];
-    if (raw is! Map<String, dynamic>) {
-      return (enabled: enabled, cue: null);
+    if (raw is Map<String, dynamic>) {
+      final parsed = ScriptureCue.fromJson(raw);
+      if (parsed.ref.isNotEmpty && parsed.text.isNotEmpty) {
+        cue = parsed;
+      }
     }
-    final cue = ScriptureCue.fromJson(raw);
-    if (cue.ref.isEmpty || cue.text.isEmpty) {
-      return (enabled: enabled, cue: null);
+    SongCue? song;
+    final songRaw = data['song'];
+    if (songRaw is Map<String, dynamic>) {
+      final parsed = SongCue.fromJson(songRaw);
+      if (parsed.title.isNotEmpty && parsed.text.isNotEmpty) {
+        song = parsed;
+      }
     }
-    return (enabled: enabled, cue: cue);
+    return (enabled: enabled, cue: cue, song: song);
   }
 
   /// Public listen-portal gallery (same as web `/listen/{uuid}/gallery`).

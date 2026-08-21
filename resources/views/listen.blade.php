@@ -54,6 +54,7 @@
                         id="listen-root"
                         data-hls-url="{{ $hlsUrl }}"
                         data-whep-url="{{ $whepUrl }}"
+                        data-prefer-hls="{{ ! empty($preferHls) ? '1' : '0' }}"
                         data-stream-status="{{ $stream->status->value }}"
                         data-status-url="{{ route('listen.status', $stream) }}"
                         data-gallery-url="{{ route('gallery.index', $stream) }}"
@@ -150,6 +151,18 @@
                                     <div class="scripture-heading">
                                         <p class="scripture-board-name">Scripture Board</p>
                                         <p class="scripture-ref"></p>
+                                    </div>
+                                    <p class="scripture-text"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="song-slide" class="scripture-slide song-slide" hidden>
+                            <div class="scripture-body">
+                                <div class="scripture-body-inner">
+                                    <div class="scripture-heading">
+                                        <p class="scripture-board-name">Song / Announcement</p>
+                                        <p class="scripture-ref"></p>
+                                        <p class="song-slide-meta"></p>
                                     </div>
                                     <p class="scripture-text"></p>
                                 </div>

@@ -261,6 +261,39 @@ class ScriptureCue {
   }
 }
 
+class SongCue {
+  SongCue({
+    required this.title,
+    required this.text,
+    this.id,
+    this.slideIndex = 0,
+    this.slideCount = 1,
+    this.updatedAt,
+  });
+
+  final int? id;
+  final String title;
+  final String text;
+  final int slideIndex;
+  final int slideCount;
+  final String? updatedAt;
+
+  factory SongCue.fromJson(Map<String, dynamic> json) {
+    return SongCue(
+      id: json['id'] is int ? json['id'] as int : int.tryParse('${json['id']}'),
+      title: json['title'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+      slideIndex: json['slide_index'] is int
+          ? json['slide_index'] as int
+          : int.tryParse('${json['slide_index']}') ?? 0,
+      slideCount: json['slide_count'] is int
+          ? json['slide_count'] as int
+          : int.tryParse('${json['slide_count']}') ?? 1,
+      updatedAt: json['updated_at'] as String?,
+    );
+  }
+}
+
 class GalleryItem {
   GalleryItem({
     required this.id,

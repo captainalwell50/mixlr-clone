@@ -101,6 +101,62 @@ class ScriptureSuggestion {
   }
 }
 
+class DisplaySongItem {
+  DisplaySongItem({
+    required this.id,
+    required this.title,
+    required this.slides,
+    required this.slideCount,
+  });
+
+  final int id;
+  final String title;
+  final List<String> slides;
+  final int slideCount;
+
+  factory DisplaySongItem.fromJson(Map<String, dynamic> json) {
+    final slides = (json['slides'] as List<dynamic>? ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+    return DisplaySongItem(
+      id: _asInt(json['id']) ?? 0,
+      title: json['title'] as String? ?? '',
+      slides: slides,
+      slideCount: _asInt(json['slide_count']) ?? slides.length,
+    );
+  }
+}
+
+class SongCue {
+  SongCue({
+    required this.title,
+    required this.text,
+    this.id,
+    this.slideIndex = 0,
+    this.slideCount = 1,
+    this.updatedAt,
+  });
+
+  final int? id;
+  final String title;
+  final String text;
+  final int slideIndex;
+  final int slideCount;
+  final String? updatedAt;
+
+  factory SongCue.fromJson(Map<String, dynamic> json) {
+    return SongCue(
+      id: _asInt(json['id']),
+      title: json['title'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+      slideIndex: _asInt(json['slide_index']) ?? 0,
+      slideCount: _asInt(json['slide_count']) ?? 1,
+      updatedAt: json['updated_at'] as String?,
+    );
+  }
+}
+
 class StreamSummary {
   StreamSummary({
     required this.uuid,

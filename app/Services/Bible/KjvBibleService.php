@@ -124,39 +124,166 @@ class KjvBibleService
     }
 
     /**
-     * Suggest book names / simple refs for Studio search.
+     * Suggest book names / chapter:verse completions for Studio autocomplete.
      *
      * @return list<array{ref: string, preview: string}>
      */
     public function suggest(string $query, int $limit = 12): array
     {
-        $query = trim($query);
+        $query = trim(preg_replace('/\s+/', ' ', $query) ?? '');
         if ($query === '') {
             return [];
         }
 
-        // If it looks like a full reference, try resolving it.
-        if (preg_match('/\d/', $query)) {
-            $resolved = $this->resolve($query);
-            if ($resolved) {
-                return [[
-                    'ref' => $resolved['ref'],
-                    'preview' => Str::limit($resolved['text'], 120),
-                ]];
+        $resolved = $this->resolve($query);
+        if ($resolved !== null) {
+            return [[
+                'ref' => $resolved['ref'],
+                'preview' => Str::limit($resolved['text'], 120),
+            ]];
+        }
+
+        // "John 3", "John 3:", "Jn 3 :" → chapter verse list
+        if (preg_match('/^(?P<book>.+?)\s+(?P<chapter>\d+)\s*:?\s*$/u', $query, $m)) {
+            $chapterSuggestions = $this->suggestChapterVerses(
+                (string) $m['book'],
+                (int) $m['chapter'],
+                $limit,
+            );
+            if ($chapterSuggestions !== []) {
+                return $chapterSuggestions;
             }
         }
 
+        // "John 3:1-" → offer single verse + short ranges from that start
+        if (preg_match(
+            '/^(?P<book>.+?)\s+(?P<chapter>\d+)\s*:\s*(?P<start>\d+)\s*[-–—]\s*$/u',
+            $query,
+            $m
+        )) {
+            $rangeSuggestions = $this->suggestFromVerseStart(
+                (string) $m['book'],
+                (int) $m['chapter'],
+                (int) $m['start'],
+                $limit,
+            );
+            if ($rangeSuggestions !== []) {
+                return $rangeSuggestions;
+            }
+        }
+
+        // "John 3:1" invalid (out of range) already returned []; fall through to books
         $q = Str::lower($query);
+        $aliasBook = $this->normalizeBookName($query);
         $out = [];
+
         foreach ($this->books() as $book) {
             $name = (string) $book['name'];
-            if (! str_contains(Str::lower($name), $q) && ! str_contains(Str::lower((string) $book['abbrev']), $q)) {
+            $abbrev = Str::lower((string) $book['abbrev']);
+            $nameLower = Str::lower($name);
+            $matched = $aliasBook === $name
+                || str_starts_with($nameLower, $q)
+                || str_contains($nameLower, $q)
+                || str_starts_with($abbrev, $q)
+                || str_contains($abbrev, $q);
+
+            if (! $matched) {
                 continue;
             }
+
             $first = $book['chapters'][0][0] ?? '';
             $out[] = [
                 'ref' => $name.' 1:1',
                 'preview' => Str::limit((string) $first, 120),
+            ];
+            if (count($out) >= $limit) {
+                break;
+            }
+        }
+
+        // Prefer prefix / alias hits first (already roughly ordered by canon).
+        if ($aliasBook !== null) {
+            usort($out, function (array $a, array $b) use ($aliasBook): int {
+                $aExact = str_starts_with($a['ref'], $aliasBook.' ') ? 0 : 1;
+                $bExact = str_starts_with($b['ref'], $aliasBook.' ') ? 0 : 1;
+
+                return $aExact <=> $bExact;
+            });
+        }
+
+        return array_values($out);
+    }
+
+    /**
+     * @return list<array{ref: string, preview: string}>
+     */
+    private function suggestChapterVerses(string $bookInput, int $chapter, int $limit): array
+    {
+        $book = $this->normalizeBookName($bookInput);
+        if ($book === null) {
+            return [];
+        }
+
+        $bookData = $this->bookByName($book);
+        if ($bookData === null || $chapter < 1 || $chapter > count($bookData['chapters'])) {
+            return [];
+        }
+
+        $verses = $bookData['chapters'][$chapter - 1];
+        $out = [];
+        $max = min(count($verses), max(1, $limit));
+        for ($v = 1; $v <= $max; $v++) {
+            $out[] = [
+                'ref' => sprintf('%s %d:%d', $book, $chapter, $v),
+                'preview' => Str::limit((string) $verses[$v - 1], 120),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<array{ref: string, preview: string}>
+     */
+    private function suggestFromVerseStart(string $bookInput, int $chapter, int $start, int $limit): array
+    {
+        $book = $this->normalizeBookName($bookInput);
+        if ($book === null) {
+            return [];
+        }
+
+        $bookData = $this->bookByName($book);
+        if ($bookData === null || $chapter < 1 || $chapter > count($bookData['chapters'])) {
+            return [];
+        }
+
+        $verses = $bookData['chapters'][$chapter - 1];
+        $max = count($verses);
+        if ($start < 1 || $start > $max) {
+            return [];
+        }
+
+        $out = [];
+        $single = $this->resolve(sprintf('%s %d:%d', $book, $chapter, $start));
+        if ($single !== null) {
+            $out[] = [
+                'ref' => $single['ref'],
+                'preview' => Str::limit($single['text'], 120),
+            ];
+        }
+
+        foreach ([2, 3, 5] as $span) {
+            $end = min($start + $span - 1, $max);
+            if ($end <= $start) {
+                continue;
+            }
+            $range = $this->resolve(sprintf('%s %d:%d-%d', $book, $chapter, $start, $end));
+            if ($range === null) {
+                continue;
+            }
+            $out[] = [
+                'ref' => $range['ref'],
+                'preview' => Str::limit($range['text'], 120),
             ];
             if (count($out) >= $limit) {
                 break;

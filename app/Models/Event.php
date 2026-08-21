@@ -31,6 +31,12 @@ class Event extends Model
         'scripture_ref',
         'scripture_text',
         'scripture_updated_at',
+        'song_id',
+        'song_title',
+        'song_text',
+        'song_slide_index',
+        'song_slide_count',
+        'song_updated_at',
     ];
 
     protected $hidden = [
@@ -48,6 +54,9 @@ class Event extends Model
             'chat_enabled' => 'boolean',
             'show_listener_count' => 'boolean',
             'scripture_updated_at' => 'datetime',
+            'song_updated_at' => 'datetime',
+            'song_slide_index' => 'integer',
+            'song_slide_count' => 'integer',
         ];
     }
 
@@ -98,6 +107,11 @@ class Event extends Model
     public function galleryImages(): HasMany
     {
         return $this->hasMany(GalleryImage::class)->latest('id');
+    }
+
+    public function displaySong(): BelongsTo
+    {
+        return $this->belongsTo(DisplaySong::class, 'song_id');
     }
 
     public function isLive(): bool

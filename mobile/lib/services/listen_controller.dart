@@ -49,6 +49,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
   int _likes = 0;
   bool _scriptureEnabled = false;
   ScriptureCue? _scripture;
+  SongCue? _song;
   Duration _listened = Duration.zero;
   double _pulse = 0.2;
   bool _uiAttached = false;
@@ -88,6 +89,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
   int get likes => _likes;
   bool get scriptureEnabled => _scriptureEnabled;
   ScriptureCue? get scripture => _scripture;
+  SongCue? get song => _song;
   Duration get listened => _listened;
   double get pulse => _pulse;
   bool get uiAttached => _uiAttached;
@@ -631,9 +633,10 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     final payload = _payload;
     if (uuid == null) return;
     if (payload?.creatorType != null && !payload!.isChurch) {
-      if (_scriptureEnabled || _scripture != null) {
+      if (_scriptureEnabled || _scripture != null || _song != null) {
         _scriptureEnabled = false;
         _scripture = null;
+        _song = null;
         notifyListeners();
       }
       return;
@@ -648,6 +651,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
           await _auth.api.scripture(uuid).timeout(const Duration(seconds: 8));
       _scriptureEnabled = result.enabled;
       _scripture = result.cue;
+      _song = result.song;
       notifyListeners();
       if (result.enabled) {
         _channel.select(
@@ -821,6 +825,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     _listenStartedAt = null;
     _scriptureEnabled = false;
     _scripture = null;
+    _song = null;
     _listeners = 0;
     _likes = 0;
     notifyListeners();

@@ -120,6 +120,36 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
+            'songsIndexUrl' => URL::temporarySignedRoute(
+                'studio.songs.index',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'songsStoreUrl' => URL::temporarySignedRoute(
+                'studio.songs.store',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'songsCueClearUrl' => URL::temporarySignedRoute(
+                'studio.songs.clear',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'songsCueNextUrl' => URL::temporarySignedRoute(
+                'studio.songs.next',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'songsCuePreviousUrl' => URL::temporarySignedRoute(
+                'studio.songs.previous',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
+            'songsShowUrl' => URL::temporarySignedRoute(
+                'studio.songs.show',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
             'openEvent' => $openEvent,
             'galleryImages' => $openEvent
                 ? $stream->serviceGalleryImages($openEvent->id)->limit(20)->get()

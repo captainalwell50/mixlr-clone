@@ -16,13 +16,14 @@ class ScriptureController extends Controller
     public function __construct(
         private KjvBibleService $bible,
         private EventBroadcastService $broadcast,
+        private SongController $songs,
     ) {}
 
-    /** Public poll for listen portal. */
+    /** Public poll for listen portal (scripture + song cue). */
     public function show(Stream $stream): JsonResponse
     {
         if (! $this->isChurch($stream)) {
-            return response()->json(['enabled' => false, 'scripture' => null]);
+            return response()->json(['enabled' => false, 'scripture' => null, 'song' => null]);
         }
 
         $event = $this->openEvent($stream);
@@ -30,6 +31,7 @@ class ScriptureController extends Controller
         return response()->json([
             'enabled' => true,
             'scripture' => $this->payload($event),
+            'song' => $this->songs->cuePayload($event),
         ]);
     }
 
