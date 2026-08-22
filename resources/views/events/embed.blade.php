@@ -39,6 +39,7 @@
                     id="listen-root"
                     data-hls-url="{{ $hlsUrl }}"
                     data-whep-url="{{ $whepUrl }}"
+                    data-prefer-hls="{{ ! empty($preferHls) ? '1' : '0' }}"
                     data-stream-status="live"
                     data-status-url="{{ route('events.status', $event) }}"
                     class="hidden"
@@ -46,6 +47,8 @@
             @else
                 <p class="embed-offline">Broadcast not live.</p>
             @endif
+
+            @include('partials.give-online', ['organization' => $event->organization, 'compact' => true])
 
             <p class="embed-brand">{{ config('app.name', 'Sound Mix Live') }}</p>
         </div>

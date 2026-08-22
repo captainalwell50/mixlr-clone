@@ -10,7 +10,7 @@
             <p class="console-lead">
                 Branding for
                 <span class="text-[var(--stage-cream)]">{{ $organization->name }}</span>
-                — logo, artwork, and the full-screen listen background.
+                — logo, artwork, listen background, and Give online.
             </p>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -130,6 +130,76 @@
                     <button type="submit" class="console-btn console-btn-primary">Save background</button>
                 </form>
             @endunless
+        </section>
+
+        {{-- Give online --}}
+        <section class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6 space-y-4">
+            <div>
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Give online</h2>
+                <p class="mt-2 text-sm text-[var(--stage-muted)]">
+                    Shown on the listen page so people can give to this channel.
+                </p>
+            </div>
+
+            <form method="POST" action="{{ route('admin.organizations.customise.giving', $organization) }}" class="space-y-4">
+                @csrf
+                @method('PUT')
+
+                <label class="flex items-start gap-3 rounded-lg border border-[var(--stage-border)] px-4 py-3 cursor-pointer hover:bg-white/5">
+                    <input type="hidden" name="giving_enabled" value="0">
+                    <input type="checkbox" name="giving_enabled" value="1"
+                        @checked(old('giving_enabled', $organization->giving_enabled))
+                        class="mt-1 rounded border-zinc-600">
+                    <span>
+                        <span class="block text-[var(--stage-cream)] font-medium">Enable Give online</span>
+                        <span class="block text-xs text-[var(--stage-muted)] mt-0.5">Hide the button until a URL or account is set.</span>
+                    </span>
+                </label>
+
+                <div>
+                    <label for="giving_url" class="block text-sm font-medium text-zinc-300">Giving page URL</label>
+                    <input id="giving_url" type="url" name="giving_url"
+                        value="{{ old('giving_url', $organization->giving_url ?: $organization->support_url) }}"
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
+                        placeholder="https://paystack.com/pay/…">
+                    <p class="mt-1 text-xs text-[var(--stage-muted)]">Paystack, Flutterwave, or your church giving page. Opens in a new tab.</p>
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <label for="giving_account_name" class="block text-sm font-medium text-zinc-300">Account name</label>
+                        <input id="giving_account_name" type="text" name="giving_account_name"
+                            value="{{ old('giving_account_name', $organization->giving_account_name) }}"
+                            class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
+                            placeholder="Grace Chapel">
+                    </div>
+                    <div>
+                        <label for="giving_bank_name" class="block text-sm font-medium text-zinc-300">Bank</label>
+                        <input id="giving_bank_name" type="text" name="giving_bank_name"
+                            value="{{ old('giving_bank_name', $organization->giving_bank_name) }}"
+                            class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
+                            placeholder="GTBank">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="giving_account_number" class="block text-sm font-medium text-zinc-300">Account number</label>
+                    <input id="giving_account_number" type="text" name="giving_account_number" inputmode="numeric"
+                        value="{{ old('giving_account_number', $organization->giving_account_number) }}"
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
+                        placeholder="0123456789" maxlength="64" autocomplete="off">
+                </div>
+
+                <div>
+                    <label for="giving_note" class="block text-sm font-medium text-zinc-300">Note (optional)</label>
+                    <input id="giving_note" type="text" name="giving_note"
+                        value="{{ old('giving_note', $organization->giving_note) }}"
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
+                        placeholder="Sunday offering">
+                </div>
+
+                <button type="submit" class="console-btn console-btn-primary">Save giving</button>
+            </form>
         </section>
     </div>
 @endsection

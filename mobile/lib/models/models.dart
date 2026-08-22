@@ -168,6 +168,59 @@ class DiscoverCard {
   }
 }
 
+class GivingInfo {
+  GivingInfo({
+    this.url,
+    this.accountName,
+    this.bankName,
+    this.accountNumber,
+    this.note,
+  });
+
+  final String? url;
+  final String? accountName;
+  final String? bankName;
+  final String? accountNumber;
+  final String? note;
+
+  bool get hasUrl => url != null && url!.isNotEmpty;
+  bool get hasAccount =>
+      (accountName != null && accountName!.isNotEmpty) ||
+      (bankName != null && bankName!.isNotEmpty) ||
+      (accountNumber != null && accountNumber!.isNotEmpty);
+
+  String get copyAll {
+    final lines = <String>[
+      if (accountName != null && accountName!.isNotEmpty) 'Name: $accountName',
+      if (bankName != null && bankName!.isNotEmpty) 'Bank: $bankName',
+      if (accountNumber != null && accountNumber!.isNotEmpty)
+        'Account: $accountNumber',
+    ];
+    return lines.join('\n');
+  }
+
+  static GivingInfo? tryParse(dynamic raw) {
+    if (raw is! Map) {
+      return null;
+    }
+    final json = Map<String, dynamic>.from(raw);
+    if (json['enabled'] != true) {
+      return null;
+    }
+    final info = GivingInfo(
+      url: json['url'] as String?,
+      accountName: json['account_name'] as String?,
+      bankName: json['bank_name'] as String?,
+      accountNumber: json['account_number'] as String?,
+      note: json['note'] as String?,
+    );
+    if (!info.hasUrl && !info.hasAccount) {
+      return null;
+    }
+    return info;
+  }
+}
+
 class ListenPayload {
   ListenPayload({
     required this.uuid,
@@ -185,6 +238,7 @@ class ListenPayload {
     this.logoUrl,
     this.artworkUrl,
     this.creatorType,
+    this.giving,
   });
 
   final String uuid;
@@ -204,6 +258,7 @@ class ListenPayload {
   final String? logoUrl;
   final String? artworkUrl;
   final String? creatorType;
+  final GivingInfo? giving;
 
   bool get isLive => status == 'live';
   bool get isChurch => creatorType == 'church';
@@ -234,6 +289,7 @@ class ListenPayload {
       logoUrl: org?['logo_url'] as String?,
       artworkUrl: org?['artwork_url'] as String?,
       creatorType: org?['creator_type'] as String?,
+      giving: GivingInfo.tryParse(org?['giving']),
     );
   }
 }

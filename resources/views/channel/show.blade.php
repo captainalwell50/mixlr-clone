@@ -68,7 +68,12 @@
                         </a>
                     @endauth
 
-                    @if ($organization->support_url && $organization->hasFeature('donations'))
+                    @if ($organization->givingIsPublic())
+                        @include('partials.give-online', [
+                            'organization' => $organization,
+                            'buttonClass' => 'site-btn site-btn-ghost',
+                        ])
+                    @elseif ($organization->support_url && $organization->hasFeature('donations'))
                         <a href="{{ $organization->support_url }}" target="_blank" rel="noopener"
                             class="site-btn site-btn-ghost">Support</a>
                     @endif

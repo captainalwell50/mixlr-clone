@@ -26,7 +26,8 @@ class ChannelCustomiseTest extends TestCase
             ->assertSee('Customise channel')
             ->assertSee('Listen background')
             ->assertSee('Channel logo')
-            ->assertSee('Artwork');
+            ->assertSee('Artwork')
+            ->assertSee('Give online');
     }
 
     public function test_outsider_cannot_customise_channel(): void
@@ -118,7 +119,7 @@ class ChannelCustomiseTest extends TestCase
             ->assertOk()
             ->assertDontSee('Set background')
             ->assertDontSee('Full-screen image behind the listener page')
-            ->assertSee('Customise channel');
+            ->assertDontSee('Give online');
     }
 
     /**

@@ -367,6 +367,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
               logoUrl: _payload!.logoUrl,
               artworkUrl: _payload!.artworkUrl,
               creatorType: _payload!.creatorType,
+              giving: _payload!.giving,
             );
           }
           notifyListeners();

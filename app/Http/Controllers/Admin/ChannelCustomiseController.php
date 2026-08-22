@@ -119,6 +119,59 @@ class ChannelCustomiseController extends Controller
             ->with('status', __('Listen background removed.'));
     }
 
+    public function updateGiving(Request $request, Organization $organization): RedirectResponse
+    {
+        abort_unless($request->user()?->canManageOrganization($organization), 403);
+
+        $validated = $request->validate([
+            'giving_enabled' => ['sometimes', 'boolean'],
+            'giving_url' => ['nullable', 'url', 'max:500'],
+            'giving_account_name' => ['nullable', 'string', 'max:255'],
+            'giving_bank_name' => ['nullable', 'string', 'max:255'],
+            'giving_account_number' => ['nullable', 'string', 'max:64'],
+            'giving_note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $blankToNull = static function (mixed $value): ?string {
+            if (! is_string($value)) {
+                return null;
+            }
+
+            $trimmed = trim($value);
+
+            return $trimmed === '' ? null : $trimmed;
+        };
+
+        $enabled = $request->boolean('giving_enabled');
+        $url = $blankToNull($validated['giving_url'] ?? null);
+        $accountName = $blankToNull($validated['giving_account_name'] ?? null);
+        $bankName = $blankToNull($validated['giving_bank_name'] ?? null);
+        $accountNumber = $blankToNull($validated['giving_account_number'] ?? null);
+        $note = $blankToNull($validated['giving_note'] ?? null);
+        $hasAccount = filled($accountName) || filled($bankName) || filled($accountNumber);
+
+        if ($enabled && $url === null && ! filled($organization->support_url) && ! $hasAccount) {
+            return back()
+                ->withErrors([
+                    'giving_url' => __('Add a giving page URL or bank account details before enabling Give online.'),
+                ])
+                ->withInput();
+        }
+
+        $organization->forceFill([
+            'giving_enabled' => $enabled,
+            'giving_url' => $url,
+            'giving_account_name' => $accountName,
+            'giving_bank_name' => $bankName,
+            'giving_account_number' => $accountNumber,
+            'giving_note' => $note,
+        ])->save();
+
+        return redirect()
+            ->route('admin.organizations.customise', $organization)
+            ->with('status', __('Give online settings saved.'));
+    }
+
     private function requireDefaultStream(Organization $organization): Stream
     {
         $stream = $organization->defaultStream();

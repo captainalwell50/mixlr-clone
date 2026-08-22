@@ -54,6 +54,7 @@ class ListenApiController extends Controller
                 'logo_url' => $org->logoUrl(),
                 'artwork_url' => $org->artworkUrl(),
                 'creator_type' => $org->creator_type?->value,
+                'giving' => $org->publicGiving(),
             ] : null,
         ]);
     }

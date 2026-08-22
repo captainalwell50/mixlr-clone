@@ -39,6 +39,7 @@
             <label for="support_url" class="block text-sm font-medium text-zinc-300">Support / donate URL</label>
             <input id="support_url" type="url" name="support_url" value="{{ old('support_url', $organization->support_url) }}"
                 class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white" placeholder="https://…">
+            <p class="mt-1 text-xs text-zinc-500">Listener giving (Paystack page or bank details) is on Customise channel.</p>
         </div>
         <div>
             <label for="social_feed_url" class="block text-sm font-medium text-zinc-300">Social photo feed URL</label>

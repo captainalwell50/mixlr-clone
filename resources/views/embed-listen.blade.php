@@ -44,10 +44,13 @@
                 id="listen-root"
                 data-hls-url="{{ $hlsUrl }}"
                 data-whep-url="{{ $whepUrl }}"
+                data-prefer-hls="{{ ! empty($preferHls) ? '1' : '0' }}"
                 data-stream-status="{{ $stream->status->value }}"
                 data-status-url="{{ route('listen.status', $stream) }}"
                 class="hidden"
             ></div>
+
+            @include('partials.give-online', ['organization' => $organization, 'compact' => true])
 
             <p class="embed-brand">{{ config('app.name', 'Sound Mix Live') }}</p>
         </div>

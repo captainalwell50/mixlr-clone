@@ -311,6 +311,8 @@ Route::middleware(['auth', 'onboarded'])->prefix('admin')->name('admin.')->group
     Route::delete('organizations/{organization}/customise/artwork', [ChannelCustomiseController::class, 'destroyArtwork'])->name('organizations.customise.artwork.destroy');
     Route::post('organizations/{organization}/customise/background', [ChannelCustomiseController::class, 'updateBackground'])->name('organizations.customise.background');
     Route::delete('organizations/{organization}/customise/background', [ChannelCustomiseController::class, 'destroyBackground'])->name('organizations.customise.background.destroy');
+    Route::put('organizations/{organization}/customise/giving', [ChannelCustomiseController::class, 'updateGiving'])->name('organizations.customise.giving');
+
     Route::get('organizations/{organization}/members', [OrganizationMemberController::class, 'index'])->name('organizations.members');
     Route::post('organizations/{organization}/members', [OrganizationMemberController::class, 'store'])->name('organizations.members.store');
     Route::put('organizations/{organization}/members/{user}', [OrganizationMemberController::class, 'update'])->name('organizations.members.update');

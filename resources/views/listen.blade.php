@@ -113,6 +113,8 @@
                             <a href="{{ route('login') }}" class="portal-follow">+ Follow</a>
                         @endauth
 
+                        @include('partials.give-online', ['organization' => $organization])
+
                         <button type="button" id="btn-share" class="portal-icon-btn" aria-label="Share" title="Share" data-share-url="{{ $shareUrl }}" data-share-title="{{ $stream->title }}">
                             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7a3.27 3.27 0 0 0 0-1.39l7.02-4.11A2.99 2.99 0 1 0 14 5c0 .17.02.34.05.5L7.04 9.61a3 3 0 1 0 0 4.78l7.12 4.16c-.03.14-.05.29-.05.45a3 3 0 1 0 3-3z"/></svg>
                         </button>

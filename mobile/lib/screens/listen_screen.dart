@@ -1,14 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../brand.dart';
+import '../models/models.dart';
 import '../services/auth_state.dart';
 import '../services/listen_controller.dart';
 import '../theme.dart';
+import '../widgets/legal_links.dart';
 import '../widgets/live_gallery_panel.dart';
 import '../widgets/network_banner.dart';
 import '../widgets/scripture_board.dart';
@@ -44,6 +47,83 @@ class _ListenScreenState extends State<ListenScreen> {
     // Detach UI only — keep audio / FGS / WHEP alive for mini-player.
     _listen?.detachUi();
     super.dispose();
+  }
+
+  Future<void> _openGive(GivingInfo giving) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: LiveMixTheme.panel,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 16, 22, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Give online',
+                  style: GoogleFonts.outfit(
+                    color: LiveMixTheme.mist,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (giving.note != null && giving.note!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    giving.note!,
+                    style: const TextStyle(color: LiveMixTheme.mute),
+                  ),
+                ],
+                if (giving.hasUrl) ...[
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => openExternalUrl(giving.url!),
+                    child: const Text('Open giving page'),
+                  ),
+                ],
+                if (giving.hasAccount) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'ACCOUNT DETAILS',
+                    style: TextStyle(
+                      color: LiveMixTheme.mute,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  if (giving.accountName != null &&
+                      giving.accountName!.isNotEmpty)
+                    _GiveCopyRow(label: 'Name', value: giving.accountName!),
+                  if (giving.bankName != null && giving.bankName!.isNotEmpty)
+                    _GiveCopyRow(label: 'Bank', value: giving.bankName!),
+                  if (giving.accountNumber != null &&
+                      giving.accountNumber!.isNotEmpty)
+                    _GiveCopyRow(
+                      label: 'Account number',
+                      value: giving.accountNumber!,
+                    ),
+                  if (giving.copyAll.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: () => Clipboard.setData(
+                        ClipboardData(text: giving.copyAll),
+                      ),
+                      child: const Text('Copy all details'),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _like() async {
@@ -238,6 +318,16 @@ class _ListenScreenState extends State<ListenScreen> {
                                       ),
                                     ],
                                   ),
+                                  if (p?.giving != null) ...[
+                                    const SizedBox(height: 14),
+                                    OutlinedButton.icon(
+                                      onPressed: () => _openGive(p!.giving!),
+                                      icon: const Icon(
+                                        Icons.volunteer_activism_rounded,
+                                      ),
+                                      label: const Text('Give online'),
+                                    ),
+                                  ],
                                   const SizedBox(height: 18),
                                   Builder(
                                     builder: (context) {
@@ -327,6 +417,49 @@ class _ListenScreenState extends State<ListenScreen> {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GiveCopyRow extends StatelessWidget {
+  const _GiveCopyRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: LiveMixTheme.mute,
+                    fontSize: 12,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: LiveMixTheme.mist,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => Clipboard.setData(ClipboardData(text: value)),
+            child: const Text('Copy'),
           ),
         ],
       ),

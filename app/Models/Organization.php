@@ -23,6 +23,12 @@ class Organization extends Model
         'theme_color',
         'support_url',
         'social_feed_url',
+        'giving_enabled',
+        'giving_url',
+        'giving_account_name',
+        'giving_bank_name',
+        'giving_account_number',
+        'giving_note',
         'paystack_customer_code',
         'is_public',
         'branding_config',
@@ -33,6 +39,7 @@ class Organization extends Model
         return [
             'branding_config' => 'array',
             'is_public' => 'boolean',
+            'giving_enabled' => 'boolean',
             'creator_type' => CreatorType::class,
         ];
     }
@@ -190,6 +197,58 @@ class Organization extends Model
     public function logoUrl(): ?string
     {
         return $this->resolvePublicAssetUrl($this->logo_path);
+    }
+
+    /**
+     * Listeners may give when the operator enabled it and set a URL and/or account.
+     */
+    public function givingIsPublic(): bool
+    {
+        return (bool) $this->giving_enabled && $this->hasGivingDestination();
+    }
+
+    public function givingUrl(): ?string
+    {
+        foreach ([$this->giving_url, $this->support_url] as $url) {
+            if (is_string($url) && $url !== '' && preg_match('#^https?://#i', $url)) {
+                return $url;
+            }
+        }
+
+        return null;
+    }
+
+    public function hasGivingAccount(): bool
+    {
+        return filled($this->giving_account_name)
+            || filled($this->giving_bank_name)
+            || filled($this->giving_account_number);
+    }
+
+    public function hasGivingDestination(): bool
+    {
+        return filled($this->givingUrl()) || $this->hasGivingAccount();
+    }
+
+    /**
+     * Public listen payload. Null when the Give online button should stay hidden.
+     *
+     * @return array{enabled: bool, url: ?string, account_name: ?string, bank_name: ?string, account_number: ?string, note: ?string}|null
+     */
+    public function publicGiving(): ?array
+    {
+        if (! $this->givingIsPublic()) {
+            return null;
+        }
+
+        return [
+            'enabled' => true,
+            'url' => $this->givingUrl(),
+            'account_name' => $this->giving_account_name ?: null,
+            'bank_name' => $this->giving_bank_name ?: null,
+            'account_number' => $this->giving_account_number ?: null,
+            'note' => $this->giving_note ?: null,
+        ];
     }
 
     private function resolvePublicAssetUrl(?string $path): ?string
