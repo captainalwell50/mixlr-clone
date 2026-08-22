@@ -6,6 +6,10 @@ void main() {
     expect(GivingInfo.tryParse(null), isNull);
     expect(GivingInfo.tryParse({'enabled': false, 'url': 'https://x.test'}), isNull);
     expect(GivingInfo.tryParse({'enabled': true}), isNull);
+    expect(
+      GivingInfo.tryParse({'enabled': 1, 'url': 'https://pay.example/x'})?.hasUrl,
+      isTrue,
+    );
   });
 
   test('GivingInfo.tryParse reads url, account, and note', () {

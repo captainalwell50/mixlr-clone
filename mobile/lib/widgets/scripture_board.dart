@@ -126,16 +126,19 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
                 color: LiveMixTheme.accentBright.withOpacity(0.95),
               ),
               const SizedBox(width: 8),
-              Text(
-                boardLabel,
-                style: GoogleFonts.outfit(
-                  color: LiveMixTheme.accentBright,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
+              Expanded(
+                child: Text(
+                  boardLabel,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: LiveMixTheme.accentBright,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(

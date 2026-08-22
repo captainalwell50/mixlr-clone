@@ -3,9 +3,9 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../screens/listen_screen.dart';
 import '../services/listen_controller.dart';
 import '../theme.dart';
-import '../screens/listen_screen.dart';
 
 /// Persistent WHEP sink + mini-player while listen continues after pop.
 class ListenSessionOverlay extends StatelessWidget {
@@ -15,34 +15,56 @@ class ListenSessionOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final listen = context.watch<ListenController>();
-    final renderer = listen.whepRenderer;
-
     return Stack(
       fit: StackFit.expand,
       children: [
         child,
-        // Keep a tiny WebRTC view attached so remote Opus audio keeps a sink
-        // even when ListenScreen is not on the navigator stack.
-        if (renderer != null && !listen.uiAttached)
-          Positioned(
-            width: 1,
-            height: 1,
-            left: -10,
-            top: -10,
-            child: RTCVideoView(renderer),
-          ),
-        if (listen.showMiniPlayer)
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: SafeArea(
-              top: false,
-              child: _MiniPlayerBar(listen: listen),
-            ),
-          ),
+        const _PersistentWhepSink(),
+        const _MiniPlayerHost(),
       ],
+    );
+  }
+}
+
+/// Keep one WebRTC view attached for the session lifetime.
+/// Do not move this onto ListenScreen — recreating the platform view drops audio.
+class _PersistentWhepSink extends StatelessWidget {
+  const _PersistentWhepSink();
+
+  @override
+  Widget build(BuildContext context) {
+    final renderer = context.select<ListenController, RTCVideoRenderer?>(
+      (listen) => listen.whepRenderer,
+    );
+    if (renderer == null) return const SizedBox.shrink();
+    return Positioned(
+      width: 1,
+      height: 1,
+      left: -10,
+      top: -10,
+      child: RTCVideoView(renderer),
+    );
+  }
+}
+
+class _MiniPlayerHost extends StatelessWidget {
+  const _MiniPlayerHost();
+
+  @override
+  Widget build(BuildContext context) {
+    final show = context.select<ListenController, bool>(
+      (listen) => listen.showMiniPlayer,
+    );
+    if (!show) return const SizedBox.shrink();
+    final listen = context.watch<ListenController>();
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: 12,
+      child: SafeArea(
+        top: false,
+        child: _MiniPlayerBar(listen: listen),
+      ),
     );
   }
 }
@@ -57,6 +79,8 @@ class _MiniPlayerBar extends StatelessWidget {
     final p = listen.payload;
     final title = p?.title ?? 'Listening';
     final subtitle = p?.orgName ?? 'Sound Mix Live';
+    final artwork = p?.artworkUrl;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
 
     return Material(
       color: LiveMixTheme.panelHi,
@@ -78,26 +102,36 @@ class _MiniPlayerBar extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
           child: Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: LiveMixTheme.ink,
-                  borderRadius: BorderRadius.circular(10),
-                  image: p?.artworkUrl != null
-                      ? DecorationImage(
-                          image: NetworkImage(p!.artworkUrl!),
-                          fit: BoxFit.cover,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: artwork == null
+                      ? const ColoredBox(
+                          color: LiveMixTheme.ink,
+                          child: Icon(
+                            Icons.graphic_eq_rounded,
+                            color: LiveMixTheme.gold,
+                            size: 22,
+                          ),
                         )
-                      : null,
+                      : Image.network(
+                          artwork,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          cacheWidth: (44 * dpr).round(),
+                          cacheHeight: (44 * dpr).round(),
+                          errorBuilder: (_, __, ___) => const ColoredBox(
+                            color: LiveMixTheme.ink,
+                            child: Icon(
+                              Icons.graphic_eq_rounded,
+                              color: LiveMixTheme.gold,
+                              size: 22,
+                            ),
+                          ),
+                        ),
                 ),
-                child: p?.artworkUrl == null
-                    ? const Icon(
-                        Icons.graphic_eq_rounded,
-                        color: LiveMixTheme.gold,
-                        size: 22,
-                      )
-                    : null,
               ),
               const SizedBox(width: 12),
               Expanded(

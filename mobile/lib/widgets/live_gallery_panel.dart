@@ -76,6 +76,21 @@ class _LiveGalleryPanelState extends State<LiveGalleryPanel> {
     try {
       final items = await context.read<AuthState>().api.gallery(uuid);
       if (!mounted) return;
+      var same = silent && items.length == _items.length;
+      if (same) {
+        for (var i = 0; i < items.length; i++) {
+          final a = _items[i];
+          final b = items[i];
+          if (a.id != b.id ||
+              a.url != b.url ||
+              a.caption != b.caption ||
+              a.posterUrl != b.posterUrl) {
+            same = false;
+            break;
+          }
+        }
+      }
+      if (same && !_loading && _error == null) return;
       setState(() {
         _items = items;
         _loading = false;
@@ -139,7 +154,9 @@ class _LiveGalleryPanelState extends State<LiveGalleryPanel> {
           )
         else
           GalleryGrid(
-            items: _items,
+            items: widget.compactEmpty && _items.length > 8
+                ? _items.take(8).toList(growable: false)
+                : _items,
             onOpen: (index) => openGalleryLightbox(context, _items, index),
           ),
       ],
@@ -245,6 +262,13 @@ class GalleryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final thumb = item.isVideo ? (item.posterUrl ?? item.url) : item.url;
+    if (thumb.isEmpty) {
+      return const ColoredBox(
+        color: LiveMixTheme.panelHi,
+        child: Icon(Icons.broken_image_outlined, color: LiveMixTheme.mute),
+      );
+    }
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     return Material(
       color: LiveMixTheme.panel,
       borderRadius: BorderRadius.circular(14),
@@ -257,6 +281,9 @@ class GalleryTile extends StatelessWidget {
             Image.network(
               thumb,
               fit: BoxFit.cover,
+              gaplessPlayback: true,
+              cacheWidth: (220 * dpr).round(),
+              cacheHeight: (240 * dpr).round(),
               errorBuilder: (_, __, ___) => const ColoredBox(
                 color: LiveMixTheme.panelHi,
                 child: Icon(
@@ -397,11 +424,16 @@ class _GalleryLightboxState extends State<GalleryLightbox> {
                       ),
                     ),
                   )
-                : InteractiveViewer(
+                  : InteractiveViewer(
                     child: Center(
                       child: Image.network(
                         item.url,
                         fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                        cacheWidth: (MediaQuery.sizeOf(context).width *
+                                MediaQuery.devicePixelRatioOf(context))
+                            .round()
+                            .clamp(320, 1600),
                         errorBuilder: (_, __, ___) => const Icon(
                           Icons.broken_image_outlined,
                           color: Colors.white54,

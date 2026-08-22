@@ -1,5 +1,22 @@
 import '../config.dart';
 
+/// Normalize JSON objects that arrive as `Map` but not `Map<String, dynamic>`.
+Map<String, dynamic>? asStringKeyMap(dynamic raw) {
+  if (raw is Map<String, dynamic>) return raw;
+  if (raw is Map) return Map<String, dynamic>.from(raw);
+  return null;
+}
+
+bool jsonFlag(dynamic value) {
+  return value == true || value == 1 || value == '1' || value == 'true';
+}
+
+int? jsonInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.round();
+  return int.tryParse('$value');
+}
+
 class AppUser {
   AppUser({
     required this.id,
@@ -200,11 +217,11 @@ class GivingInfo {
   }
 
   static GivingInfo? tryParse(dynamic raw) {
-    if (raw is! Map) {
+    final json = asStringKeyMap(raw);
+    if (json == null) {
       return null;
     }
-    final json = Map<String, dynamic>.from(raw);
-    if (json['enabled'] != true) {
+    if (!jsonFlag(json['enabled'])) {
       return null;
     }
     final info = GivingInfo(
@@ -264,13 +281,13 @@ class ListenPayload {
   bool get isChurch => creatorType == 'church';
 
   factory ListenPayload.fromJson(Map<String, dynamic> json) {
-    final stream = json['stream'] as Map<String, dynamic>? ?? {};
-    final org = json['organization'] as Map<String, dynamic>?;
+    final stream = asStringKeyMap(json['stream']) ?? {};
+    final org = asStringKeyMap(json['organization']);
     final uuid = stream['uuid'] as String? ?? '';
     if (uuid.isEmpty) {
-      throw FormatException('Listen payload missing stream uuid');
+      throw const FormatException('Listen payload missing stream uuid');
     }
-    final preferHls = stream['prefer_hls'] as bool? ?? false;
+    final preferHls = jsonFlag(stream['prefer_hls']);
     final playbackMode = stream['playback_mode'] as String? ??
         (preferHls ? 'hls' : 'whep');
     return ListenPayload(
@@ -315,6 +332,17 @@ class ScriptureCue {
       updatedAt: json['updated_at'] as String?,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScriptureCue &&
+      other.ref == ref &&
+      other.text == text &&
+      other.version == version &&
+      other.updatedAt == updatedAt;
+
+  @override
+  int get hashCode => Object.hash(ref, text, version, updatedAt);
 }
 
 class SongCue {
@@ -336,18 +364,28 @@ class SongCue {
 
   factory SongCue.fromJson(Map<String, dynamic> json) {
     return SongCue(
-      id: json['id'] is int ? json['id'] as int : int.tryParse('${json['id']}'),
+      id: jsonInt(json['id']),
       title: json['title'] as String? ?? '',
       text: json['text'] as String? ?? '',
-      slideIndex: json['slide_index'] is int
-          ? json['slide_index'] as int
-          : int.tryParse('${json['slide_index']}') ?? 0,
-      slideCount: json['slide_count'] is int
-          ? json['slide_count'] as int
-          : int.tryParse('${json['slide_count']}') ?? 1,
+      slideIndex: jsonInt(json['slide_index']) ?? 0,
+      slideCount: jsonInt(json['slide_count']) ?? 1,
       updatedAt: json['updated_at'] as String?,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SongCue &&
+      other.id == id &&
+      other.title == title &&
+      other.text == text &&
+      other.slideIndex == slideIndex &&
+      other.slideCount == slideCount &&
+      other.updatedAt == updatedAt;
+
+  @override
+  int get hashCode =>
+      Object.hash(id, title, text, slideIndex, slideCount, updatedAt);
 }
 
 class GalleryItem {
@@ -371,12 +409,12 @@ class GalleryItem {
 
   factory GalleryItem.fromJson(Map<String, dynamic> json) {
     return GalleryItem(
-      id: json['id'] as int,
+      id: jsonInt(json['id']) ?? 0,
       url: json['url'] as String? ?? '',
       type: json['type'] as String? ?? 'image',
       caption: json['caption'] as String?,
       posterUrl: json['poster_url'] as String?,
-      durationSeconds: (json['duration_seconds'] as num?)?.round(),
+      durationSeconds: jsonInt(json['duration_seconds']),
     );
   }
 }

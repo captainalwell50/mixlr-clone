@@ -275,18 +275,18 @@ class ApiClient {
       headers: _headers(auth: _token != null),
     );
     final data = await _json(response, fallback: 'Could not load scripture');
-    final enabled = data['enabled'] as bool? ?? false;
+    final enabled = jsonFlag(data['enabled']);
     ScriptureCue? cue;
-    final raw = data['scripture'];
-    if (raw is Map<String, dynamic>) {
+    final raw = asStringKeyMap(data['scripture']);
+    if (raw != null) {
       final parsed = ScriptureCue.fromJson(raw);
       if (parsed.ref.isNotEmpty && parsed.text.isNotEmpty) {
         cue = parsed;
       }
     }
     SongCue? song;
-    final songRaw = data['song'];
-    if (songRaw is Map<String, dynamic>) {
+    final songRaw = asStringKeyMap(data['song']);
+    if (songRaw != null) {
       final parsed = SongCue.fromJson(songRaw);
       if (parsed.title.isNotEmpty && parsed.text.isNotEmpty) {
         song = parsed;
@@ -304,7 +304,13 @@ class ApiClient {
     final data = await _json(response, fallback: 'Could not load gallery');
     final images = data['images'] as List<dynamic>? ?? [];
     return images
-        .map((e) => GalleryItem.fromJson(e as Map<String, dynamic>))
+        .map((e) {
+          final map = asStringKeyMap(e);
+          if (map == null) return null;
+          return GalleryItem.fromJson(map);
+        })
+        .whereType<GalleryItem>()
+        .where((item) => item.url.isNotEmpty)
         .toList();
   }
 }
