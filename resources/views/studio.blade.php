@@ -307,12 +307,16 @@
                                 <button type="button" id="btn-song-next" class="mixer-add-sounds">Next slide</button>
                                 <button type="button" id="btn-song-clear" class="mixer-add-sounds">Clear</button>
                             </div>
-                            <p id="song-live-meta" class="song-live-meta" hidden></p>
+                            <div id="song-live" class="song-live" hidden>
+                                <p id="song-live-meta" class="song-live-meta"></p>
+                                <p id="song-live-preview" class="song-live-preview-text" aria-live="polite"></p>
+                            </div>
                             <div id="song-form" class="song-form" hidden>
                                 <label class="sr-only" for="song-title">Title</label>
                                 <input id="song-title" class="mixer-library-search" type="text" placeholder="Title" maxlength="160" autocomplete="off">
                                 <label class="sr-only" for="song-body">Slides</label>
                                 <textarea id="song-body" class="song-body-input" rows="6" placeholder="Slide text — blank line between slides"></textarea>
+                                <div id="song-form-preview" class="song-form-preview" hidden></div>
                                 <div class="mixer-gallery-actions">
                                     <button type="button" id="btn-song-save" class="mixer-btn-start">Save</button>
                                     <button type="button" id="btn-song-cancel" class="mixer-btn-secondary">Cancel</button>

@@ -33,14 +33,57 @@ class _SongPanelState extends State<SongPanel> {
   @override
   void initState() {
     super.initState();
+    _body.addListener(_onBodyChanged);
     _refresh();
   }
 
   @override
   void dispose() {
+    _body.removeListener(_onBodyChanged);
     _title.dispose();
     _body.dispose();
     super.dispose();
+  }
+
+  void _onBodyChanged() {
+    if (_formOpen && mounted) setState(() {});
+  }
+
+  List<String> _slidesFromBody(String body) {
+    return body
+        .split(RegExp(r'\n\s*\n'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  List<String> _slidesFor(DisplaySongItem song) {
+    if (song.slides.isNotEmpty) return song.slides;
+    if (_cue?.id == song.id && (_cue?.text.isNotEmpty ?? false)) {
+      return [_cue!.text];
+    }
+    return const [];
+  }
+
+  SongCue? _localCueFrom(DisplaySongItem song, int index) {
+    final slides = _slidesFor(song);
+    if (slides.isEmpty) return null;
+    final i = index.clamp(0, slides.length - 1);
+    return SongCue(
+      id: song.id,
+      title: song.title,
+      text: slides[i],
+      slideIndex: i,
+      slideCount: slides.length,
+    );
+  }
+
+  DisplaySongItem? _songById(int? id) {
+    if (id == null) return null;
+    for (final song in _songs) {
+      if (song.id == id) return song;
+    }
+    return null;
   }
 
   Future<void> _refresh() async {
@@ -118,10 +161,22 @@ class _SongPanelState extends State<SongPanel> {
     }
   }
 
-  Future<void> _cue(DisplaySongItem song) async {
-    setState(() => _busy = true);
+  Future<void> _cue(DisplaySongItem song, {int slideIndex = 0}) async {
+    final local = _localCueFrom(song, slideIndex);
+    setState(() {
+      _busy = true;
+      if (local != null) {
+        _cue = local;
+        _status =
+            'Showing “${local.title}” · slide ${local.slideIndex + 1}/${local.slideCount}';
+      }
+    });
     try {
-      final cue = await widget.api.songCue(widget.streamUuid, song.id);
+      final cue = await widget.api.songCue(
+        widget.streamUuid,
+        song.id,
+        slideIndex: slideIndex,
+      );
       if (!mounted) return;
       setState(() {
         _cue = cue;
@@ -130,6 +185,7 @@ class _SongPanelState extends State<SongPanel> {
       });
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
+      await _refresh();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -152,7 +208,19 @@ class _SongPanelState extends State<SongPanel> {
   }
 
   Future<void> _nudge(bool next) async {
-    setState(() => _busy = true);
+    final current = _cue;
+    final song = _songById(current?.id);
+    setState(() {
+      _busy = true;
+      if (song != null && current != null) {
+        final local = _localCueFrom(song, current.slideIndex + (next ? 1 : -1));
+        if (local != null) {
+          _cue = local;
+          _status =
+              'Showing “${local.title}” · slide ${local.slideIndex + 1}/${local.slideCount}';
+        }
+      }
+    });
     try {
       final cue = next
           ? await widget.api.songNext(widget.streamUuid)
@@ -165,6 +233,7 @@ class _SongPanelState extends State<SongPanel> {
       });
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
+      await _refresh();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -242,11 +311,8 @@ class _SongPanelState extends State<SongPanel> {
             ],
           ),
           if (_cue != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Live: ${_cue!.title} · ${_cue!.slideIndex + 1}/${_cue!.slideCount}',
-              style: GoogleFonts.outfit(color: StudioTheme.accentBright, fontSize: 12),
-            ),
+            const SizedBox(height: 10),
+            _livePreview(_cue!),
           ],
           if (_formOpen) ...[
             const SizedBox(height: 12),
@@ -263,6 +329,14 @@ class _SongPanelState extends State<SongPanel> {
               style: GoogleFonts.outfit(color: StudioTheme.cream, fontSize: 14),
               decoration: _fieldDecoration('Slides (blank line between)'),
             ),
+            if (_slidesFromBody(_body.text).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _slideList(
+                slides: _slidesFromBody(_body.text),
+                songId: _editingId,
+                interactive: false,
+              ),
+            ],
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -316,6 +390,15 @@ class _SongPanelState extends State<SongPanel> {
                         '${song.slideCount} slide${song.slideCount == 1 ? '' : 's'}',
                         style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 12),
                       ),
+                      if (_slidesFor(song).isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _slideList(
+                          slides: _slidesFor(song),
+                          songId: song.id,
+                          interactive: !_busy,
+                          onSelect: (index) => _cue(song, slideIndex: index),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
@@ -356,6 +439,112 @@ class _SongPanelState extends State<SongPanel> {
             style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 12),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _livePreview(SongCue cue) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: StudioTheme.ink.withOpacity(0.72),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: StudioTheme.accent.withOpacity(0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'LIVE: ${cue.title} · SLIDE ${cue.slideIndex + 1}/${cue.slideCount}',
+            style: GoogleFonts.outfit(
+              color: StudioTheme.accentBright,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            cue.text,
+            style: GoogleFonts.outfit(
+              color: StudioTheme.cream,
+              fontSize: 14,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _slideList({
+    required List<String> slides,
+    int? songId,
+    bool interactive = true,
+    ValueChanged<int>? onSelect,
+  }) {
+    final active = _cue?.id == songId ? _cue!.slideIndex : -1;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 220),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: slides.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 4),
+        itemBuilder: (context, i) {
+          final selected = i == active;
+          return Material(
+            color: selected
+                ? StudioTheme.accent.withOpacity(0.16)
+                : StudioTheme.ink.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: interactive && onSelect != null ? () => onSelect(i) : null,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: selected
+                        ? StudioTheme.accent.withOpacity(0.55)
+                        : Colors.transparent,
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      child: Text(
+                        '${i + 1}',
+                        style: GoogleFonts.outfit(
+                          color: StudioTheme.mute,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        slides[i],
+                        maxLines: selected ? 8 : 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(
+                          color: StudioTheme.cream,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

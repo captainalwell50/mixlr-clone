@@ -14,6 +14,7 @@ export function bindSongStudio(root) {
 
     const listEl = document.getElementById('song-list');
     const formEl = document.getElementById('song-form');
+    const formPreviewEl = document.getElementById('song-form-preview');
     const titleInput = document.getElementById('song-title');
     const bodyInput = document.getElementById('song-body');
     const statusEl = document.getElementById('song-status');
@@ -23,7 +24,9 @@ export function bindSongStudio(root) {
     const btnClear = document.getElementById('btn-song-clear');
     const btnPrev = document.getElementById('btn-song-prev');
     const btnNext = document.getElementById('btn-song-next');
+    const liveWrap = document.getElementById('song-live');
     const liveEl = document.getElementById('song-live-meta');
+    const livePreviewEl = document.getElementById('song-live-preview');
 
     const indexUrl = root.dataset.songsIndexUrl || '';
     const storeUrl = root.dataset.songsStoreUrl || '';
@@ -48,19 +51,109 @@ export function bindSongStudio(root) {
         }
     }
 
-    function setLiveMeta() {
-        if (!liveEl) {
+    function slidesFromBody(body) {
+        return String(body || '')
+            .split(/\n\s*\n/)
+            .map((part) => part.trim())
+            .filter(Boolean);
+    }
+
+    function slidesFor(song) {
+        const slides = Array.isArray(song?.slides) ? song.slides.filter((s) => String(s || '').trim()) : [];
+        if (slides.length) {
+            return slides;
+        }
+        if (cue?.id === song?.id && cue.text) {
+            return [cue.text];
+        }
+        return [];
+    }
+
+    function applyLocalCue(song, index) {
+        const slides = slidesFor(song);
+        if (!slides.length) {
             return;
         }
+        const i = Math.max(0, Math.min(index, slides.length - 1));
+        cue = {
+            id: song.id,
+            title: song.title,
+            text: slides[i] || '',
+            slide_index: i,
+            slide_count: slides.length,
+        };
+        renderList();
+        setLiveMeta();
+        renderFormPreview();
+    }
+
+    function setLiveMeta() {
         if (!cue) {
-            liveEl.textContent = '';
-            liveEl.setAttribute('hidden', '');
+            liveEl && (liveEl.textContent = '');
+            livePreviewEl && (livePreviewEl.textContent = '');
+            liveWrap?.setAttribute('hidden', '');
+            liveEl?.setAttribute('hidden', '');
+            livePreviewEl?.setAttribute('hidden', '');
             return;
         }
         const n = (cue.slide_index ?? 0) + 1;
         const total = cue.slide_count || 1;
-        liveEl.textContent = `Live: ${cue.title} · slide ${n}/${total}`;
-        liveEl.removeAttribute('hidden');
+        if (liveEl) {
+            liveEl.textContent = `Live: ${cue.title} · slide ${n}/${total}`;
+            liveEl.removeAttribute('hidden');
+        }
+        if (livePreviewEl) {
+            livePreviewEl.textContent = cue.text || '';
+            if (cue.text) {
+                livePreviewEl.removeAttribute('hidden');
+            } else {
+                livePreviewEl.setAttribute('hidden', '');
+            }
+        }
+        liveWrap?.removeAttribute('hidden');
+    }
+
+    function renderSlideList(song, { interactive = true } = {}) {
+        const slides = slidesFor(song);
+        if (!slides.length) {
+            return '';
+        }
+        const live = cue?.id === song.id;
+        const active = live ? (cue.slide_index ?? 0) : -1;
+        return (
+            `<ol class="song-slide-list">` +
+            slides
+                .map((text, i) => {
+                    const cls = i === active ? ' is-active' : '';
+                    const action = interactive ? ` data-action="cue-slide" data-slide-index="${i}"` : '';
+                    const tag = interactive ? 'button' : 'div';
+                    const type = interactive ? ' type="button"' : '';
+                    return (
+                        `<li>` +
+                        `<${tag} class="song-slide-excerpt${cls}"${type}${action}>` +
+                        `<span class="song-slide-n">${i + 1}</span>` +
+                        `<span class="song-slide-body">${escapeHtml(text)}</span>` +
+                        `</${tag}>` +
+                        `</li>`
+                    );
+                })
+                .join('') +
+            `</ol>`
+        );
+    }
+
+    function renderFormPreview() {
+        if (!formPreviewEl) {
+            return;
+        }
+        const slides = slidesFromBody(bodyInput?.value || '');
+        if (!slides.length) {
+            formPreviewEl.innerHTML = '';
+            formPreviewEl.setAttribute('hidden', '');
+            return;
+        }
+        formPreviewEl.innerHTML = renderSlideList({ id: editingId, slides }, { interactive: false });
+        formPreviewEl.removeAttribute('hidden');
     }
 
     function hideForm() {
@@ -71,6 +164,10 @@ export function bindSongStudio(root) {
         }
         if (bodyInput) {
             bodyInput.value = '';
+        }
+        if (formPreviewEl) {
+            formPreviewEl.innerHTML = '';
+            formPreviewEl.setAttribute('hidden', '');
         }
     }
 
@@ -83,6 +180,7 @@ export function bindSongStudio(root) {
             bodyInput.value = (song?.slides || []).join('\n\n');
         }
         formEl?.removeAttribute('hidden');
+        renderFormPreview();
         titleInput?.focus();
     }
 
@@ -123,6 +221,7 @@ export function bindSongStudio(root) {
                     `<strong>${escapeHtml(s.title)}</strong>` +
                     `<span>${count} slide${count === 1 ? '' : 's'}</span>` +
                     `</div>` +
+                    renderSlideList(s) +
                     `<div class="song-list-actions">` +
                     `<button type="button" class="mixer-add-sounds" data-action="cue">Go live</button>` +
                     `<button type="button" class="mixer-add-sounds" data-action="edit">Edit</button>` +
@@ -132,6 +231,12 @@ export function bindSongStudio(root) {
                 );
             })
             .join('');
+        const active = listEl.querySelector('.song-slide-excerpt.is-active');
+        const scroller = active?.closest('.song-slide-list');
+        if (active instanceof HTMLElement && scroller instanceof HTMLElement) {
+            const top = active.offsetTop - scroller.clientHeight / 2 + active.offsetHeight / 2;
+            scroller.scrollTop = Math.max(0, top);
+        }
     }
 
     function escapeHtml(value) {
@@ -152,6 +257,7 @@ export function bindSongStudio(root) {
             cue = data.cue || null;
             renderList();
             setLiveMeta();
+            renderFormPreview();
             if (cue) {
                 setStatus(`Showing “${cue.title}” on listen`);
             } else if (!statusEl?.textContent || statusEl.textContent.startsWith('Showing')) {
@@ -198,21 +304,25 @@ export function bindSongStudio(root) {
         }
     }
 
-    async function cueSong(song) {
+    async function cueSong(song, slideIndex = 0) {
         if (!song?.cue_url) {
             return;
         }
+        applyLocalCue(song, slideIndex);
+        setStatus(`Showing “${song.title}” on listen`);
         try {
             const data = await api(song.cue_url, {
                 method: 'POST',
-                body: JSON.stringify({ slide_index: 0 }),
+                body: JSON.stringify({ slide_index: slideIndex }),
             });
-            cue = data.song || null;
+            cue = data.song || cue;
             renderList();
             setLiveMeta();
+            renderFormPreview();
             setStatus(cue ? `Showing “${cue.title}” on listen` : 'Song cued');
         } catch (err) {
             setStatus(err instanceof Error ? err.message : 'Could not cue song.');
+            await refresh();
         }
     }
 
@@ -225,26 +335,35 @@ export function bindSongStudio(root) {
             cue = null;
             renderList();
             setLiveMeta();
+            renderFormPreview();
             setStatus('Song cleared from listen');
         } catch (err) {
             setStatus(err instanceof Error ? err.message : 'Could not clear song.');
         }
     }
 
-    async function nudge(url) {
-        if (!url) {
+    async function nudge(url, delta) {
+        if (!url || !cue) {
             return;
+        }
+        const song = songs.find((s) => s.id === cue.id);
+        const from = cue.slide_index ?? 0;
+        if (song) {
+            applyLocalCue(song, from + delta);
+            setStatus(`Showing “${cue.title}” · slide ${(cue.slide_index ?? 0) + 1}/${cue.slide_count || 1}`);
         }
         try {
             const data = await api(url, { method: 'POST', body: '{}' });
             cue = data.song || null;
             renderList();
             setLiveMeta();
+            renderFormPreview();
             if (cue) {
                 setStatus(`Showing “${cue.title}” · slide ${(cue.slide_index ?? 0) + 1}/${cue.slide_count || 1}`);
             }
         } catch (err) {
             setStatus(err instanceof Error ? err.message : 'Could not change slide.');
+            await refresh();
         }
     }
 
@@ -261,7 +380,9 @@ export function bindSongStudio(root) {
         }
         const action = btn.dataset.action;
         if (action === 'cue') {
-            void cueSong(song);
+            void cueSong(song, 0);
+        } else if (action === 'cue-slide') {
+            void cueSong(song, Number(btn.dataset.slideIndex || 0));
         } else if (action === 'edit') {
             showForm(song);
         } else if (action === 'delete') {
@@ -286,8 +407,9 @@ export function bindSongStudio(root) {
     btnCancel?.addEventListener('click', () => hideForm());
     btnSave?.addEventListener('click', () => void save());
     btnClear?.addEventListener('click', () => void clearCue());
-    btnPrev?.addEventListener('click', () => void nudge(previousUrl));
-    btnNext?.addEventListener('click', () => void nudge(nextUrl));
+    btnPrev?.addEventListener('click', () => void nudge(previousUrl, -1));
+    btnNext?.addEventListener('click', () => void nudge(nextUrl, +1));
+    bodyInput?.addEventListener('input', () => renderFormPreview());
 
     void refresh();
 }
