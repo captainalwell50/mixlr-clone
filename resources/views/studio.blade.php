@@ -270,7 +270,10 @@
                         </div>
                         <div id="studio-scripture" class="studio-scripture">
                             <label class="sr-only" for="scripture-search">Scripture reference</label>
-                            <input id="scripture-search" class="mixer-library-search" type="search" placeholder="e.g. John 3:16" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="scripture-suggestions" aria-expanded="false">
+                            <div class="scripture-search-field">
+                                <input id="scripture-search" class="mixer-library-search" type="search" placeholder="e.g. John 3:16" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="both" aria-controls="scripture-suggestions" aria-expanded="false">
+                                <div id="scripture-search-ghost" class="scripture-search-ghost" aria-hidden="true"></div>
+                            </div>
                             <div id="scripture-suggestions" class="scripture-suggestions" role="listbox"></div>
                             <div class="mixer-gallery-actions">
                                 <button type="button" id="btn-scripture-show" class="mixer-add-sounds">Show on listen</button>

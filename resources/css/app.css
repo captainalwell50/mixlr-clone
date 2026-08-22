@@ -817,6 +817,47 @@ a.stage-platform:hover {
     margin-top: 0.35rem;
 }
 
+.scripture-search-field {
+    position: relative;
+    display: block;
+    border-radius: 0.35rem;
+    background: #0a0c10;
+}
+
+.scripture-search-field > .mixer-library-search {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    background: transparent;
+}
+
+.scripture-search-field > .mixer-library-search::-webkit-search-decoration,
+.scripture-search-field > .mixer-library-search::-webkit-search-results-button,
+.scripture-search-field > .mixer-library-search::-webkit-search-results-decoration {
+    display: none;
+}
+
+.scripture-search-ghost {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: block;
+    overflow: hidden;
+    pointer-events: none;
+    white-space: pre;
+    color: var(--mixer-text);
+}
+
+.scripture-search-ghost-typed {
+    visibility: hidden;
+    white-space: pre;
+}
+
+.scripture-search-ghost-suffix {
+    color: color-mix(in srgb, var(--mixer-text) 38%, transparent);
+    white-space: pre;
+}
+
 .scripture-suggestions {
     display: grid;
     gap: 0.35rem;

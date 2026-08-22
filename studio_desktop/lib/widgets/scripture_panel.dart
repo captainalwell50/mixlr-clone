@@ -8,6 +8,7 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../models.dart';
+import '../scripture/book_completion.dart';
 import '../scripture/spoken_reference.dart';
 import '../services/api_client.dart';
 import '../theme.dart';
@@ -48,6 +49,9 @@ class _ScripturePanelState extends State<ScripturePanel> {
   bool _liveTranscriptFinal = false;
   bool _gotResultOnce = false;
   Timer? _watchdogTimer;
+  bool _applyingCompletion = false;
+  int _lastTypedLength = 0;
+  String _ghostSuffix = '';
 
   @override
   void initState() {
@@ -241,6 +245,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
         _current = cue;
         if (cue != null) {
           _controller.text = cue.ref;
+          _lastTypedLength = cue.ref.length;
+          _ghostSuffix = '';
           _status = 'Showing ${cue.ref} on listen';
         } else {
           _status = 'No scripture on listen';
@@ -255,7 +261,61 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
   }
 
+  void _applyInlineHint(String value, {required bool expand}) {
+    final hint = inferBookCompletion(value);
+    final caretAtEnd = _controller.selection.baseOffset == value.length &&
+        _controller.selection.extentOffset == value.length;
+    if (expand &&
+        hint != null &&
+        hint.unique &&
+        hint.expanded != value &&
+        caretAtEnd) {
+      _applyingCompletion = true;
+      _controller.value = TextEditingValue(
+        text: hint.expanded,
+        selection: TextSelection.collapsed(offset: hint.expanded.length),
+      );
+      _applyingCompletion = false;
+      _lastTypedLength = hint.expanded.length;
+      _ghostSuffix = '';
+      return;
+    }
+    final showGhost = hint != null &&
+        hint.expanded != _controller.text &&
+        hint.ghostSuffix.isNotEmpty;
+    _ghostSuffix = showGhost ? hint.ghostSuffix : '';
+  }
+
+  bool _acceptInlineCompletion({bool requireCaretAtEnd = false}) {
+    final value = _controller.text;
+    if (requireCaretAtEnd && _controller.selection.extentOffset != value.length) {
+      return false;
+    }
+    final hint = inferBookCompletion(value);
+    if (hint == null || hint.expanded == value) return false;
+    _applyingCompletion = true;
+    _controller.value = TextEditingValue(
+      text: hint.expanded,
+      selection: TextSelection.collapsed(offset: hint.expanded.length),
+    );
+    _applyingCompletion = false;
+    _lastTypedLength = hint.expanded.length;
+    _ghostSuffix = '';
+    setState(() {});
+    _scheduleSuggest(hint.expanded);
+    return true;
+  }
+
   void _onQueryChanged(String value) {
+    if (_applyingCompletion) return;
+    final deleting = value.length < _lastTypedLength;
+    _lastTypedLength = value.length;
+    _applyInlineHint(value, expand: !deleting);
+    if (mounted) setState(() {});
+    _scheduleSuggest(_controller.text);
+  }
+
+  void _scheduleSuggest(String value) {
     _suggestTimer?.cancel();
     _suggestTimer = Timer(const Duration(milliseconds: 250), () async {
       final q = value.trim();
@@ -305,6 +365,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
       setState(() {
         _current = cue;
         _controller.text = cue.ref;
+        _lastTypedLength = cue.ref.length;
+        _ghostSuffix = '';
         _suggestions = const [];
         _activeSuggest = -1;
         _pendingRef = null;
@@ -531,6 +593,25 @@ class _ScripturePanelState extends State<ScripturePanel> {
           Focus(
             onKeyEvent: (node, event) {
               if (event is! KeyDownEvent) return KeyEventResult.ignored;
+              if (event.logicalKey == LogicalKeyboardKey.tab) {
+                if (_acceptInlineCompletion()) return KeyEventResult.handled;
+                if (_suggestions.isNotEmpty) {
+                  final i = _activeSuggest >= 0 ? _activeSuggest : 0;
+                  _controller.text = _suggestions[i].ref;
+                  _lastTypedLength = _controller.text.length;
+                  _ghostSuffix = '';
+                  setState(() {
+                    _suggestions = const [];
+                    _activeSuggest = -1;
+                  });
+                  return KeyEventResult.handled;
+                }
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                if (_acceptInlineCompletion(requireCaretAtEnd: true)) {
+                  return KeyEventResult.handled;
+                }
+              }
               if (_suggestions.isEmpty) return KeyEventResult.ignored;
               if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
                 setState(() {
@@ -549,6 +630,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
                 setState(() {
                   _suggestions = const [];
                   _activeSuggest = -1;
+                  _ghostSuffix = '';
                 });
                 return KeyEventResult.handled;
               }
@@ -560,33 +642,68 @@ class _ScripturePanelState extends State<ScripturePanel> {
               }
               return KeyEventResult.ignored;
             },
-            child: TextField(
-              controller: _controller,
-              onChanged: _onQueryChanged,
-              onSubmitted: (_) {
-                if (_activeSuggest >= 0 &&
-                    _activeSuggest < _suggestions.length) {
-                  unawaited(_show(_suggestions[_activeSuggest].ref));
-                } else {
-                  unawaited(_show());
-                }
-              },
-              style: GoogleFonts.outfit(color: StudioTheme.cream, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'e.g. John 3:16',
-                hintStyle: GoogleFonts.outfit(color: StudioTheme.mute),
-                filled: true,
-                fillColor: StudioTheme.ink.withOpacity(0.55),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: StudioTheme.line),
+            child: Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                TextField(
+                  controller: _controller,
+                  onChanged: _onQueryChanged,
+                  onSubmitted: (_) {
+                    if (_activeSuggest >= 0 &&
+                        _activeSuggest < _suggestions.length) {
+                      unawaited(_show(_suggestions[_activeSuggest].ref));
+                    } else if (_suggestions.isNotEmpty) {
+                      unawaited(_show(_suggestions.first.ref));
+                    } else {
+                      unawaited(_show());
+                    }
+                  },
+                  style: GoogleFonts.outfit(color: StudioTheme.cream, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. John 3:16',
+                    hintStyle: GoogleFonts.outfit(color: StudioTheme.mute),
+                    filled: true,
+                    fillColor: StudioTheme.ink.withOpacity(0.55),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: StudioTheme.line),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: StudioTheme.line),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: StudioTheme.line),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              ),
+                if (_ghostSuffix.isNotEmpty)
+                  IgnorePointer(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: _controller.text,
+                              style: GoogleFonts.outfit(
+                                color: Colors.transparent,
+                                fontSize: 14,
+                              ),
+                            ),
+                            TextSpan(
+                              text: _ghostSuffix,
+                              style: GoogleFonts.outfit(
+                                color: StudioTheme.mute.withOpacity(0.72),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           if (_suggestions.isNotEmpty) ...[

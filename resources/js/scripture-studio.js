@@ -81,6 +81,179 @@ const BOOK_SPOKEN = [
     ['revelations', 'Revelation'],
 ];
 
+const CANON_BOOKS = [
+    'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
+    'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel',
+    '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles',
+    'Ezra', 'Nehemiah', 'Esther', 'Job', 'Psalms', 'Proverbs',
+    'Ecclesiastes', 'Song of Solomon', 'Isaiah', 'Jeremiah',
+    'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
+    'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah',
+    'Haggai', 'Zechariah', 'Malachi',
+    'Matthew', 'Mark', 'Luke', 'John', 'Acts', 'Romans',
+    '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians',
+    'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians',
+    '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews',
+    'James', '1 Peter', '2 Peter', '1 John', '2 John', '3 John',
+    'Jude', 'Revelation',
+];
+
+/** lowercase alias → canonical book (mirrors KjvBibleService). */
+const BOOK_ALIASES = {
+    gen: 'Genesis', gn: 'Genesis', ge: 'Genesis', genesis: 'Genesis',
+    ex: 'Exodus', exo: 'Exodus', exod: 'Exodus', exodus: 'Exodus',
+    lev: 'Leviticus', le: 'Leviticus', lv: 'Leviticus', leviticus: 'Leviticus',
+    num: 'Numbers', nu: 'Numbers', nm: 'Numbers', numbers: 'Numbers',
+    deut: 'Deuteronomy', dt: 'Deuteronomy', de: 'Deuteronomy', deuteronomy: 'Deuteronomy',
+    josh: 'Joshua', jos: 'Joshua', joshua: 'Joshua',
+    judg: 'Judges', jdg: 'Judges', jg: 'Judges', judges: 'Judges',
+    ruth: 'Ruth', ru: 'Ruth',
+    '1sam': '1 Samuel', '1 samuel': '1 Samuel', '1sa': '1 Samuel', 'i samuel': '1 Samuel',
+    '2sam': '2 Samuel', '2 samuel': '2 Samuel', '2sa': '2 Samuel', 'ii samuel': '2 Samuel',
+    '1kgs': '1 Kings', '1 kings': '1 Kings', '1ki': '1 Kings', 'i kings': '1 Kings',
+    '2kgs': '2 Kings', '2 kings': '2 Kings', '2ki': '2 Kings', 'ii kings': '2 Kings',
+    '1chr': '1 Chronicles', '1 chronicles': '1 Chronicles', '1ch': '1 Chronicles', 'i chronicles': '1 Chronicles',
+    '2chr': '2 Chronicles', '2 chronicles': '2 Chronicles', '2ch': '2 Chronicles', 'ii chronicles': '2 Chronicles',
+    ezra: 'Ezra', ezr: 'Ezra',
+    neh: 'Nehemiah', ne: 'Nehemiah', nehemiah: 'Nehemiah',
+    esth: 'Esther', est: 'Esther', esther: 'Esther',
+    job: 'Job',
+    ps: 'Psalms', psa: 'Psalms', psalm: 'Psalms', psalms: 'Psalms',
+    prov: 'Proverbs', pr: 'Proverbs', prv: 'Proverbs', proverbs: 'Proverbs',
+    eccl: 'Ecclesiastes', ecc: 'Ecclesiastes', ec: 'Ecclesiastes', ecclesiastes: 'Ecclesiastes',
+    song: 'Song of Solomon', sos: 'Song of Solomon', ss: 'Song of Solomon',
+    'song of solomon': 'Song of Solomon', 'song of songs': 'Song of Solomon',
+    isa: 'Isaiah', is: 'Isaiah', isaiah: 'Isaiah',
+    jer: 'Jeremiah', je: 'Jeremiah', jeremiah: 'Jeremiah',
+    lam: 'Lamentations', la: 'Lamentations', lamentations: 'Lamentations',
+    ezek: 'Ezekiel', eze: 'Ezekiel', ezk: 'Ezekiel', ezekiel: 'Ezekiel',
+    dan: 'Daniel', da: 'Daniel', dn: 'Daniel', daniel: 'Daniel',
+    hos: 'Hosea', ho: 'Hosea', hosea: 'Hosea',
+    joel: 'Joel', jl: 'Joel',
+    amos: 'Amos', am: 'Amos',
+    obad: 'Obadiah', ob: 'Obadiah', obadiah: 'Obadiah',
+    jonah: 'Jonah', jon: 'Jonah', jnh: 'Jonah',
+    mic: 'Micah', mi: 'Micah', micah: 'Micah',
+    nah: 'Nahum', na: 'Nahum', nahum: 'Nahum',
+    hab: 'Habakkuk', habakkuk: 'Habakkuk',
+    zeph: 'Zephaniah', zep: 'Zephaniah', zephaniah: 'Zephaniah',
+    hag: 'Haggai', haggai: 'Haggai',
+    zech: 'Zechariah', zec: 'Zechariah', zechariah: 'Zechariah',
+    mal: 'Malachi', malachi: 'Malachi',
+    matt: 'Matthew', mt: 'Matthew', mat: 'Matthew', matthew: 'Matthew',
+    mark: 'Mark', mk: 'Mark', mr: 'Mark',
+    luke: 'Luke', lk: 'Luke', lu: 'Luke',
+    john: 'John', jn: 'John', joh: 'John',
+    acts: 'Acts', ac: 'Acts',
+    rom: 'Romans', ro: 'Romans', romans: 'Romans',
+    '1cor': '1 Corinthians', '1 corinthians': '1 Corinthians', '1co': '1 Corinthians', 'i corinthians': '1 Corinthians',
+    '2cor': '2 Corinthians', '2 corinthians': '2 Corinthians', '2co': '2 Corinthians', 'ii corinthians': '2 Corinthians',
+    gal: 'Galatians', ga: 'Galatians', galatians: 'Galatians',
+    eph: 'Ephesians', ephesians: 'Ephesians',
+    phil: 'Philippians', php: 'Philippians', philippians: 'Philippians',
+    col: 'Colossians', colossians: 'Colossians',
+    '1thess': '1 Thessalonians', '1 thessalonians': '1 Thessalonians', '1th': '1 Thessalonians',
+    '2thess': '2 Thessalonians', '2 thessalonians': '2 Thessalonians', '2th': '2 Thessalonians',
+    '1tim': '1 Timothy', '1 timothy': '1 Timothy', '1ti': '1 Timothy',
+    '2tim': '2 Timothy', '2 timothy': '2 Timothy', '2ti': '2 Timothy',
+    tit: 'Titus', ti: 'Titus', titus: 'Titus',
+    phlm: 'Philemon', phm: 'Philemon', philemon: 'Philemon',
+    heb: 'Hebrews', hebrews: 'Hebrews',
+    jas: 'James', jm: 'James', james: 'James',
+    '1pet': '1 Peter', '1 peter': '1 Peter', '1pe': '1 Peter',
+    '2pet': '2 Peter', '2 peter': '2 Peter', '2pe': '2 Peter',
+    '1john': '1 John', '1 john': '1 John', '1jn': '1 John',
+    '2john': '2 John', '2 john': '2 John', '2jn': '2 John',
+    '3john': '3 John', '3 john': '3 John', '3jn': '3 John',
+    jude: 'Jude',
+    rev: 'Revelation', re: 'Revelation', revelation: 'Revelation', revelations: 'Revelation',
+};
+
+/**
+ * @param {string} raw
+ * @returns {{ bookToken: string, separator: string, rest: string|null }}
+ */
+export function splitScriptureQuery(raw) {
+    const value = String(raw ?? '').replace(/^\s+/, '');
+    const withRest = value.match(/^(.+?)(\s+)(\d.*)$/);
+    if (withRest) {
+        return { bookToken: withRest[1], separator: withRest[2], rest: withRest[3] };
+    }
+    const trailing = value.match(/^(.*\S)(\s+)$/);
+    if (trailing) {
+        return { bookToken: trailing[1], separator: trailing[2], rest: '' };
+    }
+    return { bookToken: value, separator: '', rest: null };
+}
+
+function normalizeBookToken(token) {
+    let key = String(token || '').toLowerCase().trim().replace(/\./g, '');
+    key = key.replace(/\s+/g, ' ');
+    key = key.replace(/^iii\s+/, '3 ').replace(/^ii\s+/, '2 ').replace(/^i\s+/, '1 ');
+    key = key.replace(/^3rd\s+/, '3 ').replace(/^2nd\s+/, '2 ').replace(/^1st\s+/, '1 ');
+    return key;
+}
+
+/**
+ * @param {string} token
+ * @returns {string[]}
+ */
+export function matchBooks(token) {
+    const key = normalizeBookToken(token);
+    if (!key) {
+        return [];
+    }
+    const compact = key.replace(/ /g, '');
+    const found = [];
+    const seen = new Set();
+    const add = (book) => {
+        if (book && !seen.has(book)) {
+            seen.add(book);
+            found.push(book);
+        }
+    };
+
+    const exact = BOOK_ALIASES[key] || BOOK_ALIASES[compact];
+    if (exact) {
+        add(exact);
+    }
+
+    for (const book of CANON_BOOKS) {
+        const lower = book.toLowerCase();
+        const bookCompact = lower.replace(/ /g, '');
+        if (lower === key || bookCompact === compact || lower.startsWith(key) || bookCompact.startsWith(compact)) {
+            add(book);
+        }
+    }
+
+    return found;
+}
+
+/**
+ * Best book completion for the current query (EasyWorship / address-bar).
+ *
+ * @param {string} raw
+ * @returns {{ book: string, unique: boolean, ghostSuffix: string, expanded: string }|null}
+ */
+export function inferBookCompletion(raw) {
+    const { bookToken, separator, rest } = splitScriptureQuery(raw);
+    if (!bookToken) {
+        return null;
+    }
+    const matches = matchBooks(bookToken);
+    if (!matches.length) {
+        return null;
+    }
+    const book = matches[0];
+    const unique = matches.length === 1;
+    const expanded = rest !== null ? `${book}${separator}${rest}` : `${book} `;
+    let ghostSuffix = '';
+    if (book.toLowerCase().startsWith(bookToken.toLowerCase())) {
+        ghostSuffix = book.slice(bookToken.length);
+    }
+    return { book, unique, ghostSuffix, expanded };
+}
+
 function parseSpokenNumber(tokens) {
     if (!tokens.length) {
         return null;
@@ -215,6 +388,7 @@ export function bindScriptureStudio(root) {
     }
 
     const input = document.getElementById('scripture-search');
+    const ghostEl = document.getElementById('scripture-search-ghost');
     const suggestEl = document.getElementById('scripture-suggestions');
     const statusEl = document.getElementById('scripture-status');
     const btnShow = document.getElementById('btn-scripture-show');
@@ -418,9 +592,9 @@ export function bindScriptureStudio(root) {
                 return;
             }
             selectedRef = data.scripture?.ref || ref;
-            if (input) {
-                input.value = selectedRef;
-            }
+            writeInputValue(selectedRef);
+            inlineHint = null;
+            renderGhost('');
             setStatus(`Showing ${selectedRef} on listen`);
         } catch {
             setStatus('Could not show that verse.');
@@ -453,6 +627,107 @@ export function bindScriptureStudio(root) {
 
     let suggestTimer = null;
     let activeSuggestIndex = -1;
+    let applyingCompletion = false;
+    /** @type {{ book: string, unique: boolean, ghostSuffix: string, expanded: string }|null} */
+    let inlineHint = null;
+
+    function cursorAtEnd() {
+        if (!input) {
+            return false;
+        }
+        return input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
+    }
+
+    function writeInputValue(value) {
+        if (!input) {
+            return;
+        }
+        applyingCompletion = true;
+        input.value = value;
+        try {
+            const end = value.length;
+            input.setSelectionRange(end, end);
+        } catch {
+            /* unfocused type=search can throw */
+        }
+        applyingCompletion = false;
+        selectedRef = value.trim();
+    }
+
+    function syncGhostMetrics() {
+        if (!ghostEl || !input) {
+            return;
+        }
+        const cs = getComputedStyle(input);
+        ghostEl.style.font = cs.font;
+        ghostEl.style.letterSpacing = cs.letterSpacing;
+        ghostEl.style.paddingTop = cs.paddingTop;
+        ghostEl.style.paddingBottom = cs.paddingBottom;
+        ghostEl.style.paddingLeft = cs.paddingLeft;
+        ghostEl.style.paddingRight = cs.paddingRight;
+        ghostEl.style.lineHeight = cs.lineHeight;
+    }
+
+    function renderGhost(suffix) {
+        if (!ghostEl) {
+            return;
+        }
+        if (!suffix || !input?.value) {
+            ghostEl.replaceChildren();
+            return;
+        }
+        syncGhostMetrics();
+        const typed = document.createElement('span');
+        typed.className = 'scripture-search-ghost-typed';
+        typed.textContent = input.value;
+        const rest = document.createElement('span');
+        rest.className = 'scripture-search-ghost-suffix';
+        rest.textContent = suffix;
+        ghostEl.replaceChildren(typed, rest);
+    }
+
+    function refreshInlineHint({ expand } = { expand: false }) {
+        if (!input) {
+            inlineHint = null;
+            renderGhost('');
+            return;
+        }
+        inlineHint = inferBookCompletion(input.value);
+        const canExpand = Boolean(
+            expand
+                && inlineHint?.unique
+                && inlineHint.expanded !== input.value
+                && cursorAtEnd(),
+        );
+        if (canExpand && inlineHint) {
+            writeInputValue(inlineHint.expanded);
+            inlineHint = inferBookCompletion(input.value);
+        }
+        const ghost = inlineHint
+            && inlineHint.expanded !== input.value
+            && inlineHint.ghostSuffix
+            ? inlineHint.ghostSuffix
+            : '';
+        renderGhost(ghost);
+    }
+
+    function acceptInlineCompletion() {
+        inlineHint = inferBookCompletion(input?.value || '');
+        if (!input || !inlineHint || inlineHint.expanded === input.value) {
+            return false;
+        }
+        writeInputValue(inlineHint.expanded);
+        refreshInlineHint({ expand: false });
+        scheduleSuggest(input.value);
+        return true;
+    }
+
+    function scheduleSuggest(q) {
+        if (suggestTimer) {
+            window.clearTimeout(suggestTimer);
+        }
+        suggestTimer = window.setTimeout(() => void runSuggest(q), 250);
+    }
 
     function suggestItems() {
         return suggestEl
@@ -481,16 +756,17 @@ export function bindScriptureStudio(root) {
             suggestEl.innerHTML = '';
         }
         activeSuggestIndex = -1;
+        input?.setAttribute('aria-expanded', 'false');
     }
 
     function applySuggestion(ref, { cueNow = true } = {}) {
         if (!ref) {
             return;
         }
-        if (input) {
-            input.value = ref;
-        }
+        writeInputValue(ref);
         selectedRef = ref;
+        inlineHint = null;
+        renderGhost('');
         clearSuggestions();
         if (cueNow) {
             void cue(ref);
@@ -522,21 +798,37 @@ export function bindScriptureStudio(root) {
                         `<strong>${s.ref}</strong><span>${s.preview || ''}</span></button>`,
                 )
                 .join('');
+            input?.setAttribute('aria-expanded', items.length ? 'true' : 'false');
         } catch {
             /* ignore */
         }
     }
 
-    input?.addEventListener('input', () => {
-        selectedRef = input.value.trim();
-        if (suggestTimer) {
-            window.clearTimeout(suggestTimer);
+    input?.addEventListener('input', (ev) => {
+        if (applyingCompletion) {
+            return;
         }
-        suggestTimer = window.setTimeout(() => void runSuggest(input.value), 250);
+        const deleting = typeof ev.inputType === 'string'
+            && (ev.inputType.startsWith('delete') || ev.inputType === 'historyUndo');
+        selectedRef = input.value.trim();
+        refreshInlineHint({ expand: !deleting && !ev.isComposing });
+        scheduleSuggest(input.value);
+    });
+
+    input?.addEventListener('compositionend', () => {
+        refreshInlineHint({ expand: true });
+        scheduleSuggest(input.value);
     });
 
     input?.addEventListener('keydown', (ev) => {
         const items = suggestItems();
+        if ((ev.key === 'Tab' || ev.key === 'ArrowRight') && !ev.altKey && !ev.metaKey && !ev.ctrlKey) {
+            const atEnd = ev.key === 'Tab' || cursorAtEnd();
+            if (atEnd && acceptInlineCompletion()) {
+                ev.preventDefault();
+                return;
+            }
+        }
         if (ev.key === 'ArrowDown' && items.length) {
             ev.preventDefault();
             const next = activeSuggestIndex < items.length - 1 ? activeSuggestIndex + 1 : 0;
@@ -550,25 +842,32 @@ export function bindScriptureStudio(root) {
             return;
         }
         if (ev.key === 'Escape') {
-            if (items.length) {
+            if (items.length || (ghostEl && ghostEl.childNodes.length)) {
                 ev.preventDefault();
                 clearSuggestions();
+                renderGhost('');
+                inlineHint = null;
             }
             return;
         }
         if (ev.key === 'Enter') {
             ev.preventDefault();
-            if (activeSuggestIndex >= 0 && items[activeSuggestIndex]) {
-                const ref = items[activeSuggestIndex].dataset.ref || '';
-                applySuggestion(ref, { cueNow: true });
+            const pick = activeSuggestIndex >= 0 && items[activeSuggestIndex]
+                ? items[activeSuggestIndex]
+                : items[0];
+            if (pick) {
+                applySuggestion(pick.dataset.ref || '', { cueNow: true });
                 return;
             }
             void cue(input.value.trim());
+            return;
         }
-        if (ev.key === 'Tab' && activeSuggestIndex >= 0 && items[activeSuggestIndex]) {
+        if (ev.key === 'Tab' && items.length) {
             ev.preventDefault();
-            const ref = items[activeSuggestIndex].dataset.ref || '';
-            applySuggestion(ref, { cueNow: false });
+            const pick = activeSuggestIndex >= 0 && items[activeSuggestIndex]
+                ? items[activeSuggestIndex]
+                : items[0];
+            applySuggestion(pick.dataset.ref || '', { cueNow: false });
         }
     });
 
@@ -837,9 +1136,9 @@ export function bindScriptureStudio(root) {
             .then((data) => {
                 if (data.scripture?.ref) {
                     selectedRef = data.scripture.ref;
-                    if (input) {
-                        input.value = selectedRef;
-                    }
+                    writeInputValue(selectedRef);
+                    inlineHint = null;
+                    renderGhost('');
                     setStatus(`Showing ${selectedRef} on listen`);
                 }
             })
