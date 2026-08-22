@@ -20,6 +20,8 @@ class EventController extends Controller
             abort_unless($unlocked || $canManage, 403);
         }
 
+        $event->loadMissing('stream');
+
         $status = match (true) {
             $event->isLive() => 'live',
             $event->isPaused() => 'paused',
@@ -28,6 +30,8 @@ class EventController extends Controller
 
         return response()->json([
             'status' => $status,
+            'hls_url' => $event->stream?->hlsPlaylistUrl(),
+            'whep_url' => $event->stream?->whepUrl(),
         ]);
     }
 
@@ -50,6 +54,7 @@ class EventController extends Controller
         $isFollowing = $request->user()?->followsChannel($event->organization) ?? false;
         $hlsUrl = $event->stream?->hlsPlaylistUrl();
         $whepUrl = $event->stream?->whepUrl();
+        $preferHls = $event->stream?->preferHlsListen() ?? false;
         $galleryImages = $event->stream
             ? $event->stream->serviceGalleryImages($event->id)->limit(24)->get()
             : collect();
@@ -63,6 +68,7 @@ class EventController extends Controller
             'isFollowing',
             'hlsUrl',
             'whepUrl',
+            'preferHls',
             'galleryImages',
             'listenBackgroundUrl',
         ));
@@ -95,6 +101,7 @@ class EventController extends Controller
             'event' => $event,
             'hlsUrl' => $event->stream?->hlsPlaylistUrl(),
             'whepUrl' => $event->stream?->whepUrl(),
+            'preferHls' => $event->stream?->preferHlsListen() ?? false,
             'isLive' => $event->status === EventStatus::Live,
         ]);
     }

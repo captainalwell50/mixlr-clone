@@ -96,7 +96,11 @@ class ListenPageTest extends TestCase
 
         $this->getJson(route('events.status', $event))
             ->assertOk()
-            ->assertJson(['status' => 'live']);
+            ->assertJson([
+                'status' => 'live',
+                'hls_url' => null,
+                'whep_url' => null,
+            ]);
 
         $event->status = EventStatus::Ended;
         $event->save();
@@ -104,6 +108,76 @@ class ListenPageTest extends TestCase
         $this->getJson(route('events.status', $event))
             ->assertOk()
             ->assertJson(['status' => 'offline']);
+    }
+
+    public function test_event_page_does_not_meta_refresh_when_paused_or_scheduled(): void
+    {
+        $org = Organization::query()->create([
+            'name' => 'Grace Church',
+            'slug' => 'grace-refresh-'.uniqid(),
+            'is_public' => true,
+        ]);
+        $stream = Stream::query()->create([
+            'organization_id' => $org->id,
+            'uuid' => fake()->uuid(),
+            'title' => 'Main',
+            'status' => StreamStatus::Offline,
+            'is_public' => true,
+        ]);
+        $event = Event::query()->create([
+            'organization_id' => $org->id,
+            'stream_id' => $stream->id,
+            'title' => 'Morning Service',
+            'status' => EventStatus::Paused,
+            'access' => EventAccess::Public,
+            'started_at' => now()->subHour(),
+        ]);
+
+        $this->get(route('events.show', $event))
+            ->assertOk()
+            ->assertDontSee('http-equiv="refresh"', false)
+            ->assertSee('listen-root', false)
+            ->assertSee(route('events.status', $event), false)
+            ->assertSee('Broadcast paused', false);
+
+        $event->status = EventStatus::Scheduled;
+        $event->save();
+
+        $this->get(route('events.show', $event))
+            ->assertOk()
+            ->assertDontSee('http-equiv="refresh"', false)
+            ->assertSee('listen-root', false)
+            ->assertSee('Waiting for the broadcast to start', false);
+    }
+
+    public function test_live_event_page_does_not_meta_refresh(): void
+    {
+        $org = Organization::query()->create([
+            'name' => 'Grace Church',
+            'slug' => 'grace-live-refresh-'.uniqid(),
+            'is_public' => true,
+        ]);
+        $stream = Stream::query()->create([
+            'organization_id' => $org->id,
+            'uuid' => fake()->uuid(),
+            'title' => 'Main',
+            'status' => StreamStatus::Live,
+            'is_public' => true,
+        ]);
+        $event = Event::query()->create([
+            'organization_id' => $org->id,
+            'stream_id' => $stream->id,
+            'title' => 'Morning Service',
+            'status' => EventStatus::Live,
+            'access' => EventAccess::Public,
+            'started_at' => now(),
+        ]);
+
+        $this->get(route('events.show', $event))
+            ->assertOk()
+            ->assertDontSee('http-equiv="refresh"', false)
+            ->assertSee('listen-root', false)
+            ->assertSee('data-stream-status="live"', false);
     }
 
     public function test_event_page_shows_live_badge(): void

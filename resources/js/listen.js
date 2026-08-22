@@ -59,9 +59,24 @@ function hasStatusUrl() {
 }
 
 function waitingMessage() {
+    if (root?.dataset.streamStatus === 'paused') {
+        return 'Broadcast paused — the host may resume this same event shortly.';
+    }
     return isMarkedLive()
         ? 'Stream interrupted — reconnecting…'
         : 'Waiting for the broadcast to start. This page will keep trying.';
+}
+
+function applyPlaybackUrls(data) {
+    if (!root || !data || typeof data !== 'object') {
+        return;
+    }
+    if (typeof data.hls_url === 'string' && data.hls_url) {
+        root.dataset.hlsUrl = data.hls_url;
+    }
+    if (typeof data.whep_url === 'string' && data.whep_url) {
+        root.dataset.whepUrl = data.whep_url;
+    }
 }
 
 function clearRetry() {
@@ -369,6 +384,7 @@ async function refreshStreamStatus() {
         }
 
         const data = await res.json();
+        applyPlaybackUrls(data);
         const live = data.status === 'live';
         const wasLive = isMarkedLive();
 
@@ -394,7 +410,7 @@ async function refreshStreamStatus() {
                 scheduleRetry(waitingMessage());
             }
         } else if (root) {
-            root.dataset.streamStatus = 'offline';
+            root.dataset.streamStatus = data.status === 'paused' ? 'paused' : 'offline';
         }
 
         return live || (wasLive && offlinePollStreak > 0 && offlinePollStreak < OFFLINE_CONFIRM_POLLS);
@@ -695,7 +711,7 @@ async function startPlayback({ force = false } = {}) {
 
     if (hasStatusUrl() && !isMarkedLive()) {
         stagePlayer.disable();
-        setStatus('Waiting for the broadcast to start. This page will keep trying.');
+        setStatus(waitingMessage());
         return;
     }
 

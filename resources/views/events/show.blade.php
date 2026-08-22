@@ -54,14 +54,25 @@
 
             <div class="portal-layout" id="portal-layout">
                 <div class="portal-below">
-                    @if ($isLive && ($whepUrl || $hlsUrl))
-                        @include('partials.stage-player', ['status' => 'Connecting…'])
+                    @if ($event->status->value === 'ended')
+                        <p class="stage-waiting stage-rise-delay-2">
+                            This event has ended.
+                        </p>
+                    @else
+                        @include('partials.stage-player', [
+                            'status' => $isLive
+                                ? 'Connecting…'
+                                : ($event->status->value === 'paused'
+                                    ? 'Broadcast paused — the host may resume this same event shortly.'
+                                    : 'Waiting for the broadcast to start. This page will keep trying.'),
+                            'disabled' => ! $isLive,
+                        ])
                         <div
                             id="listen-root"
                             data-hls-url="{{ $hlsUrl }}"
                             data-whep-url="{{ $whepUrl }}"
                             data-prefer-hls="{{ ! empty($preferHls) ? '1' : '0' }}"
-                            data-stream-status="live"
+                            data-stream-status="{{ $isLive ? 'live' : ($event->status->value === 'paused' ? 'paused' : 'offline') }}"
                             data-status-url="{{ route('events.status', $event) }}"
                             @if ($event->stream)
                                 data-gallery-url="{{ route('gallery.index', ['stream' => $event->stream, 'event_id' => $event->id]) }}"
@@ -71,20 +82,6 @@
                             @endif
                             class="hidden"
                         ></div>
-                    @elseif ($event->status->value === 'paused')
-                        <p class="stage-waiting stage-rise-delay-2">
-                            Broadcast paused — the host may resume this same event shortly.
-                        </p>
-                        <meta http-equiv="refresh" content="20">
-                    @elseif ($event->status->value === 'ended')
-                        <p class="stage-waiting stage-rise-delay-2">
-                            This event has ended.
-                        </p>
-                    @else
-                        <p class="stage-waiting stage-rise-delay-2">
-                            Waiting for the broadcast to start.
-                        </p>
-                        <meta http-equiv="refresh" content="30">
                     @endif
 
                     <h1 class="portal-title stage-rise-delay">{{ $event->title }}</h1>
