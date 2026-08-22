@@ -191,7 +191,7 @@
                             <div class="scripture-body">
                                 <div class="scripture-body-inner">
                                     <div class="scripture-heading">
-                                        <p class="scripture-board-name">Song / Announcement</p>
+                                        <p class="scripture-board-name">Live Board</p>
                                         <p class="scripture-ref">{{ $event->song_title }}</p>
                                         <p class="song-slide-meta">
                                             @if (filled($event->song_title) && (int) ($event->song_slide_count ?? 1) > 1)

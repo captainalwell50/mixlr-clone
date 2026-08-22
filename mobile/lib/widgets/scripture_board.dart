@@ -95,7 +95,7 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    final boardLabel = _hasSong ? 'SONG / ANNOUNCEMENT' : 'SCRIPTURE BOARD';
+    final boardLabel = _hasSong ? 'LIVE BOARD' : 'SCRIPTURE BOARD';
     final badge = _hasSong
         ? ((widget.song!.slideCount > 1)
             ? '${widget.song!.slideIndex + 1}/${widget.song!.slideCount}'

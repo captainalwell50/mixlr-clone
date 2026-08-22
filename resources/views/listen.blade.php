@@ -162,7 +162,7 @@
                             <div class="scripture-body">
                                 <div class="scripture-body-inner">
                                     <div class="scripture-heading">
-                                        <p class="scripture-board-name">Song / Announcement</p>
+                                        <p class="scripture-board-name">Live Board</p>
                                         <p class="scripture-ref"></p>
                                         <p class="song-slide-meta"></p>
                                     </div>
