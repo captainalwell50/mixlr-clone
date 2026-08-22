@@ -71,7 +71,7 @@
                     @if ($organization->givingIsPublic())
                         @include('partials.give-online', [
                             'organization' => $organization,
-                            'buttonClass' => 'site-btn site-btn-ghost',
+                            'buttonClass' => 'site-btn site-btn-give',
                         ])
                     @elseif ($organization->support_url && $organization->hasFeature('donations'))
                         <a href="{{ $organization->support_url }}" target="_blank" rel="noopener"

@@ -295,7 +295,13 @@ class _ListenScreenState extends State<ListenScreen> {
                             ),
                             if (p?.giving != null) ...[
                               const SizedBox(height: 14),
-                              OutlinedButton.icon(
+                              FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: LiveMixTheme.live,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: LiveMixTheme.live,
+                                  disabledForegroundColor: Colors.white,
+                                ),
                                 onPressed: () => _openGive(p!.giving!),
                                 icon: const Icon(
                                   Icons.volunteer_activism_rounded,

@@ -16,6 +16,7 @@
     --color-muted: #8a968c;
     --color-accent: #3d9b7a;
     --color-accent-soft: rgba(61, 155, 122, 0.22);
+    --color-danger: #e11d3a;
 }
 
 :root {
@@ -26,6 +27,7 @@
     --stage-text: var(--color-cream);
     --stage-panel: var(--color-ink-elevated);
     --stage-border: color-mix(in srgb, var(--color-cream) 18%, transparent);
+    --stage-danger: var(--color-danger);
 }
 
 /* ——— Shared type ——— */
@@ -564,17 +566,24 @@ a.stage-platform:hover {
     justify-content: center;
     min-height: 2.35rem;
     border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--stage-accent) 50%, transparent);
-    background: color-mix(in srgb, var(--stage-accent) 20%, transparent);
+    border: 1px solid var(--stage-danger);
+    background: var(--stage-danger);
     padding: 0.35rem 0.95rem;
     font-size: 0.85rem;
-    font-weight: 650;
-    color: var(--stage-cream);
+    font-weight: 700;
+    color: #fff;
     cursor: pointer;
     white-space: nowrap;
+    opacity: 1;
 }
 .portal-give:hover {
-    background: color-mix(in srgb, var(--stage-accent) 32%, transparent);
+    background: var(--stage-danger);
+    color: #fff;
+    filter: brightness(1.08);
+}
+.portal-give:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
 }
 
 .give-dialog {
@@ -2820,6 +2829,18 @@ a.stage-platform:hover {
     background: color-mix(in srgb, var(--stage-cream) 6%, transparent);
 }
 
+.site-btn-give {
+    background: var(--stage-danger);
+    color: #fff;
+    border: 1px solid var(--stage-danger);
+    opacity: 1;
+}
+.site-btn-give:hover {
+    background: var(--stage-danger);
+    color: #fff;
+    filter: brightness(1.08);
+}
+
 .site-body {
     max-width: 64rem;
     margin: 0 auto;
@@ -3690,16 +3711,19 @@ a.stage-platform:hover {
     align-self: flex-start;
     min-height: 1.7rem;
     border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--stage-accent) 45%, transparent);
-    background: color-mix(in srgb, var(--stage-accent) 18%, transparent);
+    border: 1px solid var(--stage-danger);
+    background: var(--stage-danger);
     padding: 0.15rem 0.65rem;
     font-size: 0.7rem;
-    font-weight: 650;
-    color: var(--stage-cream);
+    font-weight: 700;
+    color: #fff;
     cursor: pointer;
+    opacity: 1;
 }
 .embed-give:hover {
-    background: color-mix(in srgb, var(--stage-accent) 30%, transparent);
+    background: var(--stage-danger);
+    color: #fff;
+    filter: brightness(1.08);
 }
 
 /* ——— Operator console (admin / auth / dashboard) ——— */
@@ -5155,7 +5179,7 @@ body.stage-body:has(.mixer) {
     --mixer-line: rgba(255, 255, 255, 0.1);
     --mixer-text: #f2f2f4;
     --mixer-muted: rgba(242, 242, 244, 0.55);
-    --mixer-danger: #e11d3a;
+    --mixer-danger: var(--color-danger, #e11d3a);
     box-sizing: border-box;
     width: 100%;
     height: 100%;
