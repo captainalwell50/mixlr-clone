@@ -390,6 +390,63 @@ class _SongPanelState extends State<SongPanel> {
                         '${song.slideCount} slide${song.slideCount == 1 ? '' : 's'}',
                         style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 12),
                       ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          FilledButton(
+                            onPressed: _busy ? null : () => _cue(song),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: StudioTheme.accent,
+                              foregroundColor: StudioTheme.ink,
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              minimumSize: Size.zero,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              textStyle: GoogleFonts.outfit(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w650,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            child: const Text('Go live'),
+                          ),
+                          TextButton(
+                            onPressed: _busy ? null : () => _openForm(song),
+                            style: TextButton.styleFrom(
+                              foregroundColor: StudioTheme.mute,
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              minimumSize: Size.zero,
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              textStyle: GoogleFonts.outfit(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('Edit'),
+                          ),
+                          TextButton(
+                            onPressed: _busy ? null : () => _delete(song),
+                            style: TextButton.styleFrom(
+                              foregroundColor: StudioTheme.live.withOpacity(0.62),
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              minimumSize: Size.zero,
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              textStyle: GoogleFonts.outfit(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
                       if (_slidesFor(song).isNotEmpty) ...[
                         const SizedBox(height: 8),
                         _slideList(
@@ -399,35 +456,6 @@ class _SongPanelState extends State<SongPanel> {
                           onSelect: (index) => _cue(song, slideIndex: index),
                         ),
                       ],
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          FilledButton(
-                            onPressed: _busy ? null : () => _cue(song),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: StudioTheme.accent,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            child: const Text('Go live'),
-                          ),
-                          OutlinedButton(
-                            onPressed: _busy ? null : () => _openForm(song),
-                            style: OutlinedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            child: const Text('Edit'),
-                          ),
-                          OutlinedButton(
-                            onPressed: _busy ? null : () => _delete(song),
-                            style: OutlinedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            child: const Text('Delete'),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),

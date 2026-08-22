@@ -1143,8 +1143,8 @@ a.stage-platform:hover {
 
 .song-list-item {
     display: grid;
-    grid-template-columns: minmax(0, 11.5rem) minmax(0, 1fr);
-    gap: 0.45rem 0.75rem;
+    grid-template-columns: minmax(0, 12.5rem) minmax(0, 1fr);
+    gap: 0.45rem 0.85rem;
     align-items: start;
     min-width: 0;
     border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
@@ -1168,7 +1168,7 @@ a.stage-platform:hover {
     overflow-wrap: anywhere;
 }
 
-.song-list-main span {
+.song-list-main > span {
     font-size: 0.75rem;
     opacity: 0.7;
 }
@@ -1176,13 +1176,67 @@ a.stage-platform:hover {
 .song-list-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    align-items: center;
+    gap: 0.15rem 0.45rem;
     min-width: 0;
+    margin-top: 0.4rem;
+}
+
+.song-action {
+    appearance: none;
+    flex: 0 0 auto;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    padding: 0.18rem 0.1rem;
+    color: color-mix(in srgb, var(--mixer-text, var(--stage-cream, #f2f6f4)) 72%, transparent);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.song-action:hover {
+    color: var(--mixer-text, var(--stage-cream, #f2f6f4));
+}
+
+.song-action:focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--stage-accent, #14b8a6) 70%, transparent);
+    outline-offset: 2px;
+}
+
+.song-action--cue {
+    border: 1px solid color-mix(in srgb, var(--stage-accent, #14b8a6) 55%, transparent);
+    border-radius: 0.3rem;
+    background: color-mix(in srgb, var(--stage-accent, #14b8a6) 78%, #07110e);
+    color: #f4fbf8;
+    padding: 0.16rem 0.45rem;
+    font-weight: 650;
+}
+
+.song-action--cue:hover {
+    filter: brightness(1.06);
+    color: #f4fbf8;
+}
+
+.song-action--edit {
+    color: color-mix(in srgb, var(--mixer-text, var(--stage-cream, #f2f6f4)) 68%, transparent);
+}
+
+.song-action--delete {
+    color: color-mix(in srgb, var(--mixer-danger, var(--stage-danger, #e11d3a)) 58%, var(--mixer-muted, #8a968c));
+}
+
+.song-action--delete:hover {
+    color: var(--mixer-danger, var(--stage-danger, #e11d3a));
 }
 
 .song-list-item .song-slide-list {
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1;
 }
 
 .song-slide-list {

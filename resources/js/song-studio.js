@@ -220,13 +220,13 @@ export function bindSongStudio(root) {
                     `<div class="song-list-main">` +
                     `<strong>${escapeHtml(s.title)}</strong>` +
                     `<span>${count} slide${count === 1 ? '' : 's'}</span>` +
+                    `<div class="song-list-actions">` +
+                    `<button type="button" class="song-action song-action--cue" data-action="cue">Go live</button>` +
+                    `<button type="button" class="song-action song-action--edit" data-action="edit">Edit</button>` +
+                    `<button type="button" class="song-action song-action--delete" data-action="delete">Delete</button>` +
+                    `</div>` +
                     `</div>` +
                     renderSlideList(s) +
-                    `<div class="song-list-actions">` +
-                    `<button type="button" class="mixer-add-sounds" data-action="cue">Go live</button>` +
-                    `<button type="button" class="mixer-add-sounds" data-action="edit">Edit</button>` +
-                    `<button type="button" class="mixer-add-sounds" data-action="delete">Delete</button>` +
-                    `</div>` +
                     `</div>`
                 );
             })
