@@ -178,4 +178,165 @@ class Event extends Model
 
         return $this->organization?->artworkUrl();
     }
+
+    public function hasLiveScripture(): bool
+    {
+        return filled($this->scripture_ref) && filled($this->scripture_text);
+    }
+
+    public function hasLiveSong(): bool
+    {
+        return filled($this->song_title) && filled($this->song_text);
+    }
+
+    /**
+     * Last successful listen-board cue wins (scripture vs song).
+     *
+     * @return 'scripture'|'song'|null
+     */
+    public function liveBoardMode(): ?string
+    {
+        $scripture = $this->hasLiveScripture();
+        $song = $this->hasLiveSong();
+
+        if ($scripture && $song) {
+            $scriptureAt = $this->scripture_updated_at;
+            $songAt = $this->song_updated_at;
+            if ($scriptureAt && $songAt) {
+                return $scriptureAt->greaterThanOrEqualTo($songAt) ? 'scripture' : 'song';
+            }
+            if ($scriptureAt) {
+                return 'scripture';
+            }
+            if ($songAt) {
+                return 'song';
+            }
+
+            return 'scripture';
+        }
+
+        if ($song) {
+            return 'song';
+        }
+
+        if ($scripture) {
+            return 'scripture';
+        }
+
+        return null;
+    }
+
+    /** @return array{ref: string, text: string, version: string, updated_at: string|null}|null */
+    public function liveScripturePayload(): ?array
+    {
+        if ($this->liveBoardMode() !== 'scripture') {
+            return null;
+        }
+
+        return [
+            'ref' => (string) $this->scripture_ref,
+            'text' => (string) $this->scripture_text,
+            'version' => 'KJV',
+            'updated_at' => $this->scripture_updated_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array{id: int|null, title: string, text: string, slide_index: int, slide_count: int, updated_at: string|null}|null
+     */
+    public function liveSongPayload(): ?array
+    {
+        if ($this->liveBoardMode() !== 'song') {
+            return null;
+        }
+
+        return [
+            'id' => $this->song_id ? (int) $this->song_id : null,
+            'title' => (string) $this->song_title,
+            'text' => (string) $this->song_text,
+            'slide_index' => (int) ($this->song_slide_index ?? 0),
+            'slide_count' => (int) ($this->song_slide_count ?? 1),
+            'updated_at' => $this->song_updated_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array{live_board: 'scripture'|'song'|null, scripture: array<string, mixed>|null, song: array<string, mixed>|null}
+     */
+    public function liveBoardPayload(): array
+    {
+        $mode = $this->liveBoardMode();
+
+        return [
+            'live_board' => $mode,
+            'scripture' => $this->liveScripturePayload(),
+            'song' => $this->liveSongPayload(),
+        ];
+    }
+
+    public function cueLiveScripture(string $ref, string $text): void
+    {
+        $this->forceFill([
+            'scripture_ref' => $ref,
+            'scripture_text' => $text,
+            'scripture_updated_at' => now(),
+            'song_id' => null,
+            'song_title' => null,
+            'song_text' => null,
+            'song_slide_index' => null,
+            'song_slide_count' => null,
+            'song_updated_at' => null,
+        ])->save();
+    }
+
+    public function cueLiveSong(?int $songId, string $title, string $text, int $slideIndex, int $slideCount): void
+    {
+        $this->forceFill([
+            'song_id' => $songId,
+            'song_title' => $title,
+            'song_text' => $text,
+            'song_slide_index' => $slideIndex,
+            'song_slide_count' => $slideCount,
+            'song_updated_at' => now(),
+            'scripture_ref' => null,
+            'scripture_text' => null,
+            'scripture_updated_at' => null,
+        ])->save();
+    }
+
+    public function clearLiveScripture(): void
+    {
+        $clearStaleSong = $this->liveBoardMode() === 'scripture';
+        $this->forceFill([
+            'scripture_ref' => null,
+            'scripture_text' => null,
+            'scripture_updated_at' => now(),
+            ...($clearStaleSong ? [
+                'song_id' => null,
+                'song_title' => null,
+                'song_text' => null,
+                'song_slide_index' => null,
+                'song_slide_count' => null,
+                'song_updated_at' => null,
+            ] : []),
+        ])->save();
+    }
+
+    public function clearLiveSong(): void
+    {
+        $clearStaleScripture = $this->liveBoardMode() === 'song';
+        $this->forceFill([
+            'song_id' => null,
+            'song_title' => null,
+            'song_text' => null,
+            'song_slide_index' => null,
+            'song_slide_count' => null,
+            'song_updated_at' => now(),
+            ...($clearStaleScripture ? [
+                'scripture_ref' => null,
+                'scripture_text' => null,
+                'scripture_updated_at' => null,
+            ] : []),
+        ])->save();
+    }
 }

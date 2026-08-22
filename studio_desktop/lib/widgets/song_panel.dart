@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models.dart';
 import '../services/api_client.dart';
+import '../services/live_board_sync.dart';
 import '../theme.dart';
 
 /// Church-only song / announcement cue panel (EasyWorship-style slides).
@@ -11,10 +12,12 @@ class SongPanel extends StatefulWidget {
     super.key,
     required this.api,
     required this.streamUuid,
+    this.liveBoard,
   });
 
   final ApiClient api;
   final String streamUuid;
+  final LiveBoardSync? liveBoard;
 
   @override
   State<SongPanel> createState() => _SongPanelState();
@@ -33,12 +36,24 @@ class _SongPanelState extends State<SongPanel> {
   @override
   void initState() {
     super.initState();
+    widget.liveBoard?.addListener(_onLiveBoard);
     _body.addListener(_onBodyChanged);
     _refresh();
   }
 
+  void _onLiveBoard() {
+    if (!mounted) return;
+    if (widget.liveBoard?.mode == LiveBoardMode.scripture) {
+      setState(() {
+        _cue = null;
+        _status = 'No song on listen';
+      });
+    }
+  }
+
   @override
   void dispose() {
+    widget.liveBoard?.removeListener(_onLiveBoard);
     _body.removeListener(_onBodyChanged);
     _title.dispose();
     _body.dispose();
@@ -183,6 +198,7 @@ class _SongPanelState extends State<SongPanel> {
         _status =
             'Showing “${cue.title}” · slide ${cue.slideIndex + 1}/${cue.slideCount}';
       });
+      widget.liveBoard?.markSong();
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
       await _refresh();
@@ -200,6 +216,7 @@ class _SongPanelState extends State<SongPanel> {
         _cue = null;
         _status = 'Song cleared from listen';
       });
+      widget.liveBoard?.markCleared();
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
     } finally {
@@ -231,6 +248,7 @@ class _SongPanelState extends State<SongPanel> {
         _status =
             'Showing “${cue.title}” · slide ${cue.slideIndex + 1}/${cue.slideCount}';
       });
+      widget.liveBoard?.markSong();
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
       await _refresh();

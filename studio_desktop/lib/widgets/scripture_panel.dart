@@ -11,6 +11,7 @@ import '../models.dart';
 import '../scripture/book_completion.dart';
 import '../scripture/spoken_reference.dart';
 import '../services/api_client.dart';
+import '../services/live_board_sync.dart';
 import '../theme.dart';
 
 /// Church-only EasyWorship cue panel — mirrors web Studio Scripture controls.
@@ -19,10 +20,12 @@ class ScripturePanel extends StatefulWidget {
     super.key,
     required this.api,
     required this.streamUuid,
+    this.liveBoard,
   });
 
   final ApiClient api;
   final String streamUuid;
+  final LiveBoardSync? liveBoard;
 
   @override
   State<ScripturePanel> createState() => _ScripturePanelState();
@@ -56,12 +59,24 @@ class _ScripturePanelState extends State<ScripturePanel> {
   @override
   void initState() {
     super.initState();
+    widget.liveBoard?.addListener(_onLiveBoard);
     _hydrate();
     _initSpeech();
   }
 
+  void _onLiveBoard() {
+    if (!mounted) return;
+    if (widget.liveBoard?.mode == LiveBoardMode.song) {
+      setState(() {
+        _current = null;
+        _status = 'No scripture on listen';
+      });
+    }
+  }
+
   @override
   void dispose() {
+    widget.liveBoard?.removeListener(_onLiveBoard);
     _wantListen = false;
     _suggestTimer?.cancel();
     _confirmTimer?.cancel();
@@ -372,6 +387,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
         _pendingRef = null;
         _status = 'Showing ${cue.ref} on listen';
       });
+      widget.liveBoard?.markScripture();
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
     } catch (_) {
@@ -390,6 +406,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
         _current = null;
         _status = 'Scripture cleared from listen';
       });
+      widget.liveBoard?.markCleared();
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
     } finally {

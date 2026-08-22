@@ -345,6 +345,25 @@ class ScriptureCue {
   int get hashCode => Object.hash(ref, text, version, updatedAt);
 }
 
+/// Last successful listen-board cue wins. Song only shows when it is newer
+/// than scripture (or scripture is absent).
+bool liveBoardPrefersSong(ScriptureCue? cue, SongCue? song) {
+  final hasSong =
+      song != null && song.title.isNotEmpty && song.text.isNotEmpty;
+  final hasScripture =
+      cue != null && cue.ref.isNotEmpty && cue.text.isNotEmpty;
+  if (!hasSong) return false;
+  if (!hasScripture) return true;
+  final songAt = DateTime.tryParse(song.updatedAt ?? '');
+  final scriptureAt = DateTime.tryParse(cue.updatedAt ?? '');
+  if (songAt != null && scriptureAt != null) {
+    return songAt.isAfter(scriptureAt);
+  }
+  if (scriptureAt != null && songAt == null) return false;
+  if (songAt != null && scriptureAt == null) return true;
+  return false;
+}
+
 class SongCue {
   SongCue({
     required this.title,

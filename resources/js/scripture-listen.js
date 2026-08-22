@@ -4,8 +4,39 @@ const DEFAULT_VERSION = 'KJV';
 
 /**
  * Poll current scripture / song and drive the EasyWorship-style portal-art slide.
- * Song cue takes precedence when both are live.
+ * Last successful cue wins (scripture vs song).
  */
+
+function preferSong(data) {
+    if (data?.live_board === 'scripture') {
+        return false;
+    }
+    if (data?.live_board === 'song') {
+        return true;
+    }
+    const song = data?.song;
+    const scripture = data?.scripture;
+    const hasSong = Boolean(song?.title && song?.text);
+    const hasScripture = Boolean(scripture?.ref && scripture?.text);
+    if (!hasSong) {
+        return false;
+    }
+    if (!hasScripture) {
+        return true;
+    }
+    const songAt = Date.parse(song.updated_at || '');
+    const scriptureAt = Date.parse(scripture.updated_at || '');
+    if (Number.isFinite(songAt) && Number.isFinite(scriptureAt)) {
+        return songAt > scriptureAt;
+    }
+    if (Number.isFinite(scriptureAt) && !Number.isFinite(songAt)) {
+        return false;
+    }
+    if (Number.isFinite(songAt) && !Number.isFinite(scriptureAt)) {
+        return true;
+    }
+    return false;
+}
 export function bindScriptureListen(root) {
     const host = root?.dataset?.scriptureUrl
         ? root
@@ -74,12 +105,13 @@ export function bindScriptureListen(root) {
                 return;
             }
             const scripture = data.scripture;
-            const song = data.song;
+            const song = preferSong(data) ? data.song : null;
             const key = [
+                data.live_board || '',
                 song
                     ? `song:${song.title}\n${song.text}\n${song.slide_index}\n${song.updated_at || ''}`
                     : '',
-                scripture
+                !song && scripture
                     ? `scripture:${scripture.ref}\n${scripture.text}\n${scripture.version || ''}\n${scripture.updated_at || ''}`
                     : '',
             ].join('|');

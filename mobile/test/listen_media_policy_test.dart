@@ -92,4 +92,33 @@ void main() {
     final s2 = SongCue(title: 'Holy', text: 'Holy holy', slideIndex: 0);
     expect(s1, equals(s2));
   });
+
+  test('live board prefers last-cued scripture over song', () {
+    final scripture = ScriptureCue(
+      ref: 'John 3:16',
+      text: 'For God so loved',
+      updatedAt: '2026-08-22T12:00:01Z',
+    );
+    final song = SongCue(
+      title: 'Holy',
+      text: 'Holy holy',
+      updatedAt: '2026-08-22T12:00:00Z',
+    );
+    expect(liveBoardPrefersSong(scripture, song), isFalse);
+    expect(
+      liveBoardPrefersSong(
+        ScriptureCue(
+          ref: 'John 3:16',
+          text: 'For God so loved',
+          updatedAt: '2026-08-22T12:00:00Z',
+        ),
+        SongCue(
+          title: 'Holy',
+          text: 'Holy holy',
+          updatedAt: '2026-08-22T12:00:01Z',
+        ),
+      ),
+      isTrue,
+    );
+  });
 }

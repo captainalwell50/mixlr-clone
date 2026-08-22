@@ -16,22 +16,30 @@ class ScriptureController extends Controller
     public function __construct(
         private KjvBibleService $bible,
         private EventBroadcastService $broadcast,
-        private SongController $songs,
     ) {}
 
     /** Public poll for listen portal (scripture + song cue). */
     public function show(Stream $stream): JsonResponse
     {
         if (! $this->isChurch($stream)) {
-            return response()->json(['enabled' => false, 'scripture' => null, 'song' => null]);
+            return response()->json([
+                'enabled' => false,
+                'live_board' => null,
+                'scripture' => null,
+                'song' => null,
+            ]);
         }
 
         $event = $this->openEvent($stream);
+        $board = $event?->liveBoardPayload() ?? [
+            'live_board' => null,
+            'scripture' => null,
+            'song' => null,
+        ];
 
         return response()->json([
             'enabled' => true,
-            'scripture' => $this->payload($event),
-            'song' => $this->songs->cuePayload($event),
+            ...$board,
         ]);
     }
 
@@ -70,15 +78,11 @@ class ScriptureController extends Controller
             );
         }
 
-        $event->forceFill([
-            'scripture_ref' => $resolved['ref'],
-            'scripture_text' => $resolved['text'],
-            'scripture_updated_at' => now(),
-        ])->save();
+        $event->cueLiveScripture($resolved['ref'], $resolved['text']);
 
         return response()->json([
             'ok' => true,
-            'scripture' => $this->payload($event->fresh()),
+            ...$event->fresh()->liveBoardPayload(),
         ]);
     }
 
@@ -88,16 +92,16 @@ class ScriptureController extends Controller
 
         $event = $this->openEvent($stream);
         if ($event) {
-            $event->forceFill([
-                'scripture_ref' => null,
-                'scripture_text' => null,
-                'scripture_updated_at' => now(),
-            ])->save();
+            $event->clearLiveScripture();
         }
 
         return response()->json([
             'ok' => true,
-            'scripture' => null,
+            ...($event?->fresh()?->liveBoardPayload() ?? [
+                'live_board' => null,
+                'scripture' => null,
+                'song' => null,
+            ]),
         ]);
     }
 
@@ -125,18 +129,4 @@ class ScriptureController extends Controller
             ->first();
     }
 
-    /** @return array{ref: string, text: string, version: string, updated_at: string|null}|null */
-    private function payload(?Event $event): ?array
-    {
-        if ($event === null || ! filled($event->scripture_ref) || ! filled($event->scripture_text)) {
-            return null;
-        }
-
-        return [
-            'ref' => (string) $event->scripture_ref,
-            'text' => (string) $event->scripture_text,
-            'version' => 'KJV',
-            'updated_at' => $event->scripture_updated_at?->toIso8601String(),
-        ];
-    }
 }

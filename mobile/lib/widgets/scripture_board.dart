@@ -51,10 +51,7 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
   final ScrollController _scroll = ScrollController();
   bool _showScrollCue = false;
 
-  bool get _hasSong =>
-      widget.song != null &&
-      widget.song!.title.isNotEmpty &&
-      widget.song!.text.isNotEmpty;
+  bool get _hasSong => liveBoardPrefersSong(widget.cue, widget.song);
 
   @override
   void initState() {

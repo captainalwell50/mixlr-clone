@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
+import '../services/live_board_sync.dart';
 import '../services/mixer_bridge.dart';
 import '../theme.dart';
 import '../widgets/console_chassis.dart';
@@ -1110,6 +1111,49 @@ class _BroadcastBar extends StatelessWidget {
   }
 }
 
+class _ChurchLiveBoard extends StatefulWidget {
+  const _ChurchLiveBoard({
+    required this.api,
+    required this.streamUuid,
+  });
+
+  final ApiClient api;
+  final String streamUuid;
+
+  @override
+  State<_ChurchLiveBoard> createState() => _ChurchLiveBoardState();
+}
+
+class _ChurchLiveBoardState extends State<_ChurchLiveBoard> {
+  final LiveBoardSync _liveBoard = LiveBoardSync();
+
+  @override
+  void dispose() {
+    _liveBoard.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ScripturePanel(
+          api: widget.api,
+          streamUuid: widget.streamUuid,
+          liveBoard: _liveBoard,
+        ),
+        const SizedBox(height: 16),
+        SongPanel(
+          api: widget.api,
+          streamUuid: widget.streamUuid,
+          liveBoard: _liveBoard,
+        ),
+      ],
+    );
+  }
+}
+
 class _AdvancePanel extends StatelessWidget {
   const _AdvancePanel({
     required this.gallery,
@@ -1148,9 +1192,7 @@ class _AdvancePanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (scriptureEnabled && streamUuid != null) ...[
-            ScripturePanel(api: api, streamUuid: streamUuid!),
-            const SizedBox(height: 16),
-            SongPanel(api: api, streamUuid: streamUuid!),
+            _ChurchLiveBoard(api: api, streamUuid: streamUuid!),
             const SizedBox(height: 16),
           ],
           Row(

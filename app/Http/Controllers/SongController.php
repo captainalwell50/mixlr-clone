@@ -22,12 +22,15 @@ class SongController extends Controller
     public function show(Stream $stream): JsonResponse
     {
         if (! $this->isChurch($stream)) {
-            return response()->json(['enabled' => false, 'song' => null]);
+            return response()->json(['enabled' => false, 'live_board' => null, 'song' => null, 'scripture' => null]);
         }
+
+        $event = $this->openEvent($stream);
 
         return response()->json([
             'enabled' => true,
-            'song' => $this->cuePayload($this->openEvent($stream)),
+            'live_board' => $event?->liveBoardMode(),
+            'song' => $this->cuePayload($event),
         ]);
     }
 
@@ -43,9 +46,12 @@ class SongController extends Controller
             ->map(fn (DisplaySong $song) => $this->songPayload($song, $stream))
             ->values();
 
+        $event = $this->openEvent($stream);
+
         return response()->json([
             'songs' => $songs,
-            'cue' => $this->cuePayload($this->openEvent($stream)),
+            'live_board' => $event?->liveBoardMode(),
+            'cue' => $this->cuePayload($event),
         ]);
     }
 
@@ -87,9 +93,9 @@ class SongController extends Controller
             'slides' => $slides,
         ])->save();
 
-        // Keep live cue in sync if this song is currently showing.
+        // Keep live cue in sync only if this song is the last-cued listen board.
         $event = $this->openEvent($stream);
-        if ($event && (int) $event->song_id === (int) $song->id) {
+        if ($event && (int) $event->song_id === (int) $song->id && $event->liveBoardMode() === 'song') {
             $index = (int) ($event->song_slide_index ?? 0);
             $index = max(0, min($index, count($slides) - 1));
             $this->applyCue($event, $song, $index);
@@ -133,9 +139,13 @@ class SongController extends Controller
         $event = $this->ensureOpenEvent($stream);
         $this->applyCue($event, $song, $index);
 
+        $fresh = $event->fresh();
+
         return response()->json([
             'ok' => true,
-            'song' => $this->cuePayload($event->fresh()),
+            'live_board' => $fresh?->liveBoardMode(),
+            'song' => $this->cuePayload($fresh),
+            'scripture' => null,
         ]);
     }
 
@@ -160,7 +170,9 @@ class SongController extends Controller
 
         return response()->json([
             'ok' => true,
+            'live_board' => $event?->fresh()?->liveBoardMode(),
             'song' => null,
+            'scripture' => $event?->fresh()?->liveScripturePayload(),
         ]);
     }
 
@@ -169,7 +181,7 @@ class SongController extends Controller
         $this->authorizeChurchStudio($request, $stream);
 
         $event = $this->openEvent($stream);
-        if ($event === null || ! filled($event->song_title) || ! filled($event->song_text)) {
+        if ($event === null || $event->liveBoardMode() !== 'song') {
             return response()->json(['message' => 'No song is live on listen.'], 422);
         }
 
@@ -191,10 +203,13 @@ class SongController extends Controller
         $index = (int) ($event->song_slide_index ?? 0) + $delta;
         $index = max(0, min($index, count($slides) - 1));
         $this->applyCue($event, $song, $index);
+        $fresh = $event->fresh();
 
         return response()->json([
             'ok' => true,
-            'song' => $this->cuePayload($event->fresh()),
+            'live_board' => $fresh?->liveBoardMode(),
+            'song' => $this->cuePayload($fresh),
+            'scripture' => null,
         ]);
     }
 
@@ -219,26 +234,12 @@ class SongController extends Controller
             return;
         }
 
-        $event->forceFill([
-            'song_id' => $song->id,
-            'song_title' => $song->title,
-            'song_text' => $text,
-            'song_slide_index' => $index,
-            'song_slide_count' => count($slides),
-            'song_updated_at' => now(),
-        ])->save();
+        $event->cueLiveSong($song->id, $song->title, $text, $index, count($slides));
     }
 
     private function clearCue(Event $event): void
     {
-        $event->forceFill([
-            'song_id' => null,
-            'song_title' => null,
-            'song_text' => null,
-            'song_slide_index' => null,
-            'song_slide_count' => null,
-            'song_updated_at' => now(),
-        ])->save();
+        $event->clearLiveSong();
     }
 
     private function ensureOpenEvent(Stream $stream): Event
@@ -320,17 +321,6 @@ class SongController extends Controller
      */
     public function cuePayload(?Event $event): ?array
     {
-        if ($event === null || ! filled($event->song_title) || ! filled($event->song_text)) {
-            return null;
-        }
-
-        return [
-            'id' => $event->song_id ? (int) $event->song_id : null,
-            'title' => (string) $event->song_title,
-            'text' => (string) $event->song_text,
-            'slide_index' => (int) ($event->song_slide_index ?? 0),
-            'slide_count' => (int) ($event->song_slide_count ?? 1),
-            'updated_at' => $event->song_updated_at?->toIso8601String(),
-        ];
+        return $event?->liveSongPayload();
     }
 }

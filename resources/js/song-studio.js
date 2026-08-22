@@ -320,6 +320,9 @@ export function bindSongStudio(root) {
             setLiveMeta();
             renderFormPreview();
             setStatus(cue ? `Showing “${cue.title}” on listen` : 'Song cued');
+            window.dispatchEvent(new CustomEvent('live-board-changed', {
+                detail: { mode: 'song', song: cue },
+            }));
         } catch (err) {
             setStatus(err instanceof Error ? err.message : 'Could not cue song.');
             await refresh();
@@ -337,6 +340,9 @@ export function bindSongStudio(root) {
             setLiveMeta();
             renderFormPreview();
             setStatus('Song cleared from listen');
+            window.dispatchEvent(new CustomEvent('live-board-changed', {
+                detail: { mode: null },
+            }));
         } catch (err) {
             setStatus(err instanceof Error ? err.message : 'Could not clear song.');
         }
@@ -410,6 +416,18 @@ export function bindSongStudio(root) {
     btnPrev?.addEventListener('click', () => void nudge(previousUrl, -1));
     btnNext?.addEventListener('click', () => void nudge(nextUrl, +1));
     bodyInput?.addEventListener('input', () => renderFormPreview());
+
+    window.addEventListener('live-board-changed', (ev) => {
+        const mode = ev?.detail?.mode;
+        if (mode !== 'scripture') {
+            return;
+        }
+        cue = null;
+        renderList();
+        setLiveMeta();
+        renderFormPreview();
+        setStatus('No song on listen');
+    });
 
     void refresh();
 }

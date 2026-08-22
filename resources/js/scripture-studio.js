@@ -596,6 +596,9 @@ export function bindScriptureStudio(root) {
             inlineHint = null;
             renderGhost('');
             setStatus(`Showing ${selectedRef} on listen`);
+            window.dispatchEvent(new CustomEvent('live-board-changed', {
+                detail: { mode: 'scripture', scripture: data.scripture || null },
+            }));
         } catch {
             setStatus('Could not show that verse.');
         } finally {
@@ -620,6 +623,9 @@ export function bindScriptureStudio(root) {
             });
             selectedRef = '';
             setStatus('Scripture cleared from listen');
+            window.dispatchEvent(new CustomEvent('live-board-changed', {
+                detail: { mode: null },
+            }));
         } catch {
             setStatus('Could not clear scripture.');
         }
@@ -1129,17 +1135,28 @@ export function bindScriptureStudio(root) {
         }
     });
 
+    window.addEventListener('live-board-changed', (ev) => {
+        const mode = ev?.detail?.mode;
+        if (mode === 'song') {
+            setStatus('No scripture on listen');
+        }
+    });
+
     // Hydrate current cue.
     if (showUrl) {
         void fetch(showUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
             .then((r) => r.json())
             .then((data) => {
-                if (data.scripture?.ref) {
+                if (data.live_board === 'scripture' && data.scripture?.ref) {
                     selectedRef = data.scripture.ref;
                     writeInputValue(selectedRef);
                     inlineHint = null;
                     renderGhost('');
                     setStatus(`Showing ${selectedRef} on listen`);
+                    return;
+                }
+                if (data.live_board === 'song') {
+                    setStatus('No scripture on listen');
                 }
             })
             .catch(() => {});

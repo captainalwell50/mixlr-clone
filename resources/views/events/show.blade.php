@@ -23,6 +23,7 @@
     $scriptureUrl = ($scriptureEnabled && $event->stream)
         ? route('scripture.show', $event->stream)
         : null;
+    $liveBoard = $event->liveBoardMode();
 @endphp
 
 @section('content')
@@ -175,8 +176,8 @@
                 </div>
 
                 <div class="portal-cards stage-rise-delay">
-                    <div class="portal-card portal-art{{ filled($event->song_title) ? ' has-song' : (filled($event->scripture_ref) ? ' has-scripture' : '') }}" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork">
-                        <div id="scripture-slide" class="scripture-slide" @if (filled($event->song_title) || ! filled($event->scripture_ref)) hidden @endif>
+                    <div class="portal-card portal-art{{ $liveBoard === 'song' ? ' has-song' : ($liveBoard === 'scripture' ? ' has-scripture' : '') }}" style="background-image: url('{{ $cardArt }}')" role="img" aria-label="Channel artwork">
+                        <div id="scripture-slide" class="scripture-slide" @if ($liveBoard !== 'scripture') hidden @endif>
                             <div class="scripture-body">
                                 <div class="scripture-body-inner">
                                     <div class="scripture-heading">
@@ -187,7 +188,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div id="song-slide" class="scripture-slide song-slide" @if (! filled($event->song_title)) hidden @endif>
+                        <div id="song-slide" class="scripture-slide song-slide" @if ($liveBoard !== 'song') hidden @endif>
                             <div class="scripture-body">
                                 <div class="scripture-body-inner">
                                     <div class="scripture-heading">

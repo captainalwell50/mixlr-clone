@@ -52,8 +52,10 @@ class SongDisplayTest extends TestCase
         $this->getJson(route('scripture.show', $stream))
             ->assertOk()
             ->assertJsonPath('enabled', true)
+            ->assertJsonPath('live_board', 'song')
             ->assertJsonPath('song.title', 'Amazing Grace')
-            ->assertJsonPath('song.text', 'Amazing grace, how sweet the sound');
+            ->assertJsonPath('song.text', 'Amazing grace, how sweet the sound')
+            ->assertJsonPath('scripture', null);
 
         $next = URL::temporarySignedRoute('studio.songs.next', now()->addHour(), ['stream' => $stream]);
         $this->actingAs($user)
@@ -67,6 +69,42 @@ class SongDisplayTest extends TestCase
             'organization_id' => $stream->organization_id,
             'title' => 'Amazing Grace',
         ]);
+    }
+
+    public function test_song_cue_overrides_live_scripture(): void
+    {
+        [$user, $stream] = $this->churchStream();
+        Event::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'title' => 'Sunday',
+            'status' => EventStatus::Live,
+            'scripture_ref' => 'John 3:16',
+            'scripture_text' => 'For God so loved the world…',
+            'scripture_updated_at' => now()->subMinute(),
+        ]);
+
+        $store = URL::temporarySignedRoute('studio.songs.store', now()->addHour(), ['stream' => $stream]);
+        $create = $this->actingAs($user)
+            ->postJson($store, [
+                'title' => 'Holy',
+                'body' => 'Holy holy holy',
+            ])
+            ->assertCreated();
+
+        $cueUrl = (string) data_get($create->json(), 'song.cue_url');
+        $this->actingAs($user)
+            ->postJson($cueUrl)
+            ->assertOk()
+            ->assertJsonPath('live_board', 'song')
+            ->assertJsonPath('song.title', 'Holy')
+            ->assertJsonPath('scripture', null);
+
+        $this->getJson(route('scripture.show', $stream))
+            ->assertOk()
+            ->assertJsonPath('live_board', 'song')
+            ->assertJsonPath('song.title', 'Holy')
+            ->assertJsonPath('scripture', null);
     }
 
     public function test_radio_org_cannot_manage_songs(): void
