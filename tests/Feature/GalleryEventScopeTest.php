@@ -218,6 +218,106 @@ class GalleryEventScopeTest extends TestCase
             ->assertJsonValidationErrors(['event_id']);
     }
 
+    public function test_studio_page_shows_hover_delete_on_open_event_thumbs(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        $open = Event::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'title' => 'Sunday',
+            'status' => EventStatus::Live,
+            'access' => EventAccess::Public,
+            'started_at' => now(),
+        ]);
+        $image = GalleryImage::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'event_id' => $open->id,
+            'path' => 'gallery/live.jpg',
+            'media_type' => 'image',
+            'caption' => 'Live gallery photo',
+        ]);
+
+        $url = URL::temporarySignedRoute('studio.stream', now()->addHour(), ['stream' => $stream]);
+
+        $this->actingAs($user)
+            ->get($url)
+            ->assertOk()
+            ->assertSee('mixer-gallery-delete', false)
+            ->assertSee('Remove photo from gallery', false)
+            ->assertSee('data-id="'.$image->id.'"', false)
+            ->assertSee('data-gallery-destroy-url', false);
+    }
+
+    public function test_listen_page_gallery_is_view_only(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        $open = Event::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'title' => 'Sunday',
+            'status' => EventStatus::Live,
+            'access' => EventAccess::Public,
+            'started_at' => now(),
+        ]);
+        GalleryImage::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'event_id' => $open->id,
+            'path' => 'gallery/live.jpg',
+            'media_type' => 'image',
+            'caption' => 'Listener photo',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('events.show', $open))
+            ->assertOk()
+            ->assertSee('Listener photo', false)
+            ->assertDontSee('mixer-gallery-delete', false);
+    }
+
+    public function test_signed_studio_route_deletes_gallery_item(): void
+    {
+        Storage::fake('public');
+        [, $stream] = $this->creatorStream();
+        $path = UploadedFile::fake()->image('live.jpg')->store('gallery/'.$stream->uuid, 'public');
+        $image = GalleryImage::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'path' => $path,
+            'media_type' => 'image',
+        ]);
+
+        $destroy = URL::temporarySignedRoute(
+            'studio.gallery.destroy',
+            now()->addHour(),
+            ['stream' => $stream],
+        );
+
+        $this->deleteJson($destroy, ['image_id' => $image->id])
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $this->assertDatabaseMissing('gallery_images', ['id' => $image->id]);
+        Storage::disk('public')->assertMissing($path);
+    }
+
+    public function test_guest_cannot_delete_gallery_without_signature(): void
+    {
+        [, $stream] = $this->creatorStream();
+        $image = GalleryImage::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'path' => 'gallery/live.jpg',
+            'media_type' => 'image',
+        ]);
+
+        $this->deleteJson(route('studio.gallery.destroy', $stream), ['image_id' => $image->id])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('gallery_images', ['id' => $image->id]);
+    }
+
     /**
      * @return array{0: Stream, 1: Event, 2: Event}
      */

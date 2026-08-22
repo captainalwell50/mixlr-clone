@@ -2034,6 +2034,7 @@ const btnAddReel = document.getElementById('btn-add-reel');
 const reelInput = document.getElementById('reel-input');
 const studioGalleryList = document.getElementById('studio-gallery-list');
 const galleryUploadUrl = root?.dataset.galleryUploadUrl;
+const galleryDestroyUrl = root?.dataset.galleryDestroyUrl;
 const galleryListUrl = root?.dataset.galleryListUrl;
 const galleryCsrf = root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content;
 
@@ -2371,20 +2372,98 @@ function readVideoDuration(file) {
     });
 }
 
+function galleryDeleteButton(isVideo) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mixer-gallery-delete';
+    btn.setAttribute('aria-label', isVideo ? 'Remove reel from gallery' : 'Remove photo from gallery');
+    btn.title = 'Remove';
+    btn.textContent = '×';
+    return btn;
+}
+
 function appendGalleryThumb(payload) {
     if (!studioGalleryList || !payload?.url) {
         return;
     }
+    const isVideo = payload.type === 'video';
     const figure = document.createElement('figure');
-    figure.className = `mixer-gallery-thumb ${payload.type === 'video' ? 'is-video' : ''}`;
+    figure.className = `mixer-gallery-thumb ${isVideo ? 'is-video' : ''}`;
     figure.dataset.id = String(payload.id || '');
-    if (payload.type === 'video') {
-        figure.innerHTML = `<video src="${payload.url}" muted playsinline preload="metadata"></video><span class="mixer-reel-badge">Reel</span>`;
+    if (isVideo) {
+        const video = document.createElement('video');
+        video.src = payload.url;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'metadata';
+        figure.appendChild(video);
+        const badge = document.createElement('span');
+        badge.className = 'mixer-reel-badge';
+        badge.textContent = 'Reel';
+        figure.appendChild(badge);
     } else {
-        figure.innerHTML = `<img src="${payload.url}" alt="${payload.caption || 'Gallery photo'}">`;
+        const img = document.createElement('img');
+        img.src = payload.url;
+        img.alt = payload.caption || 'Gallery photo';
+        figure.appendChild(img);
     }
+    figure.appendChild(galleryDeleteButton(isVideo));
     studioGalleryList.prepend(figure);
 }
+
+async function deleteStudioGalleryItem(figure) {
+    const id = Number(figure?.dataset.id || 0);
+    if (!id || !galleryDestroyUrl) {
+        setStatus('Could not remove this gallery item.');
+        return;
+    }
+    const isVideo = figure.classList.contains('is-video');
+    const label = isVideo ? 'reel' : 'photo';
+    if (!window.confirm(`Remove this ${label} from the live gallery?`)) {
+        return;
+    }
+    const btn = figure.querySelector('.mixer-gallery-delete');
+    if (btn) {
+        btn.disabled = true;
+    }
+    try {
+        const res = await fetch(galleryDestroyUrl, {
+            method: 'DELETE',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ image_id: id }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || err.errors?.image_id?.[0] || 'Could not remove from gallery.');
+        }
+        figure.remove();
+        setStatus(isVideo ? 'Reel removed from the live gallery.' : 'Photo removed from the live gallery.');
+    } catch (e) {
+        if (btn) {
+            btn.disabled = false;
+        }
+        setStatus(e instanceof Error ? e.message : 'Could not remove from gallery.');
+    }
+}
+
+studioGalleryList?.addEventListener('click', (ev) => {
+    const btn = ev.target instanceof Element ? ev.target.closest('.mixer-gallery-delete') : null;
+    if (!btn || !studioGalleryList.contains(btn)) {
+        return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    const figure = btn.closest('.mixer-gallery-thumb');
+    if (figure) {
+        void deleteStudioGalleryItem(figure);
+    }
+});
 
 btnAddGallery?.addEventListener('click', () => {
     galleryInput?.click();

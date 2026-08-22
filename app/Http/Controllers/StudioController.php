@@ -43,6 +43,11 @@ class StudioController extends Controller
                 now()->addHours(12),
                 ['stream' => $stream],
             ),
+            'galleryDestroyUrl' => URL::temporarySignedRoute(
+                'studio.gallery.destroy',
+                now()->addHours(12),
+                ['stream' => $stream],
+            ),
             'galleryListUrl' => $galleryListUrl,
             'libraryListUrl' => URL::temporarySignedRoute(
                 'studio.library.index',

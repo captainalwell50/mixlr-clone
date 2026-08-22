@@ -1202,93 +1202,137 @@ class _AdvancePanel extends StatelessWidget {
                     itemCount: gallery.length,
                     itemBuilder: (context, i) {
                       final item = gallery[i];
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: StudioTheme.panelHi,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: StudioTheme.line),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  if (item.isVideo)
-                                    ColoredBox(
-                                      color: StudioTheme.ink,
-                                      child: Center(
-                                        child: Icon(
-                                          Icons.play_circle_fill_rounded,
-                                          color: StudioTheme.accentBright.withOpacity(0.9),
-                                          size: 42,
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    Image.network(
-                                      item.url,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const ColoredBox(
-                                        color: StudioTheme.ink,
-                                        child: Icon(Icons.broken_image_outlined, color: StudioTheme.mute),
-                                      ),
-                                    ),
-                                  if (item.isVideo)
-                                    Positioned(
-                                      left: 8,
-                                      top: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black54,
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          'REEL',
-                                          style: GoogleFonts.outfit(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                            color: StudioTheme.accentBright,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(10, 8, 4, 6),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      item.caption?.isNotEmpty == true
-                                          ? item.caption!
-                                          : (item.isVideo ? 'Video reel' : 'Photo'),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w600),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    onPressed: busy ? null : () => onDelete(item),
-                                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                                    color: StudioTheme.mute,
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                      return _GalleryHoverTile(
+                        item: item,
+                        busy: busy,
+                        onDelete: onDelete,
                       );
                     },
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GalleryHoverTile extends StatefulWidget {
+  const _GalleryHoverTile({
+    required this.item,
+    required this.busy,
+    required this.onDelete,
+  });
+
+  final GalleryItem item;
+  final bool busy;
+  final Future<void> Function(GalleryItem) onDelete;
+
+  @override
+  State<_GalleryHoverTile> createState() => _GalleryHoverTileState();
+}
+
+class _GalleryHoverTileState extends State<_GalleryHoverTile> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Container(
+        decoration: BoxDecoration(
+          color: StudioTheme.panelHi,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: StudioTheme.line),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (item.isVideo)
+                    ColoredBox(
+                      color: StudioTheme.ink,
+                      child: Center(
+                        child: Icon(
+                          Icons.play_circle_fill_rounded,
+                          color: StudioTheme.accentBright.withOpacity(0.9),
+                          size: 42,
+                        ),
+                      ),
+                    )
+                  else
+                    Image.network(
+                      item.url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const ColoredBox(
+                        color: StudioTheme.ink,
+                        child: Icon(Icons.broken_image_outlined, color: StudioTheme.mute),
+                      ),
+                    ),
+                  if (item.isVideo)
+                    Positioned(
+                      left: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'REEL',
+                          style: GoogleFonts.outfit(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: StudioTheme.accentBright,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 120),
+                      opacity: _hover ? 1 : 0,
+                      child: IgnorePointer(
+                        ignoring: !_hover || widget.busy,
+                        child: Material(
+                          color: const Color(0xC8080C0A),
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: widget.busy ? null : () => widget.onDelete(item),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.close_rounded, size: 16, color: Color(0xFFF3D4D6)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Text(
+                item.caption?.isNotEmpty == true
+                    ? item.caption!
+                    : (item.isVideo ? 'Video reel' : 'Photo'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

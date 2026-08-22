@@ -258,6 +258,7 @@
                                 @else
                                     <img src="{{ $image->url() }}" alt="{{ $image->caption ?: 'Gallery photo' }}">
                                 @endif
+                                <button type="button" class="mixer-gallery-delete" aria-label="{{ $image->isVideo() ? 'Remove reel from gallery' : 'Remove photo from gallery' }}" title="Remove">×</button>
                             </figure>
                         @endforeach
                     </div>
@@ -378,6 +379,7 @@
             data-broadcast-allowed="{{ ($broadcastAllowed ?? true) ? '1' : '0' }}"
             data-billing-url="{{ $billingUrl ?? route('billing.plans') }}"
             data-gallery-upload-url="{{ $galleryUploadUrl }}"
+            data-gallery-destroy-url="{{ $galleryDestroyUrl }}"
             data-gallery-list-url="{{ $galleryListUrl }}"
             data-library-list-url="{{ $libraryListUrl }}"
             data-library-upload-url="{{ $libraryUploadUrl }}"

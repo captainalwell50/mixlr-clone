@@ -77,6 +77,22 @@ class GalleryController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function destroySelected(Request $request, Stream $stream): JsonResponse
+    {
+        $this->authorizeUpload($request, $stream);
+
+        $validated = $request->validate([
+            'image_id' => ['required', 'integer'],
+        ]);
+
+        $image = GalleryImage::query()
+            ->where('stream_id', $stream->id)
+            ->whereKey($validated['image_id'])
+            ->firstOrFail();
+
+        return $this->destroy($request, $stream, $image);
+    }
+
     public function storeBackground(Request $request, Stream $stream): JsonResponse
     {
         $this->authorizeUpload($request, $stream);

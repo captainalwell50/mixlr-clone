@@ -248,6 +248,9 @@ Route::get('/studio/{stream}/library/{asset}/file', [StudioAudioLibraryControlle
 Route::delete('/studio/{stream}/library/{asset}', [StudioAudioLibraryController::class, 'destroy'])
     ->middleware('throttle:30,1')
     ->name('studio.library.destroy');
+Route::delete('/studio/{stream}/gallery', [GalleryController::class, 'destroySelected'])
+    ->middleware('throttle:30,1')
+    ->name('studio.gallery.destroy');
 
 Route::post('/webhooks/paystack', PaystackWebhookController::class)
     ->middleware('throttle:120,1')
