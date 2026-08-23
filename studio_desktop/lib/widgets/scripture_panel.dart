@@ -254,8 +254,10 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   Future<void> _hydrate() async {
     try {
-      final cue = await widget.api.scriptureShow(widget.streamUuid);
+      final result = await widget.api.scriptureShow(widget.streamUuid);
       if (!mounted) return;
+      final mode = liveBoardModeFrom(result.liveBoard);
+      final cue = mode == LiveBoardMode.song ? null : result.cue;
       setState(() {
         _current = cue;
         if (cue != null) {
@@ -267,6 +269,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
           _status = 'No scripture on listen';
         }
       });
+      if (mode != null) widget.liveBoard?.apply(mode);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _status = e.message);
@@ -504,6 +507,43 @@ class _ScripturePanelState extends State<ScripturePanel> {
     });
     _armWatchdog();
     await _beginListenSession();
+  }
+
+  Widget _livePreview(ScriptureCue cue) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: StudioTheme.ink.withOpacity(0.72),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: StudioTheme.accent.withOpacity(0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'LIVE: ${cue.ref}',
+            style: GoogleFonts.outfit(
+              color: StudioTheme.accentBright,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+          ),
+          if (cue.text.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              cue.text,
+              style: GoogleFonts.outfit(
+                color: StudioTheme.cream,
+                fontSize: 14,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildLiveTranscript() {
@@ -795,6 +835,10 @@ class _ScripturePanelState extends State<ScripturePanel> {
               ),
             ],
           ),
+          if (_current != null) ...[
+            const SizedBox(height: 10),
+            _livePreview(_current!),
+          ],
           if (_wantListen) ...[
             const SizedBox(height: 10),
             _buildLiveTranscript(),

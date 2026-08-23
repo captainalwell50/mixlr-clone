@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -9,15 +11,24 @@ class ApiException implements Exception {
   ApiException(this.message, {this.statusCode});
   final String message;
   final int? statusCode;
+
+  bool get isUnauthorized => statusCode == 401;
+
   @override
   String toString() => message;
 }
 
+typedef UnauthorizedHandler = FutureOr<void> Function();
+
 class ApiClient {
-  ApiClient({http.Client? client}) : _client = client ?? http.Client();
+  ApiClient({http.Client? client, Duration? timeout})
+      : _client = client ?? http.Client(),
+        _timeout = timeout ?? const Duration(seconds: 30);
 
   final http.Client _client;
+  final Duration _timeout;
   String? _token;
+  UnauthorizedHandler? onUnauthorized;
 
   void setToken(String? token) => _token = token;
 
@@ -25,8 +36,39 @@ class ApiClient {
     return {
       'Accept': 'application/json',
       if (contentType != null) 'Content-Type': contentType,
-      if (auth && _token != null && _token!.isNotEmpty) 'Authorization': 'Bearer $_token',
+      if (auth && _token != null && _token!.isNotEmpty)
+        'Authorization': 'Bearer $_token',
     };
+  }
+
+  Future<http.Response> _send(Future<http.Response> future) async {
+    try {
+      return await future.timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException('Request timed out. Check your connection and try again.');
+    } on SocketException {
+      throw ApiException('Network unavailable. Check your connection and try again.');
+    } on HttpException catch (e) {
+      throw ApiException('Network error: ${e.message}');
+    } on HandshakeException {
+      throw ApiException('Secure connection failed. Check your network or VPN.');
+    }
+  }
+
+  String _extractMessage(Map<String, dynamic>? body, String fallback) {
+    final message = body?['message'];
+    if (message is String &&
+        message.isNotEmpty &&
+        message != 'The given data was invalid.') {
+      return message;
+    }
+    final errors = body?['errors'];
+    if (errors is Map && errors.isNotEmpty) {
+      final first = errors.values.first;
+      if (first is List && first.isNotEmpty) return first.first.toString();
+      if (first != null) return first.toString();
+    }
+    return fallback;
   }
 
   Future<Map<String, dynamic>> _json(
@@ -45,21 +87,36 @@ class ApiClient {
       return body ?? <String, dynamic>{};
     }
 
-    final message = body?['message'] as String? ??
-        (body?['errors'] is Map
-            ? ((body!['errors'] as Map).values.first is List
-                ? ((body['errors'] as Map).values.first as List).first.toString()
-                : (body['errors'] as Map).values.first.toString())
-            : null) ??
-        fallback;
-    throw ApiException(message, statusCode: response.statusCode);
+    if (response.statusCode == 401) {
+      final handler = onUnauthorized;
+      if (handler != null) {
+        await handler();
+      }
+      throw ApiException(
+        _extractMessage(body, 'Session expired. Sign in again.'),
+        statusCode: 401,
+      );
+    }
+
+    throw ApiException(
+      _extractMessage(body, fallback),
+      statusCode: response.statusCode,
+    );
+  }
+
+  Future<Map<String, dynamic>> _parseMultipart(
+    http.StreamedResponse streamed, {
+    required String fallback,
+  }) async {
+    final response = await http.Response.fromStream(streamed).timeout(_timeout);
+    return _json(response, fallback: fallback);
   }
 
   Future<({String token, AppUser user})> login({
     required String email,
     required String password,
   }) async {
-    final response = await _client.post(
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/auth/login'),
       headers: _headers(contentType: 'application/json'),
       body: jsonEncode({
@@ -67,20 +124,26 @@ class ApiClient {
         'password': password,
         'device_name': 'soundmix-studio-desktop',
       }),
-    );
+    ));
     final data = await _json(response, fallback: 'Login failed');
-    final token = data['token'] as String;
-    final user = AppUser.fromJson(data['user'] as Map<String, dynamic>);
+    final token = data['token'] as String?;
+    final userJson = data['user'] as Map<String, dynamic>?;
+    if (token == null || token.isEmpty || userJson == null) {
+      throw ApiException('Login response was incomplete.');
+    }
+    final user = AppUser.fromJson(userJson);
     setToken(token);
     return (token: token, user: user);
   }
 
   Future<void> logout() async {
     try {
-      await _client.post(
-        Uri.parse('${AppConfig.apiV1}/auth/logout'),
-        headers: _headers(auth: true),
-      );
+      if (_token != null) {
+        await _send(_client.post(
+          Uri.parse('${AppConfig.apiV1}/auth/logout'),
+          headers: _headers(auth: true),
+        ));
+      }
     } catch (_) {
     } finally {
       setToken(null);
@@ -88,39 +151,47 @@ class ApiClient {
   }
 
   Future<AppUser> me() async {
-    final response = await _client.get(
+    final response = await _send(_client.get(
       Uri.parse('${AppConfig.apiV1}/me'),
       headers: _headers(auth: true),
-    );
+    ));
     final data = await _json(response, fallback: 'Session expired');
-    return AppUser.fromJson(data['user'] as Map<String, dynamic>);
+    final userJson = data['user'] as Map<String, dynamic>?;
+    if (userJson == null) throw ApiException('Session expired');
+    return AppUser.fromJson(userJson);
   }
 
   Future<CreatorHome> creatorHome() async {
-    final response = await _client.get(
+    final response = await _send(_client.get(
       Uri.parse('${AppConfig.apiV1}/creator/home'),
       headers: _headers(auth: true),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not load studio');
     return CreatorHome.fromJson(data);
   }
 
   Future<PublishInfo> publish(String streamUuid) async {
-    final response = await _client.get(
+    final response = await _send(_client.get(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/publish'),
       headers: _headers(auth: true),
-    );
+    ));
     final data = await _json(response, fallback: 'Publish info unavailable');
     return PublishInfo.fromJson(data);
   }
 
-  Future<PublishInfo> goLive(String streamUuid) async {
-    final response = await _client.post(
+  /// Marks the service event live (creates/resumes) and returns WHIP endpoints + event.
+  Future<PublishInfo> goLive(String streamUuid, {int? eventId, String? title}) async {
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/go-live'),
-      headers: _headers(auth: true),
-    );
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: jsonEncode({
+        if (eventId != null) 'event_id': eventId,
+        if (title != null && title.isNotEmpty) 'title': title,
+      }),
+    ));
     final data = await _json(response, fallback: 'Could not go live');
     final publish = data['publish'] as Map<String, dynamic>? ?? {};
+    final eventJson = data['event'] as Map<String, dynamic>?;
     return PublishInfo(
       whipUrl: publish['whip_url'] as String? ?? '',
       hlsUrl: publish['hls_url'] as String?,
@@ -128,35 +199,48 @@ class ApiClient {
       stream: data['stream'] == null
           ? null
           : StreamSummary.fromJson(data['stream'] as Map<String, dynamic>),
+      event: eventJson == null ? null : EventSummary.fromJson(eventJson),
     );
   }
 
-  Future<StreamSummary> pauseStream(String streamUuid) async {
-    final response = await _client.post(
+  Future<({StreamSummary stream, EventSummary? event})> pauseStream(
+    String streamUuid,
+  ) async {
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/pause'),
       headers: _headers(auth: true),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not pause');
-    return StreamSummary.fromJson(data['stream'] as Map<String, dynamic>);
+    final eventJson = data['event'] as Map<String, dynamic>?;
+    return (
+      stream: StreamSummary.fromJson(data['stream'] as Map<String, dynamic>),
+      event: eventJson == null ? null : EventSummary.fromJson(eventJson),
+    );
   }
 
-  Future<StreamSummary> endStream(String streamUuid) async {
-    final response = await _client.post(
+  Future<({StreamSummary stream, EventSummary? event})> endStream(
+    String streamUuid,
+  ) async {
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/end'),
       headers: _headers(auth: true),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not end stream');
-    return StreamSummary.fromJson(data['stream'] as Map<String, dynamic>);
+    final eventJson = data['event'] as Map<String, dynamic>?;
+    return (
+      stream: StreamSummary.fromJson(data['stream'] as Map<String, dynamic>),
+      event: eventJson == null ? null : EventSummary.fromJson(eventJson),
+    );
   }
 
   Future<({String embedUrl, String whipUrl})> desktopMixer(String streamUuid) async {
-    final response = await _client.get(
+    final response = await _send(_client.get(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/desktop-mixer'),
       headers: _headers(auth: true),
-    );
+    ));
     final data = await _json(response, fallback: 'Mixer engine unavailable');
     return (
-      embedUrl: data['embed_url'] as String,
+      embedUrl: data['embed_url'] as String? ?? '',
       whipUrl: data['whip_url'] as String? ?? '',
     );
   }
@@ -165,7 +249,7 @@ class ApiClient {
     final uri = Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/library').replace(
       queryParameters: q == null || q.isEmpty ? null : {'q': q},
     );
-    final response = await _client.get(uri, headers: _headers(auth: true));
+    final response = await _send(_client.get(uri, headers: _headers(auth: true)));
     final data = await _json(response, fallback: 'Could not load library');
     final assets = data['assets'] as List<dynamic>? ?? [];
     return assets
@@ -187,25 +271,26 @@ class ApiClient {
       request.fields['title'] = title;
     }
     request.files.add(await http.MultipartFile.fromPath('audio', path));
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
-    final data = await _json(response, fallback: 'Upload failed');
-    return LibraryAsset.fromJson(data['asset'] as Map<String, dynamic>);
+    final streamed = await _client.send(request).timeout(_timeout);
+    final data = await _parseMultipart(streamed, fallback: 'Upload failed');
+    final asset = data['asset'] as Map<String, dynamic>?;
+    if (asset == null) throw ApiException('Upload failed — empty response.');
+    return LibraryAsset.fromJson(asset);
   }
 
   Future<void> deleteLibraryAsset(String streamUuid, int assetId) async {
-    final response = await _client.delete(
+    final response = await _send(_client.delete(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/library/$assetId'),
       headers: _headers(auth: true),
-    );
+    ));
     await _json(response, fallback: 'Could not delete asset');
   }
 
-  Future<List<GalleryItem>> gallery(String streamUuid) async {
-    final response = await _client.get(
-      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/gallery'),
-      headers: _headers(auth: true),
+  Future<List<GalleryItem>> gallery(String streamUuid, {int? eventId}) async {
+    final uri = Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/gallery').replace(
+      queryParameters: eventId == null ? null : {'event_id': '$eventId'},
     );
+    final response = await _send(_client.get(uri, headers: _headers(auth: true)));
     final data = await _json(response, fallback: 'Could not load gallery');
     final images = data['images'] as List<dynamic>? ?? [];
     return images
@@ -217,6 +302,7 @@ class ApiClient {
     required String streamUuid,
     required String path,
     String? caption,
+    int? eventId,
   }) async {
     final request = http.MultipartRequest(
       'POST',
@@ -226,17 +312,24 @@ class ApiClient {
     if (caption != null && caption.isNotEmpty) {
       request.fields['caption'] = caption;
     }
+    if (eventId != null) {
+      request.fields['event_id'] = '$eventId';
+    }
     request.files.add(await http.MultipartFile.fromPath('image', path));
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
-    final data = await _json(response, fallback: 'Photo upload failed');
-    return GalleryItem.fromJson(data['image'] as Map<String, dynamic>);
+    final streamed = await _client.send(request).timeout(_timeout);
+    final data = await _parseMultipart(streamed, fallback: 'Photo upload failed');
+    final raw = data['image'] ?? data['item'];
+    if (raw is! Map<String, dynamic>) {
+      throw ApiException('Photo upload failed — unexpected response.');
+    }
+    return GalleryItem.fromJson(raw);
   }
 
   Future<GalleryItem> uploadGalleryReel({
     required String streamUuid,
     required String path,
     String? caption,
+    int? eventId,
   }) async {
     final request = http.MultipartRequest(
       'POST',
@@ -246,18 +339,24 @@ class ApiClient {
     if (caption != null && caption.isNotEmpty) {
       request.fields['caption'] = caption;
     }
+    if (eventId != null) {
+      request.fields['event_id'] = '$eventId';
+    }
     request.files.add(await http.MultipartFile.fromPath('video', path));
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
-    final data = await _json(response, fallback: 'Reel upload failed');
-    return GalleryItem.fromJson(data['image'] as Map<String, dynamic>);
+    final streamed = await _client.send(request).timeout(_timeout);
+    final data = await _parseMultipart(streamed, fallback: 'Reel upload failed');
+    final raw = data['image'] ?? data['item'];
+    if (raw is! Map<String, dynamic>) {
+      throw ApiException('Reel upload failed — unexpected response.');
+    }
+    return GalleryItem.fromJson(raw);
   }
 
   Future<void> deleteGalleryItem(String streamUuid, int imageId) async {
-    final response = await _client.delete(
+    final response = await _send(_client.delete(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/gallery/$imageId'),
       headers: _headers(auth: true),
-    );
+    ));
     await _json(response, fallback: 'Could not delete gallery item');
   }
 
@@ -271,27 +370,34 @@ class ApiClient {
     );
     request.headers.addAll(_headers(auth: true));
     request.files.add(await http.MultipartFile.fromPath('image', path));
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
-    final data = await _json(response, fallback: 'Background upload failed');
+    final streamed = await _client.send(request).timeout(_timeout);
+    final data =
+        await _parseMultipart(streamed, fallback: 'Background upload failed');
     return data['background_url'] as String?;
   }
 
-  Future<ScriptureCue?> scriptureShow(String streamUuid) async {
-    final response = await _client.get(
+  Future<({ScriptureCue? cue, String? liveBoard})> scriptureShow(
+    String streamUuid,
+  ) async {
+    final response = await _send(_client.get(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/scripture'),
       headers: _headers(auth: true),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not load scripture');
     final cue = data['scripture'];
-    if (cue is! Map<String, dynamic>) return null;
-    return ScriptureCue.fromJson(cue);
+    return (
+      cue: cue is Map<String, dynamic> ? ScriptureCue.fromJson(cue) : null,
+      liveBoard: data['live_board'] as String?,
+    );
   }
 
-  Future<List<ScriptureSuggestion>> scriptureSuggest(String streamUuid, String q) async {
+  Future<List<ScriptureSuggestion>> scriptureSuggest(
+    String streamUuid,
+    String q,
+  ) async {
     final uri = Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/scripture/suggest')
         .replace(queryParameters: {'q': q});
-    final response = await _client.get(uri, headers: _headers(auth: true));
+    final response = await _send(_client.get(uri, headers: _headers(auth: true)));
     final data = await _json(response, fallback: 'Could not search scripture');
     final items = data['suggestions'] as List<dynamic>? ?? [];
     return items
@@ -300,11 +406,11 @@ class ApiClient {
   }
 
   Future<ScriptureCue> scriptureStore(String streamUuid, String ref) async {
-    final response = await _client.post(
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/scripture'),
       headers: _headers(auth: true, contentType: 'application/json'),
       body: jsonEncode({'ref': ref}),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not show scripture');
     final cue = data['scripture'];
     if (cue is! Map<String, dynamic>) {
@@ -314,27 +420,30 @@ class ApiClient {
   }
 
   Future<void> scriptureClear(String streamUuid) async {
-    final response = await _client.delete(
+    final response = await _send(_client.delete(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/scripture'),
       headers: _headers(auth: true),
-    );
+    ));
     await _json(response, fallback: 'Could not clear scripture');
   }
 
-  Future<({List<DisplaySongItem> songs, SongCue? cue})> songsIndex(
-    String streamUuid,
-  ) async {
-    final response = await _client.get(
+  Future<({List<DisplaySongItem> songs, SongCue? cue, String? liveBoard})>
+      songsIndex(String streamUuid) async {
+    final response = await _send(_client.get(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs'),
       headers: _headers(auth: true),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not load songs');
     final songs = (data['songs'] as List<dynamic>? ?? [])
         .map((e) => DisplaySongItem.fromJson(e as Map<String, dynamic>))
         .toList();
-    final cueRaw = data['cue'];
+    final cueRaw = data['cue'] ?? data['song'];
     final cue = cueRaw is Map<String, dynamic> ? SongCue.fromJson(cueRaw) : null;
-    return (songs: songs, cue: cue);
+    return (
+      songs: songs,
+      cue: cue,
+      liveBoard: data['live_board'] as String?,
+    );
   }
 
   Future<DisplaySongItem> songStore(
@@ -342,11 +451,11 @@ class ApiClient {
     required String title,
     required String body,
   }) async {
-    final response = await _client.post(
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs'),
       headers: _headers(auth: true, contentType: 'application/json'),
       body: jsonEncode({'title': title, 'body': body}),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not save song');
     final song = data['song'];
     if (song is! Map<String, dynamic>) {
@@ -361,11 +470,11 @@ class ApiClient {
     required String title,
     required String body,
   }) async {
-    final response = await _client.put(
+    final response = await _send(_client.put(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/$songId'),
       headers: _headers(auth: true, contentType: 'application/json'),
       body: jsonEncode({'title': title, 'body': body}),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not update song');
     final song = data['song'];
     if (song is! Map<String, dynamic>) {
@@ -375,19 +484,19 @@ class ApiClient {
   }
 
   Future<void> songDelete(String streamUuid, int songId) async {
-    final response = await _client.delete(
+    final response = await _send(_client.delete(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/$songId'),
       headers: _headers(auth: true),
-    );
+    ));
     await _json(response, fallback: 'Could not delete song');
   }
 
   Future<SongCue> songCue(String streamUuid, int songId, {int slideIndex = 0}) async {
-    final response = await _client.post(
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/$songId/cue'),
       headers: _headers(auth: true, contentType: 'application/json'),
       body: jsonEncode({'slide_index': slideIndex}),
-    );
+    ));
     final data = await _json(response, fallback: 'Could not cue song');
     final song = data['song'];
     if (song is! Map<String, dynamic>) {
@@ -397,11 +506,11 @@ class ApiClient {
   }
 
   Future<SongCue> songNext(String streamUuid) async {
-    final response = await _client.post(
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/cue/next'),
       headers: _headers(auth: true, contentType: 'application/json'),
       body: '{}',
-    );
+    ));
     final data = await _json(response, fallback: 'Could not advance slide');
     final song = data['song'];
     if (song is! Map<String, dynamic>) {
@@ -411,11 +520,11 @@ class ApiClient {
   }
 
   Future<SongCue> songPrevious(String streamUuid) async {
-    final response = await _client.post(
+    final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/cue/previous'),
       headers: _headers(auth: true, contentType: 'application/json'),
       body: '{}',
-    );
+    ));
     final data = await _json(response, fallback: 'Could not go to previous slide');
     final song = data['song'];
     if (song is! Map<String, dynamic>) {
@@ -425,10 +534,10 @@ class ApiClient {
   }
 
   Future<void> songClear(String streamUuid) async {
-    final response = await _client.delete(
+    final response = await _send(_client.delete(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/cue'),
       headers: _headers(auth: true),
-    );
+    ));
     await _json(response, fallback: 'Could not clear song');
   }
 }

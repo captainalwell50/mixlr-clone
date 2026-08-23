@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +31,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   final _mixer = MixerBridge();
   CreatorHome? _home;
   StreamSummary? _stream;
+  EventSummary? _event;
   List<LibraryAsset> _library = const [];
   List<GalleryItem> _gallery = const [];
   _StudioTab _tab = _StudioTab.live;
@@ -51,6 +53,14 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   Timer? _tick;
   Duration _elapsed = Duration.zero;
 
+  int? get _openEventId {
+    final event = _event;
+    if (event == null || !event.isOpen) return null;
+    return event.id;
+  }
+
+  bool get _galleryReady => _openEventId != null || _onAir || _paused;
+
   @override
   void initState() {
     super.initState();
@@ -71,17 +81,36 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   }
 
   Future<void> _bootstrap() async {
-    final api = context.read<AuthState>().api;
+    final auth = context.read<AuthState>();
+    final api = auth.api;
     try {
       final home = await api.creatorHome();
-      final stream = home.stream ?? (home.streams.isNotEmpty ? home.streams.first : null);
+      final preferred = auth.preferredStreamUuid;
+      StreamSummary? stream;
+      if (preferred != null) {
+        for (final s in home.streams) {
+          if (s.uuid == preferred) {
+            stream = s;
+            break;
+          }
+        }
+      }
+      stream ??= home.stream ??
+          (home.streams.isNotEmpty ? home.streams.first : null);
+
+      final serverLive = stream?.isLive == true;
       setState(() {
         _home = home;
         _stream = stream;
+        _event = home.openEvent;
         _loading = false;
+        _paused = serverLive;
+        _onAir = false;
         _status = stream == null
             ? 'No stream configured for this account.'
-            : 'Starting mixer engine…';
+            : serverLive
+                ? 'Server shows an open live — press Go live / Resume to reconnect publish.'
+                : 'Starting mixer engine…';
       });
       if (stream == null) return;
 
@@ -109,7 +138,9 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
           if (!mounted) return;
           setState(() {
             _error = null;
-            _status = 'Standby — mixer armed. Queue tracks, then go live.';
+            _status = serverLive
+                ? 'Mixer armed — resume to reconnect publish for the open event.'
+                : 'Standby — mixer armed. Queue tracks, then go live.';
           });
         } catch (e) {
           if (!mounted) return;
@@ -126,7 +157,6 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
           _status = 'Native mixer ready — microphone permission required.';
         });
       } else {
-        // notDetermined: wait for the user to choose a mic / Allow once.
         if (!mounted) return;
         setState(() {
           _status = 'Native mixer ready — choose a microphone to continue.';
@@ -140,7 +170,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       setState(() {
         _loading = false;
         _error = e.message;
-        _status = 'Console ready — mixer engine unavailable.';
+        _status = 'Could not load studio. Check your connection, then sign in again.';
       });
     } catch (e) {
       if (!mounted) return;
@@ -150,6 +180,38 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
         _status = 'Console ready — mixer engine unavailable.';
       });
     }
+  }
+
+  Future<void> _selectStream(String? uuid) async {
+    if (uuid == null || uuid == _stream?.uuid) return;
+    final home = _home;
+    if (home == null) return;
+    StreamSummary? next;
+    for (final s in home.streams) {
+      if (s.uuid == uuid) {
+        next = s;
+        break;
+      }
+    }
+    if (next == null) return;
+    if (_onAir) {
+      setState(() => _error = 'End or pause the current broadcast before switching channels.');
+      return;
+    }
+    final selected = next;
+    await context.read<AuthState>().rememberStreamUuid(selected.uuid);
+    if (!mounted) return;
+    setState(() {
+      _stream = selected;
+      _event = null;
+      _gallery = const [];
+      _library = const [];
+      _paused = selected.isLive;
+      _error = null;
+      _status = 'Switched to ${selected.title}.';
+    });
+    await _refreshLibrary();
+    await _refreshGallery();
   }
 
   Future<void> _enableMic() async {
@@ -191,17 +253,25 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   Future<void> _refreshLibrary() async {
     final stream = _stream;
     if (stream == null) return;
-    final api = context.read<AuthState>().api;
-    final assets = await api.library(stream.uuid);
-    if (mounted) setState(() => _library = assets);
+    try {
+      final api = context.read<AuthState>().api;
+      final assets = await api.library(stream.uuid);
+      if (mounted) setState(() => _library = assets);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
   }
 
   Future<void> _refreshGallery() async {
     final stream = _stream;
     if (stream == null) return;
-    final api = context.read<AuthState>().api;
-    final items = await api.gallery(stream.uuid);
-    if (mounted) setState(() => _gallery = items);
+    try {
+      final api = context.read<AuthState>().api;
+      final items = await api.gallery(stream.uuid, eventId: _openEventId);
+      if (mounted) setState(() => _gallery = items);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
   }
 
   @override
@@ -222,17 +292,40 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   Future<void> _goLive() async {
     final stream = _stream;
     if (stream == null) return;
+    if (!_mixer.isArmed) {
+      setState(() {
+        _error =
+            'Arm a microphone in SOURCE before going live (Scarlett or Built-in).';
+      });
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
-      _status = 'Connecting publish path…';
+      _status = _paused
+          ? 'Resuming event & reconnecting publish…'
+          : 'Starting event & connecting publish…';
     });
     final api = context.read<AuthState>().api;
     try {
-      final publish = await api.publish(stream.uuid);
-      if (publish.whipUrl.isEmpty) throw Exception('No WHIP URL from server.');
-      await _mixer.goLive(publish.whipUrl);
-      await api.goLive(stream.uuid);
+      // Match web Studio: create/resume the service event first, then WHIP.
+      final session = await api.goLive(
+        stream.uuid,
+        eventId: _openEventId,
+      );
+      final whipUrl = session.whipUrl.isNotEmpty
+          ? session.whipUrl
+          : (await api.publish(stream.uuid)).whipUrl;
+      if (whipUrl.isEmpty) {
+        throw Exception('No WHIP URL from server.');
+      }
+      if (session.event != null) {
+        _event = session.event;
+      }
+      if (session.stream != null) {
+        _stream = session.stream;
+      }
+      await _mixer.goLive(whipUrl);
       _liveStartedAt = DateTime.now();
       _elapsed = Duration.zero;
       _tick?.cancel();
@@ -240,17 +333,39 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
         if (_liveStartedAt == null || !mounted) return;
         setState(() => _elapsed = DateTime.now().difference(_liveStartedAt!));
       });
+      if (!mounted) return;
       setState(() {
         _onAir = true;
         _paused = false;
-        _status = 'On air — mic + playlist mix publishing.';
+        _error = null;
+        _status = _micCue || _playlistCue
+            ? 'On air — cue is on; use headphones to avoid feedback.'
+            : 'On air — mic + playlist mix publishing.';
       });
+      await _refreshGallery();
     } on ApiException catch (e) {
       await _mixer.stopPublish();
-      setState(() => _error = e.message);
+      if (!mounted) return;
+      setState(() {
+        _onAir = false;
+        // Keep the open event so Resume / gallery still work (matches web Studio).
+        if (_event != null) _paused = true;
+        _error = e.message;
+        _status = _event != null
+            ? 'Publish failed — event is open. Fix the issue, then Resume.'
+            : _status;
+      });
     } catch (e) {
       await _mixer.stopPublish();
-      setState(() => _error = e.toString());
+      if (!mounted) return;
+      setState(() {
+        _onAir = false;
+        if (_event != null) _paused = true;
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _status = _event != null
+            ? 'Publish failed — event is open. Fix the issue, then Resume.'
+            : _status;
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -261,15 +376,19 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     if (stream == null) return;
     setState(() => _busy = true);
     try {
-      await context.read<AuthState>().api.pauseStream(stream.uuid);
+      final result = await context.read<AuthState>().api.pauseStream(stream.uuid);
       await _mixer.stopPublish();
       _tick?.cancel();
+      if (!mounted) return;
       setState(() {
+        _stream = result.stream;
+        _event = result.event ?? _event?.copyWithStatus('paused');
         _onAir = false;
         _paused = true;
-        _status = 'Paused — event kept. Go live again when ready.';
+        _status = 'Paused — same event stays open. Resume when ready.';
       });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -281,17 +400,22 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     if (stream == null) return;
     setState(() => _busy = true);
     try {
-      await context.read<AuthState>().api.endStream(stream.uuid);
+      final result = await context.read<AuthState>().api.endStream(stream.uuid);
       await _mixer.stopPublish();
       _tick?.cancel();
       _liveStartedAt = null;
+      if (!mounted) return;
       setState(() {
+        _stream = result.stream;
+        _event = null;
         _onAir = false;
         _paused = false;
         _elapsed = Duration.zero;
-        _status = 'Standby — last live ended.';
+        _gallery = const [];
+        _status = 'Standby — last live ended. Next Go live starts a new event.';
       });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -300,7 +424,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
 
   Future<void> _share() async {
     final org = _home?.organization;
-    final url = _stream?.listenUrl ?? org?.publicChannelUrl;
+    final url = _event?.url ?? _stream?.listenUrl ?? org?.publicChannelUrl;
     if (url == null || url.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: url));
     await Share.share(url, subject: 'Listen live on Sound Mix Live');
@@ -311,9 +435,13 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     }
   }
 
+  String? get _listenUrl =>
+      _event?.url ?? _stream?.listenUrl ?? _home?.organization?.publicChannelUrl;
+
   Future<void> _upload() async {
     final stream = _stream;
     if (stream == null) return;
+    final api = context.read<AuthState>().api;
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'],
@@ -321,8 +449,8 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     );
     final path = result?.files.single.path;
     if (path == null) return;
+    if (!mounted) return;
     setState(() => _busy = true);
-    final api = context.read<AuthState>().api;
     try {
       final asset = await api.uploadLibraryAsset(
             streamUuid: stream.uuid,
@@ -331,10 +459,16 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
           );
       await _refreshLibrary();
       await _mixer.queueTrack(asset);
-      setState(() => _status = 'Uploaded & queued “${asset.title}”.');
+      if (!mounted) return;
+      setState(() {
+        _error = null;
+        _status = 'Uploaded & queued “${asset.title}”.';
+      });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -385,21 +519,39 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   Future<void> _uploadPhoto() async {
     final stream = _stream;
     if (stream == null) return;
+    if (!_galleryReady) {
+      setState(() {
+        _error =
+            'Go live (or keep a paused event open) before posting to the service gallery.';
+      });
+      return;
+    }
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       withData: false,
     );
     final path = result?.files.single.path;
     if (path == null) return;
+    if (!mounted) return;
     setState(() => _busy = true);
     final api = context.read<AuthState>().api;
     try {
-      await api.uploadGalleryImage(streamUuid: stream.uuid, path: path);
+      await api.uploadGalleryImage(
+        streamUuid: stream.uuid,
+        path: path,
+        eventId: _openEventId,
+      );
       await _refreshGallery();
-      setState(() => _status = 'Photo posted to the live gallery.');
+      if (!mounted) return;
+      setState(() {
+        _error = null;
+        _status = 'Photo posted to the live gallery.';
+      });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -409,6 +561,13 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   Future<void> _uploadReel() async {
     final stream = _stream;
     if (stream == null) return;
+    if (!_galleryReady) {
+      setState(() {
+        _error =
+            'Go live (or keep a paused event open) before posting a reel.';
+      });
+      return;
+    }
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['mp4', 'mov', 'webm'],
@@ -416,15 +575,26 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     );
     final path = result?.files.single.path;
     if (path == null) return;
+    if (!mounted) return;
     setState(() => _busy = true);
     final api = context.read<AuthState>().api;
     try {
-      await api.uploadGalleryReel(streamUuid: stream.uuid, path: path);
+      await api.uploadGalleryReel(
+        streamUuid: stream.uuid,
+        path: path,
+        eventId: _openEventId,
+      );
       await _refreshGallery();
-      setState(() => _status = 'Reel posted to the live gallery.');
+      if (!mounted) return;
+      setState(() {
+        _error = null;
+        _status = 'Reel posted to the live gallery.';
+      });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -440,14 +610,21 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     );
     final path = result?.files.single.path;
     if (path == null) return;
+    if (!mounted) return;
     setState(() => _busy = true);
     final api = context.read<AuthState>().api;
     try {
       await api.uploadListenBackground(streamUuid: stream.uuid, path: path);
-      setState(() => _status = 'Listen background updated.');
+      if (!mounted) return;
+      setState(() {
+        _error = null;
+        _status = 'Listen background updated.';
+      });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -457,11 +634,38 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   Future<void> _deleteGalleryItem(GalleryItem item) async {
     final stream = _stream;
     if (stream == null) return;
+    final label = item.isVideo ? 'reel' : 'photo';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Remove $label?'),
+        content: Text('Remove this $label from the live gallery?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
     setState(() => _busy = true);
     try {
       await context.read<AuthState>().api.deleteGalleryItem(stream.uuid, item.id);
       await _refreshGallery();
+      if (!mounted) return;
+      setState(() {
+        _error = null;
+        _status = item.isVideo
+            ? 'Reel removed from the live gallery.'
+            : 'Photo removed from the live gallery.';
+      });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -489,7 +693,12 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                 children: [
                   _TopBar(
                     userName: auth.user?.name ?? '',
+                    orgName: org?.name,
+                    streams: _home?.streams ?? const [],
+                    selectedStreamUuid: stream?.uuid,
+                    onSelectStream: _selectStream,
                     onAir: _onAir,
+                    paused: _paused,
                     clock: _clock,
                     tab: _tab,
                     onTab: (t) => setState(() => _tab = t),
@@ -510,7 +719,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                     padding: const EdgeInsets.only(bottom: 8),
                                     child: Text(
                                       _error ?? _status,
-                                      maxLines: 2,
+                                      maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.outfit(
                                         fontSize: 12,
@@ -521,18 +730,39 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                     ),
                                   ),
                                 _BroadcastBar(
-                                  listenUrl: stream?.listenUrl ??
-                                      org?.publicChannelUrl,
+                                  listenUrl: _listenUrl,
                                   onShare: _share,
                                   busy: _busy,
                                   onAir: _onAir,
+                                  paused: _paused,
                                   canBroadcast: _home?.canBroadcast == true &&
                                       stream != null &&
-                                      _mixer.isReady,
+                                      _mixer.isReady &&
+                                      _mixer.isArmed,
                                   onGoLive: _goLive,
                                   onPause: _pause,
                                   onEnd: _end,
                                 ),
+                                if (_home?.organization?.isChurch == true)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton(
+                                        onPressed: () => setState(
+                                          () => _tab = _StudioTab.advance,
+                                        ),
+                                        child: Text(
+                                          'Advance',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: StudioTheme.accentBright,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 const SizedBox(height: 12),
                                 // Console + Library share one height.
                                 Expanded(
@@ -662,7 +892,9 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                           : _AdvancePanel(
                               gallery: _gallery,
                               busy: _busy,
-                              scriptureEnabled: _home?.organization?.isChurch == true,
+                              galleryReady: _galleryReady,
+                              scriptureEnabled:
+                                  _home?.organization?.isChurch == true,
                               streamUuid: _stream?.uuid,
                               api: context.read<AuthState>().api,
                               onRefresh: _refreshGallery,
@@ -683,7 +915,12 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.userName,
+    required this.orgName,
+    required this.streams,
+    required this.selectedStreamUuid,
+    required this.onSelectStream,
     required this.onAir,
+    required this.paused,
     required this.clock,
     required this.tab,
     required this.onTab,
@@ -691,7 +928,12 @@ class _TopBar extends StatelessWidget {
   });
 
   final String userName;
+  final String? orgName;
+  final List<StreamSummary> streams;
+  final String? selectedStreamUuid;
+  final ValueChanged<String?> onSelectStream;
   final bool onAir;
+  final bool paused;
   final String clock;
   final _StudioTab tab;
   final ValueChanged<_StudioTab> onTab;
@@ -720,29 +962,86 @@ class _TopBar extends StatelessWidget {
             active: tab == _StudioTab.advance,
             onTap: () => onTab(_StudioTab.advance),
           ),
+          if (streams.length > 1) ...[
+            const SizedBox(width: 16),
+            SizedBox(
+              width: 200,
+              child: DropdownButtonFormField<String>(
+                value: selectedStreamUuid,
+                isDense: true,
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  filled: true,
+                  fillColor: StudioTheme.panelHi,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: StudioTheme.line),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: StudioTheme.line),
+                  ),
+                ),
+                dropdownColor: StudioTheme.panel,
+                style: GoogleFonts.outfit(
+                  color: StudioTheme.cream,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+                items: streams
+                    .map(
+                      (s) => DropdownMenuItem(
+                        value: s.uuid,
+                        child: Text(
+                          s.title,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: onAir ? null : onSelectStream,
+              ),
+            ),
+          ] else if (orgName != null && orgName!.isNotEmpty) ...[
+            const SizedBox(width: 16),
+            Text(
+              orgName!,
+              style: GoogleFonts.outfit(
+                color: StudioTheme.mute,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const Spacer(),
-          if (onAir)
+          if (onAir || paused)
             Container(
               margin: const EdgeInsets.only(right: 16),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: StudioTheme.liveSoft,
+                color: onAir ? StudioTheme.liveSoft : StudioTheme.panelHi,
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: StudioTheme.live.withOpacity(0.5)),
+                border: Border.all(
+                  color: onAir
+                      ? StudioTheme.live.withOpacity(0.5)
+                      : StudioTheme.line,
+                ),
               ),
               child: Row(
                 children: [
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: const BoxDecoration(
-                      color: StudioTheme.live,
+                    decoration: BoxDecoration(
+                      color: onAir ? StudioTheme.live : StudioTheme.mute,
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'ON AIR',
+                    onAir ? 'ON AIR' : 'PAUSED',
                     style: GoogleFonts.outfit(
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
@@ -750,16 +1049,18 @@ class _TopBar extends StatelessWidget {
                       color: StudioTheme.cream,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    clock,
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      color: StudioTheme.live,
+                  if (onAir) ...[
+                    const SizedBox(width: 10),
+                    Text(
+                      clock,
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: StudioTheme.live,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -1028,6 +1329,7 @@ class _BroadcastBar extends StatelessWidget {
     required this.onShare,
     required this.busy,
     required this.onAir,
+    required this.paused,
     required this.canBroadcast,
     required this.onGoLive,
     required this.onPause,
@@ -1038,6 +1340,7 @@ class _BroadcastBar extends StatelessWidget {
   final VoidCallback onShare;
   final bool busy;
   final bool onAir;
+  final bool paused;
   final bool canBroadcast;
   final VoidCallback onGoLive;
   final VoidCallback onPause;
@@ -1045,6 +1348,11 @@ class _BroadcastBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final goLabel = busy && !onAir
+        ? (paused ? 'Resuming…' : 'Going live…')
+        : onAir
+            ? 'On air'
+            : (paused ? 'Resume' : 'Go live');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1060,11 +1368,7 @@ class _BroadcastBar extends StatelessWidget {
               backgroundColor: onAir ? StudioTheme.live : StudioTheme.accent,
               padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
             ),
-            child: Text(
-              busy && !onAir
-                  ? 'Going live…'
-                  : (onAir ? 'On air' : 'Go live'),
-            ),
+            child: Text(goLabel),
           ),
           const SizedBox(width: 8),
           OutlinedButton(
@@ -1078,7 +1382,7 @@ class _BroadcastBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           OutlinedButton(
-            onPressed: busy ? null : onEnd,
+            onPressed: (busy || (!onAir && !paused)) ? null : onEnd,
             style: OutlinedButton.styleFrom(
               foregroundColor: StudioTheme.live,
               side: BorderSide(color: StudioTheme.live.withOpacity(0.4)),
@@ -1158,6 +1462,7 @@ class _AdvancePanel extends StatelessWidget {
   const _AdvancePanel({
     required this.gallery,
     required this.busy,
+    required this.galleryReady,
     required this.scriptureEnabled,
     required this.streamUuid,
     required this.api,
@@ -1170,6 +1475,7 @@ class _AdvancePanel extends StatelessWidget {
 
   final List<GalleryItem> gallery;
   final bool busy;
+  final bool galleryReady;
   final bool scriptureEnabled;
   final String? streamUuid;
   final ApiClient api;
@@ -1181,24 +1487,94 @@ class _AdvancePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final board = scriptureEnabled && streamUuid != null
+        ? _ChurchLiveBoard(api: api, streamUuid: streamUuid!)
+        : null;
+    final gallerySection = _GallerySection(
+      gallery: gallery,
+      busy: busy,
+      galleryReady: galleryReady,
+      onRefresh: onRefresh,
+      onUploadPhoto: onUploadPhoto,
+      onUploadReel: onUploadReel,
+      onUploadBackground: onUploadBackground,
+      onDelete: onDelete,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 1080 && board != null;
+        if (wide) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 5,
+                child: ListView(
+                  children: [board],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(flex: 6, child: gallerySection),
+            ],
+          );
+        }
+        return ListView(
+          children: [
+            if (board != null) ...[
+              board,
+              const SizedBox(height: 16),
+            ],
+            SizedBox(
+              height: board == null
+                  ? constraints.maxHeight
+                  : math.max(320, constraints.maxHeight * 0.55),
+              child: gallerySection,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _GallerySection extends StatelessWidget {
+  const _GallerySection({
+    required this.gallery,
+    required this.busy,
+    required this.galleryReady,
+    required this.onRefresh,
+    required this.onUploadPhoto,
+    required this.onUploadReel,
+    required this.onUploadBackground,
+    required this.onDelete,
+  });
+
+  final List<GalleryItem> gallery;
+  final bool busy;
+  final bool galleryReady;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onUploadPhoto;
+  final VoidCallback onUploadReel;
+  final VoidCallback onUploadBackground;
+  final Future<void> Function(GalleryItem) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: StudioTheme.panel.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: StudioTheme.accent.withOpacity(0.14)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: StudioTheme.accent.withOpacity(0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (scriptureEnabled && streamUuid != null) ...[
-            _ChurchLiveBoard(api: api, streamUuid: streamUuid!),
-            const SizedBox(height: 16),
-          ],
           Row(
             children: [
               Text(
-                'LIVE GALLERY & REELS',
+                'SERVICE GALLERY',
                 style: GoogleFonts.outfit(
                   color: StudioTheme.mute,
                   fontSize: 11,
@@ -1211,27 +1587,34 @@ class _AdvancePanel extends StatelessWidget {
                 onPressed: busy ? null : () => onRefresh(),
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 color: StudioTheme.mute,
+                tooltip: 'Refresh gallery',
               ),
-              TextButton(onPressed: busy ? null : onUploadPhoto, child: const Text('Photo')),
-              TextButton(onPressed: busy ? null : onUploadReel, child: const Text('Reel')),
+              TextButton(
+                onPressed: (busy || !galleryReady) ? null : onUploadPhoto,
+                child: const Text('Photo'),
+              ),
+              TextButton(
+                onPressed: (busy || !galleryReady) ? null : onUploadReel,
+                child: const Text('Reel'),
+              ),
               TextButton(
                 onPressed: busy ? null : onUploadBackground,
                 child: const Text('Background'),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Same listener gallery as web Studio — photos and short reels appear on the listen page while you are live.',
-            style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 13, height: 1.4),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           Expanded(
             child: gallery.isEmpty
                 ? Center(
                     child: Text(
-                      'No gallery items yet. Upload a photo or reel.',
-                      style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 14),
+                      galleryReady
+                          ? 'No photos or reels yet.'
+                          : 'Go live to post photos and reels.',
+                      style: GoogleFonts.outfit(
+                        color: StudioTheme.mute,
+                        fontSize: 14,
+                      ),
                     ),
                   )
                 : GridView.builder(
@@ -1243,9 +1626,8 @@ class _AdvancePanel extends StatelessWidget {
                     ),
                     itemCount: gallery.length,
                     itemBuilder: (context, i) {
-                      final item = gallery[i];
                       return _GalleryHoverTile(
-                        item: item,
+                        item: gallery[i],
                         busy: busy,
                         onDelete: onDelete,
                       );
@@ -1275,13 +1657,16 @@ class _GalleryHoverTile extends StatefulWidget {
 
 class _GalleryHoverTileState extends State<_GalleryHoverTile> {
   bool _hover = false;
+  bool _focused = false;
+
+  bool get _reveal => _hover || _focused;
 
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
+    return FocusableActionDetector(
+      onShowHoverHighlight: (show) => setState(() => _hover = show),
+      onShowFocusHighlight: (show) => setState(() => _focused = show),
       child: Container(
         decoration: BoxDecoration(
           color: StudioTheme.panelHi,
@@ -1341,19 +1726,26 @@ class _GalleryHoverTileState extends State<_GalleryHoverTile> {
                     right: 6,
                     child: AnimatedOpacity(
                       duration: const Duration(milliseconds: 120),
-                      opacity: _hover ? 1 : 0,
-                      child: IgnorePointer(
-                        ignoring: !_hover || widget.busy,
-                        child: Material(
-                          color: const Color(0xC8080C0A),
-                          shape: const CircleBorder(),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: widget.busy ? null : () => widget.onDelete(item),
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(Icons.close_rounded, size: 16, color: Color(0xFFF3D4D6)),
-                            ),
+                      opacity: _reveal ? 1 : 0,
+                      child: Material(
+                        color: const Color(0xC8080C0A),
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          tooltip: item.isVideo
+                              ? 'Remove reel from gallery'
+                              : 'Remove photo from gallery',
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 28,
+                            height: 28,
+                          ),
+                          padding: EdgeInsets.zero,
+                          onPressed:
+                              widget.busy ? null : () => widget.onDelete(item),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            size: 16,
+                            color: Color(0xFFF3D4D6),
                           ),
                         ),
                       ),

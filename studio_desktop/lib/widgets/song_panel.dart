@@ -105,9 +105,10 @@ class _SongPanelState extends State<SongPanel> {
     try {
       final result = await widget.api.songsIndex(widget.streamUuid);
       if (!mounted) return;
+      final mode = liveBoardModeFrom(result.liveBoard);
       setState(() {
         _songs = result.songs;
-        _cue = result.cue;
+        _cue = mode == LiveBoardMode.scripture ? null : result.cue;
         if (_cue != null) {
           _status =
               'Showing “${_cue!.title}” · slide ${_cue!.slideIndex + 1}/${_cue!.slideCount}';
@@ -115,6 +116,7 @@ class _SongPanelState extends State<SongPanel> {
           _status = 'No song on listen';
         }
       });
+      if (mode != null) widget.liveBoard?.apply(mode);
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
     } catch (_) {
@@ -176,7 +178,7 @@ class _SongPanelState extends State<SongPanel> {
     }
   }
 
-  Future<void> _cue(DisplaySongItem song, {int slideIndex = 0}) async {
+  Future<void> _cueSong(DisplaySongItem song, {int slideIndex = 0}) async {
     final local = _localCueFrom(song, slideIndex);
     setState(() {
       _busy = true;
@@ -415,7 +417,7 @@ class _SongPanelState extends State<SongPanel> {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           FilledButton(
-                            onPressed: _busy ? null : () => _cue(song),
+                            onPressed: _busy ? null : () => _cueSong(song),
                             style: FilledButton.styleFrom(
                               backgroundColor: StudioTheme.accent,
                               foregroundColor: StudioTheme.ink,
@@ -425,7 +427,7 @@ class _SongPanelState extends State<SongPanel> {
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               textStyle: GoogleFonts.outfit(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w650,
+                                fontWeight: FontWeight.w600,
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(6),
@@ -471,7 +473,7 @@ class _SongPanelState extends State<SongPanel> {
                           slides: _slidesFor(song),
                           songId: song.id,
                           interactive: !_busy,
-                          onSelect: (index) => _cue(song, slideIndex: index),
+                          onSelect: (index) => _cueSong(song, slideIndex: index),
                         ),
                       ],
                     ],

@@ -44,6 +44,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final sessionError = context.watch<AuthState>().error;
+    final shownError = _error ?? sessionError;
     return Scaffold(
       body: Stack(
         children: [
@@ -170,10 +172,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       decoration: const InputDecoration(labelText: 'Password'),
                       onSubmitted: (_) => _submit(),
                     ),
-                    if (_error != null) ...[
+                    if (shownError != null) ...[
                       const SizedBox(height: 14),
                       Text(
-                        _error!,
+                        shownError,
                         style: GoogleFonts.outfit(color: StudioTheme.live, fontSize: 13),
                       ),
                     ],

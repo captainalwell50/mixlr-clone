@@ -20,7 +20,7 @@ class AppUser {
         .map((e) => OrgSummary.fromJson(e as Map<String, dynamic>))
         .toList();
     return AppUser(
-      id: json['id'] as int,
+      id: _asInt(json['id']) ?? 0,
       name: json['name'] as String? ?? '',
       email: json['email'] as String? ?? '',
       onboarded: json['onboarded'] as bool? ?? false,
@@ -59,7 +59,7 @@ class OrgSummary {
 
   factory OrgSummary.fromJson(Map<String, dynamic> json) {
     return OrgSummary(
-      id: json['id'] as int,
+      id: _asInt(json['id']) ?? 0,
       name: json['name'] as String? ?? '',
       slug: json['slug'] as String? ?? '',
       themeColor: json['theme_color'] as String?,
@@ -67,6 +67,45 @@ class OrgSummary {
       channelUrl: json['channel_url'] as String?,
       canBroadcast: json['can_broadcast'] as bool? ?? false,
       creatorType: json['creator_type'] as String?,
+    );
+  }
+}
+
+class EventSummary {
+  EventSummary({
+    required this.id,
+    required this.status,
+    this.uuid,
+    this.title,
+    this.url,
+  });
+
+  final int id;
+  final String status;
+  final String? uuid;
+  final String? title;
+  final String? url;
+
+  bool get isOpen =>
+      status == 'live' || status == 'paused' || status == 'scheduled';
+
+  factory EventSummary.fromJson(Map<String, dynamic> json) {
+    return EventSummary(
+      id: _asInt(json['id']) ?? 0,
+      uuid: json['uuid'] as String?,
+      title: json['title'] as String?,
+      status: json['status'] as String? ?? 'scheduled',
+      url: json['url'] as String?,
+    );
+  }
+
+  EventSummary copyWithStatus(String status) {
+    return EventSummary(
+      id: id,
+      uuid: uuid,
+      title: title,
+      status: status,
+      url: url,
     );
   }
 }
@@ -189,6 +228,18 @@ class StreamSummary {
       listenUrl: json['listen_url'] as String?,
     );
   }
+
+  StreamSummary copyWith({String? status, String? listenUrl}) {
+    return StreamSummary(
+      uuid: uuid,
+      title: title,
+      status: status ?? this.status,
+      description: description,
+      isPublic: isPublic,
+      chatEnabled: chatEnabled,
+      listenUrl: listenUrl ?? this.listenUrl,
+    );
+  }
 }
 
 class CreatorHome {
@@ -198,6 +249,7 @@ class CreatorHome {
     this.organization,
     this.stream,
     this.streams = const [],
+    this.openEvent,
   });
 
   final bool onboarded;
@@ -205,10 +257,12 @@ class CreatorHome {
   final OrgSummary? organization;
   final StreamSummary? stream;
   final List<StreamSummary> streams;
+  final EventSummary? openEvent;
 
   factory CreatorHome.fromJson(Map<String, dynamic> json) {
     final orgJson = json['organization'] as Map<String, dynamic>?;
     final streamJson = json['stream'] as Map<String, dynamic>?;
+    final eventJson = json['open_event'] as Map<String, dynamic>?;
     final streams = (json['streams'] as List<dynamic>? ?? [])
         .map((e) => StreamSummary.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -218,6 +272,7 @@ class CreatorHome {
       organization: orgJson == null ? null : OrgSummary.fromJson(orgJson),
       stream: streamJson == null ? null : StreamSummary.fromJson(streamJson),
       streams: streams,
+      openEvent: eventJson == null ? null : EventSummary.fromJson(eventJson),
     );
   }
 }
@@ -228,20 +283,26 @@ class PublishInfo {
     this.hlsUrl,
     this.whepUrl,
     this.stream,
+    this.event,
   });
 
   final String whipUrl;
   final String? hlsUrl;
   final String? whepUrl;
   final StreamSummary? stream;
+  final EventSummary? event;
 
   factory PublishInfo.fromJson(Map<String, dynamic> json) {
     final streamJson = json['stream'] as Map<String, dynamic>?;
+    final eventJson = json['event'] as Map<String, dynamic>?;
     return PublishInfo(
-      whipUrl: json['whip_url'] as String,
+      whipUrl: json['whip_url'] as String? ?? '',
       hlsUrl: json['hls_url'] as String?,
       whepUrl: json['whep_url'] as String?,
-      stream: streamJson == null ? null : StreamSummary.fromJson(streamJson),
+      stream: streamJson == null
+          ? null
+          : StreamSummary.fromJson(streamJson),
+      event: eventJson == null ? null : EventSummary.fromJson(eventJson),
     );
   }
 }
@@ -267,12 +328,12 @@ class LibraryAsset {
 
   factory LibraryAsset.fromJson(Map<String, dynamic> json) {
     return LibraryAsset(
-      id: json['id'] as int,
+      id: _asInt(json['id']) ?? 0,
       title: json['title'] as String? ?? 'Untitled',
       url: json['url'] as String? ?? '',
       originalFilename: json['original_filename'] as String?,
       mimeType: json['mime_type'] as String?,
-      sizeBytes: json['size_bytes'] as int?,
+      sizeBytes: _asInt(json['size_bytes']),
       durationSeconds: (json['duration_seconds'] as num?)?.round(),
     );
   }
@@ -301,7 +362,7 @@ class MixerTrack {
     return MixerTrack(
       id: json['id'] as String,
       title: json['title'] as String? ?? 'Audio',
-      assetId: json['assetId'] as int?,
+      assetId: _asInt(json['assetId']),
       ready: json['ready'] as bool? ?? false,
       playing: json['playing'] as bool? ?? false,
       currentTime: (json['currentTime'] as num?)?.toDouble() ?? 0,
@@ -345,7 +406,7 @@ class GalleryItem {
 
   factory GalleryItem.fromJson(Map<String, dynamic> json) {
     return GalleryItem(
-      id: json['id'] as int,
+      id: _asInt(json['id']) ?? 0,
       url: json['url'] as String? ?? '',
       type: json['type'] as String? ?? 'image',
       caption: json['caption'] as String?,
@@ -353,4 +414,11 @@ class GalleryItem {
       durationSeconds: (json['duration_seconds'] as num?)?.round(),
     );
   }
+}
+
+int? _asInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
 }
