@@ -1440,6 +1440,7 @@ class _ChurchLiveBoardState extends State<_ChurchLiveBoard> {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ScripturePanel(
@@ -1510,27 +1511,25 @@ class _AdvancePanel extends StatelessWidget {
             children: [
               Expanded(
                 flex: 5,
-                child: ListView(
-                  children: [board],
-                ),
+                child: SingleChildScrollView(child: board),
               ),
               const SizedBox(width: 16),
               Expanded(flex: 6, child: gallerySection),
             ],
           );
         }
-        return ListView(
+        if (board == null) {
+          return gallerySection;
+        }
+        final galleryHeight = constraints.maxHeight.isFinite
+            ? math.max(280.0, constraints.maxHeight * 0.45)
+            : 320.0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (board != null) ...[
-              board,
-              const SizedBox(height: 16),
-            ],
-            SizedBox(
-              height: board == null
-                  ? constraints.maxHeight
-                  : math.max(320, constraints.maxHeight * 0.55),
-              child: gallerySection,
-            ),
+            Expanded(child: SingleChildScrollView(child: board)),
+            const SizedBox(height: 16),
+            SizedBox(height: galleryHeight, child: gallerySection),
           ],
         );
       },
@@ -1561,81 +1560,89 @@ class _GallerySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: StudioTheme.panel.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: StudioTheme.accent.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Text(
-                'SERVICE GALLERY',
-                style: GoogleFonts.outfit(
-                  color: StudioTheme.mute,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bounded = constraints.hasBoundedHeight;
+        final grid = gallery.isEmpty
+            ? Center(
+                child: Text(
+                  galleryReady
+                      ? 'No photos or reels yet.'
+                      : 'Go live to post photos and reels.',
+                  style: GoogleFonts.outfit(
+                    color: StudioTheme.mute,
+                    fontSize: 14,
+                  ),
                 ),
+              )
+            : GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.85,
+                ),
+                itemCount: gallery.length,
+                itemBuilder: (context, i) {
+                  return _GalleryHoverTile(
+                    item: gallery[i],
+                    busy: busy,
+                    onDelete: onDelete,
+                  );
+                },
+              );
+        return Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: StudioTheme.panel.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: StudioTheme.accent.withOpacity(0.2)),
+          ),
+          child: Column(
+            mainAxisSize: bounded ? MainAxisSize.max : MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'SERVICE GALLERY',
+                    style: GoogleFonts.outfit(
+                      color: StudioTheme.mute,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: busy ? null : () => onRefresh(),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    color: StudioTheme.mute,
+                    tooltip: 'Refresh gallery',
+                  ),
+                  TextButton(
+                    onPressed: (busy || !galleryReady) ? null : onUploadPhoto,
+                    child: const Text('Photo'),
+                  ),
+                  TextButton(
+                    onPressed: (busy || !galleryReady) ? null : onUploadReel,
+                    child: const Text('Reel'),
+                  ),
+                  TextButton(
+                    onPressed: busy ? null : onUploadBackground,
+                    child: const Text('Background'),
+                  ),
+                ],
               ),
-              const Spacer(),
-              IconButton(
-                onPressed: busy ? null : () => onRefresh(),
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                color: StudioTheme.mute,
-                tooltip: 'Refresh gallery',
-              ),
-              TextButton(
-                onPressed: (busy || !galleryReady) ? null : onUploadPhoto,
-                child: const Text('Photo'),
-              ),
-              TextButton(
-                onPressed: (busy || !galleryReady) ? null : onUploadReel,
-                child: const Text('Reel'),
-              ),
-              TextButton(
-                onPressed: busy ? null : onUploadBackground,
-                child: const Text('Background'),
-              ),
+              const SizedBox(height: 10),
+              if (bounded)
+                Expanded(child: grid)
+              else
+                SizedBox(height: 280, child: grid),
             ],
           ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: gallery.isEmpty
-                ? Center(
-                    child: Text(
-                      galleryReady
-                          ? 'No photos or reels yet.'
-                          : 'Go live to post photos and reels.',
-                      style: GoogleFonts.outfit(
-                        color: StudioTheme.mute,
-                        fontSize: 14,
-                      ),
-                    ),
-                  )
-                : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.85,
-                    ),
-                    itemCount: gallery.length,
-                    itemBuilder: (context, i) {
-                      return _GalleryHoverTile(
-                        item: gallery[i],
-                        busy: busy,
-                        onDelete: onDelete,
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

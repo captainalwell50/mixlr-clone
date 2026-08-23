@@ -154,10 +154,13 @@ class DisplaySongItem {
   final int slideCount;
 
   factory DisplaySongItem.fromJson(Map<String, dynamic> json) {
-    final slides = (json['slides'] as List<dynamic>? ?? [])
-        .map((e) => e.toString())
-        .where((e) => e.trim().isNotEmpty)
-        .toList();
+    final rawSlides = json['slides'];
+    final slides = rawSlides is List
+        ? rawSlides
+            .map((e) => e.toString())
+            .where((e) => e.trim().isNotEmpty)
+            .toList()
+        : <String>[];
     return DisplaySongItem(
       id: _asInt(json['id']) ?? 0,
       title: json['title'] as String? ?? '',

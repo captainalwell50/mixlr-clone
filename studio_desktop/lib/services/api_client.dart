@@ -387,7 +387,7 @@ class ApiClient {
     final cue = data['scripture'];
     return (
       cue: cue is Map<String, dynamic> ? ScriptureCue.fromJson(cue) : null,
-      liveBoard: data['live_board'] as String?,
+      liveBoard: data['live_board'] is String ? data['live_board'] as String : null,
     );
   }
 
@@ -435,14 +435,15 @@ class ApiClient {
     ));
     final data = await _json(response, fallback: 'Could not load songs');
     final songs = (data['songs'] as List<dynamic>? ?? [])
-        .map((e) => DisplaySongItem.fromJson(e as Map<String, dynamic>))
+        .whereType<Map>()
+        .map((e) => DisplaySongItem.fromJson(Map<String, dynamic>.from(e)))
         .toList();
     final cueRaw = data['cue'] ?? data['song'];
     final cue = cueRaw is Map<String, dynamic> ? SongCue.fromJson(cueRaw) : null;
     return (
       songs: songs,
       cue: cue,
-      liveBoard: data['live_board'] as String?,
+      liveBoard: data['live_board'] is String ? data['live_board'] as String : null,
     );
   }
 

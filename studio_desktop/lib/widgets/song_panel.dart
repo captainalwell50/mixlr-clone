@@ -537,6 +537,7 @@ class _SongPanelState extends State<SongPanel> {
       constraints: const BoxConstraints(maxHeight: 220),
       child: ListView.separated(
         shrinkWrap: true,
+        primary: false,
         padding: EdgeInsets.zero,
         itemCount: slides.length,
         separatorBuilder: (_, __) => const SizedBox(height: 4),

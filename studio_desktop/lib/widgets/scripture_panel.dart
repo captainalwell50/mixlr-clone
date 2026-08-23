@@ -61,7 +61,9 @@ class _ScripturePanelState extends State<ScripturePanel> {
     super.initState();
     widget.liveBoard?.addListener(_onLiveBoard);
     _hydrate();
-    _initSpeech();
+    // Do not touch Speech APIs until the operator taps Listen. Opening
+    // Advanced used to call initialize() immediately, which can kill a
+    // sandboxed macOS build that lacks the speech-recognition entitlement.
   }
 
   void _onLiveBoard() {
