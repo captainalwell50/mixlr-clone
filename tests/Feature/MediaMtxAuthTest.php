@@ -35,10 +35,11 @@ class MediaMtxAuthTest extends TestCase
         config(['streaming.mediamtx.publish_secret' => null]);
         $stream = $this->makeStream();
 
+        // Empty credentials → 401 so RTSP clients retry with a password.
         $this->postJson('/api/mediamtx/auth', [
             'action' => 'publish',
             'path' => $stream->mediaPath(),
-        ])->assertForbidden();
+        ])->assertUnauthorized();
 
         $this->postJson('/api/mediamtx/auth', [
             'action' => 'publish',
@@ -63,6 +64,37 @@ class MediaMtxAuthTest extends TestCase
             'path' => $stream->mediaPath(),
             'password' => 'church-secret',
         ])->assertOk();
+    }
+
+    public function test_allows_read_and_loopback_publish_for_aac_sidecar(): void
+    {
+        config(['streaming.mediamtx.publish_secret' => 'church-secret']);
+        $stream = $this->makeStream();
+        $aacPath = $stream->mediaPath().'/aac';
+
+        $this->postJson('/api/mediamtx/auth', [
+            'action' => 'read',
+            'path' => $aacPath,
+        ])->assertOk();
+
+        $this->postJson('/api/mediamtx/auth', [
+            'action' => 'publish',
+            'path' => $aacPath,
+            'ip' => '127.0.0.1',
+        ])->assertOk();
+
+        $this->postJson('/api/mediamtx/auth', [
+            'action' => 'publish',
+            'path' => $aacPath,
+            'ip' => '203.0.113.10',
+            'password' => 'church-secret',
+        ])->assertOk();
+
+        $this->postJson('/api/mediamtx/auth', [
+            'action' => 'publish',
+            'path' => $aacPath,
+            'ip' => '203.0.113.10',
+        ])->assertUnauthorized();
     }
 
     private function makeStream(): Stream

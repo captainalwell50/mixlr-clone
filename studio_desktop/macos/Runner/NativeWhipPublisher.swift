@@ -207,6 +207,27 @@ final class NativeWhipPublisher: NSObject {
     _ = adm.startRecording()
   }
 
+  /// Release WebRTC's mic briefly so AVAudioEngine can rebind CoreAudio without contention.
+  func pauseCaptureForDeviceSwap() {
+    guard state == .connected || state == .connecting, let factory else { return }
+    mixInjector.beginHold()
+    let adm = factory.audioDeviceModule
+    _ = adm.stopRecording()
+  }
+
+  /// After Studio switches hardware, point ADM at the new mic and resume capture.
+  func rebindAdmAfterDeviceSwap() {
+    guard state == .connected || state == .connecting, let factory else {
+      mixInjector.endHold()
+      return
+    }
+    bindAdmInput(factory: factory)
+    // Keep hold until the native ring is feeding again (engine clears hot-swap flag).
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+      self?.mixInjector.endHold()
+    }
+  }
+
   func stop() {
     if let resourceURL {
       var req = URLRequest(url: resourceURL)
@@ -423,12 +444,53 @@ extension NativeWhipPublisher: RTCPeerConnectionDelegate {
   func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
 }
 
+/// Holds the last good interleaved PCM so mic hot-swap while live does not publish zeros.
+final class PublishContinuityHold {
+  private var samples: [Float] = []
+  private var frames = 0
+  private var channels = 0
+  private(set) var forced = false
+
+  func beginHold() { forced = true }
+  func endHold() { forced = false }
+
+  func store(interleaved: UnsafePointer<Float>, frames: Int, channels: Int) {
+    guard frames > 0, channels > 0 else { return }
+    let n = frames * channels
+    samples = Array(UnsafeBufferPointer(start: interleaved, count: n))
+    self.frames = frames
+    self.channels = channels
+  }
+
+  /// Replay / stretch last good audio into dest. Returns false if nothing stored.
+  @discardableResult
+  func fill(frames: Int, channels: Int, into dest: UnsafeMutablePointer<Float>) -> Bool {
+    guard self.frames > 0, self.channels > 0, !samples.isEmpty else { return false }
+    let srcCh = self.channels
+    let srcFrames = self.frames
+    for f in 0..<frames {
+      let srcF = min(f, srcFrames - 1)
+      for c in 0..<channels {
+        let srcC = min(c, srcCh - 1)
+        dest[f * channels + c] = samples[srcF * srcCh + srcC]
+      }
+    }
+    return true
+  }
+
+  var hasSamples: Bool { frames > 0 && !samples.isEmpty }
+}
+
 /// Overwrites WebRTC mic buffers with the native AVAudioEngine master mix.
 final class MixCaptureInjector: NSObject, RTCAudioCustomProcessingDelegate {
   weak var engine: NativeAudioEngine?
   private var processCount = 0
   private var processSampleRate: Double = 48_000
   private var processChannels = 1
+  let continuity = PublishContinuityHold()
+
+  func beginHold() { continuity.beginHold() }
+  func endHold() { continuity.endHold() }
 
   func audioProcessingInitialize(sampleRate sampleRateHz: Int, channels: Int) {
     processCount = 0
@@ -446,9 +508,9 @@ final class MixCaptureInjector: NSObject, RTCAudioCustomProcessingDelegate {
     let chans = Int(audioBuffer.channels)
     guard frames > 0, chans > 0 else { return }
 
-    // Prefer the native mix when available; otherwise keep ADM mic PCM.
+    // Prefer the native 48 kHz master mix. ADM alone is often silent when
+    // AVAudioEngine holds exclusive access to Scarlett / Focusrite.
     var didInject = false
-    // Inject whenever we have any mix — waiting for frames/4 left phone-quality ADM on air.
     if engine.availableMixFrames() >= 1 {
       let interleaved = UnsafeMutablePointer<Float>.allocate(capacity: frames * max(chans, 2))
       defer { interleaved.deallocate() }
@@ -464,15 +526,36 @@ final class MixCaptureInjector: NSObject, RTCAudioCustomProcessingDelegate {
           for f in 0..<filled {
             dest[f] = interleaved[f * chans + c]
           }
-          // Soft-zero underrun tail — hold-last-sample sounded robotic.
+          // Hold last sample on short underruns — zeroing made Listen sound empty
+          // while Studio meters still moved.
           if filled < frames {
+            let hold = dest[filled - 1]
             for f in filled..<frames {
-              dest[f] = 0
+              dest[f] = hold
             }
           }
         }
+        continuity.store(interleaved: interleaved, frames: filled, channels: chans)
         didInject = true
         processCount += 1
+      }
+    }
+
+    // During mic hot-swap the ring briefly drains and ADM is often silent / wrong device.
+    // Replay last good master PCM instead of publishing zeros until the graph reattaches.
+    let needsContinuity =
+      !didInject && (continuity.forced || engine.inputHotSwapActive) && continuity.hasSamples
+    if needsContinuity {
+      let interleaved = UnsafeMutablePointer<Float>.allocate(capacity: frames * chans)
+      defer { interleaved.deallocate() }
+      if continuity.fill(frames: frames, channels: chans, into: interleaved) {
+        for c in 0..<chans {
+          let dest = audioBuffer.rawBuffer(forChannel: c)
+          for f in 0..<frames {
+            dest[f] = interleaved[f * chans + c]
+          }
+        }
+        didInject = true
       }
     }
 

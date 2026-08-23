@@ -49,12 +49,12 @@ class MediaMtxWebhookController extends Controller
             'path' => ['required', 'string'],
         ]);
 
-        $prefix = 'live/';
-        if (! str_starts_with($validated['path'], $prefix)) {
+        // Ignore AAC sidecar ready/not_ready — presence tracks the primary publisher only.
+        $uuid = $this->primaryLiveUuid($validated['path']);
+        if ($uuid === null) {
             return response()->noContent();
         }
 
-        $uuid = substr($validated['path'], strlen($prefix));
         $stream = Stream::query()->where('uuid', $uuid)->first();
         if ($stream === null) {
             return response()->noContent();
@@ -151,6 +151,19 @@ class MediaMtxWebhookController extends Controller
         }
     }
 
+    private function primaryLiveUuid(string $path): ?string
+    {
+        if (! preg_match(
+            '/^live\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i',
+            $path,
+            $matches
+        )) {
+            return null;
+        }
+
+        return strtolower($matches[1]);
+    }
+
     private function lastReadyCacheKey(string $uuid): string
     {
         return 'mediamtx:last_ready:'.$uuid;
@@ -170,12 +183,11 @@ class MediaMtxWebhookController extends Controller
             'size_bytes' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $prefix = 'live/';
-        if (! str_starts_with($validated['path'], $prefix)) {
+        $uuid = $this->primaryLiveUuid($validated['path']);
+        if ($uuid === null) {
             return response()->noContent();
         }
 
-        $uuid = substr($validated['path'], strlen($prefix));
         $stream = Stream::query()->where('uuid', $uuid)->first();
         if ($stream === null) {
             return response()->noContent();

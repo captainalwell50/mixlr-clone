@@ -25,7 +25,19 @@ final class NativeAudioEngine {
   private let micMixer = AVAudioMixerNode()
   private let playlistMixer = AVAudioMixerNode()
   private let masterMixer = AVAudioMixerNode()
+  /// Headphones / cue bus (PFL). Fed by per-channel cue sends — not the program mix.
   private let cueMixer = AVAudioMixerNode()
+  /// Mic strip → program (mute × fader). Cue send branches before this so muted mics are still cueable.
+  private let micProgramSend = AVAudioMixerNode()
+  /// Playlist strip → program (mute × fader).
+  private let playlistProgramSend = AVAudioMixerNode()
+  /// Mic → cue bus gain (1 when Mic CUE on, else 0). Pre-fader / pre-mute.
+  private let micCueSend = AVAudioMixerNode()
+  /// Playlist → cue bus gain (1 when Playlist CUE on, else 0). Pre-fader / pre-mute.
+  private let playlistCueSend = AVAudioMixerNode()
+  /// Master → headphones pad. Near-silent pull when cue is off; muted when cueing
+  /// so HP hears only the cue bus (WHIP still taps master upstream at full level).
+  private let programMonitor = AVAudioMixerNode()
 
   private var playerNodes: [String: AVAudioPlayerNode] = [:]
   private var playerFiles: [String: AVAudioFile] = [:]
@@ -57,22 +69,30 @@ final class NativeAudioEngine {
   private var sessionReady = false
   private var nodesAttached = false
   private var micWired = false
-  /// Last time the master tap fed the WHIP ring (fallback uses mic tap).
-  private var lastMasterRingWrite = Date.distantPast
-  /// Ring PCM is a full wet master mix (all faders baked) vs dry mic.
+  /// Ring PCM is a full wet master mix (mic+playlist faders baked; master applied at inject).
   private var ringHasMasterGain = false
   /// Mute × mic × master — read from the WebRTC audio callback.
   private var cachedPublishGain: Float = 1
-  private var mixSampleRate: Double = 48_000
+  /// Hardware / AVAudioEngine rate (Scarlett often 44.1 / 48 / 96 / 192).
+  private var engineSampleRate: Double = 48_000
+  /// WHIP ring is always stored at 48 kHz so WebRTC 10 ms pulls never underrun
+  /// when the interface runs off-rate (symptom: hot local meters, silent Listen).
+  private let publishSampleRate: Double = 48_000
   /// System default input before Studio last changed it — restored on tearDown so
   /// opening Desktop does not permanently steal the mic from another Studio on this Mac.
   private var previousSystemDefaultInput: AudioDeviceID?
+  /// True while mic hardware is being swapped — WHIP injector holds last PCM instead of
+  /// falling through to a silent ADM buffer (permanent −inf on Listen).
+  private(set) var inputHotSwapActive = false
+  private var hotSwapEndWorkItem: DispatchWorkItem?
 
   var onMeters: ((Float, Float, Float) -> Void)?
   var onTracks: (([TrackState]) -> Void)?
   var onDevices: (([InputDevice], String?) -> Void)?
   var onOutputs: (([InputDevice], String?) -> Void)?
   var onStatus: ((String) -> Void)?
+  /// Fired after a successful input (re)bind so WHIP can re-point ADM at the new mic.
+  var onInputDeviceChanged: (() -> Void)?
 
   /// Label for the selected mic — used to bind WebRTC ADM on go-live.
   var selectedInputLabel: String? {
@@ -105,6 +125,7 @@ final class NativeAudioEngine {
   func tearDown() {
     meterTimer?.invalidate()
     meterTimer = nil
+    endInputHotSwap()
     stopPublishSide()
     for id in Array(playerNodes.keys) {
       removeTrack(id)
@@ -238,18 +259,27 @@ final class NativeAudioEngine {
     if deviceId == "none" {
       disarmInput()
       onStatus?("No Input")
+      onInputDeviceChanged?()
       return
     }
 
     do {
-      try rebuildAndStart(deviceId: deviceId)
+      // While already armed (especially ON AIR), prefer a surgical hot-swap so the
+      // master→WHIP ring is reattached instead of orphaned by a full graph teardown.
+      if micWired {
+        try hotSwapInputDevice(deviceId: deviceId)
+      } else {
+        try rebuildAndStart(deviceId: deviceId)
+      }
       armed = true
       let devices = listInputDevices()
       let label = devices.first(where: { $0.deviceId == deviceId })?.label ?? deviceId
       onDevices?(devices, selectedDeviceId)
       onOutputs?(listOutputDevices(), selectedOutputDeviceId)
       onStatus?("Input: \(label)")
+      onInputDeviceChanged?()
     } catch {
+      endInputHotSwap()
       // Keep the user's choice even if the graph briefly fails — retry still uses it.
       onDevices?(listInputDevices(), selectedDeviceId)
       throw error
@@ -477,14 +507,28 @@ final class NativeAudioEngine {
     if let mic { micCue = mic }
     if let playlist { playlistCue = playlist }
     applyGains()
+    if micCue || playlistCue {
+      if !micWired {
+        onStatus?("Cue armed — enable microphone to hear headphones")
+      } else {
+        let label = listOutputDevices()
+          .first(where: { $0.deviceId == (selectedOutputDeviceId ?? "default") })?
+          .label ?? "headphones"
+        onStatus?("Cue → \(label)")
+      }
+    }
   }
 
-  func clearMixRing() {
+  func clearMixRing(resetWetFlag: Bool = true) {
     bufferLock.lock()
     ringRead = 0
     ringWrite = 0
     ringCount = 0
-    ringHasMasterGain = false
+    // During live input hot-swap keep wetMaster so continuity PCM still gets
+    // master fader (not mic-mute×gain=0) until the new tap refills the ring.
+    if resetWetFlag {
+      ringHasMasterGain = false
+    }
     bufferLock.unlock()
   }
 
@@ -500,10 +544,36 @@ final class NativeAudioEngine {
     let localURL = try resolveAudioURL(url, trackId: id)
     let file = try AVAudioFile(forReading: localURL)
     let player = AVAudioPlayerNode()
-    engine.attach(player)
+    var attachErr: NSError?
+    let attached = SMCatchException(&attachErr) { [self] in
+      self.engine.attach(player)
+    }
+    guard attached else {
+      throw attachErr ?? NSError(
+        domain: "NativeAudio",
+        code: 18,
+        userInfo: [NSLocalizedDescriptionKey: "Could not attach playlist player."]
+      )
+    }
     // Only wire into playlist bus once the mix graph exists (after arm).
+    // Never connect while the engine is running — stop → connect → start.
     if micWired {
-      engine.connect(player, to: playlistMixer, format: file.processingFormat)
+      let wasRunning = engine.isRunning
+      if wasRunning { engine.stop() }
+      var connectErr: NSError?
+      let connected = SMCatchException(&connectErr) { [self] in
+        self.engine.connect(player, to: self.playlistMixer, format: file.processingFormat)
+      }
+      if wasRunning {
+        try engine.start()
+      }
+      if !connected {
+        throw connectErr ?? NSError(
+          domain: "NativeAudio",
+          code: 19,
+          userInfo: [NSLocalizedDescriptionKey: "Could not wire playlist into mixer."]
+        )
+      }
     }
     playerNodes[id] = player
     playerFiles[id] = file
@@ -610,7 +680,7 @@ final class NativeAudioEngine {
     return gain
   }
 
-  var currentMixSampleRate: Double { mixSampleRate }
+  var currentMixSampleRate: Double { publishSampleRate }
 
   /// Pull mix audio for WebRTC. Ring is stereo interleaved; downmixes to `channels`.
   /// Returns frames actually filled. Does **not** zero the destination on underrun
@@ -622,8 +692,7 @@ final class NativeAudioEngine {
     return readMixInterleavedUnlocked(frames: frames, channels: channels, into: dest)
   }
 
-  /// Like `readMixInterleaved`, but linear-resamples from the AVAudioEngine rate to
-  /// WebRTC's process rate (often 48 kHz) so 44.1 kHz devices don't pitch-shift.
+  /// Pull from the 48 kHz ring, resampling only if WebRTC's process rate differs.
   @discardableResult
   func readMixResampled(
     frames: Int,
@@ -634,11 +703,11 @@ final class NativeAudioEngine {
     bufferLock.lock()
     defer { bufferLock.unlock() }
 
-    let srcRate = mixSampleRate > 0 ? mixSampleRate : targetSampleRate
+    let srcRate = publishSampleRate
     let outCh = max(channels, 1)
     guard frames > 0, targetSampleRate > 0 else { return 0 }
 
-    // Same rate — fast path.
+    // Same rate — fast path (normal: both 48 kHz).
     if abs(srcRate - targetSampleRate) < 1.0 {
       return readMixInterleavedUnlocked(frames: frames, channels: outCh, into: dest)
     }
@@ -700,11 +769,133 @@ final class NativeAudioEngine {
 
   private func attachNodesIfNeeded() {
     guard !nodesAttached else { return }
-    engine.attach(micMixer)
-    engine.attach(playlistMixer)
-    engine.attach(masterMixer)
-    engine.attach(cueMixer)
-    nodesAttached = true
+    var err: NSError?
+    let ok = SMCatchException(&err) { [self] in
+      self.engine.attach(self.micMixer)
+      self.engine.attach(self.playlistMixer)
+      self.engine.attach(self.micProgramSend)
+      self.engine.attach(self.playlistProgramSend)
+      self.engine.attach(self.masterMixer)
+      self.engine.attach(self.cueMixer)
+      self.engine.attach(self.micCueSend)
+      self.engine.attach(self.playlistCueSend)
+      self.engine.attach(self.programMonitor)
+    }
+    nodesAttached = ok
+    if !ok {
+      onStatus?(err?.localizedDescription ?? "Mixer attach failed")
+    }
+  }
+
+  /// AVAudioEngine nodes keep an owning engine pointer — must detach before
+  /// replacing `engine`, or the next `attach` aborts the process.
+  private func detachOwnedNodes() {
+    var err: NSError?
+    _ = SMCatchException(&err) { [self] in
+      if self.nodesAttached {
+        self.engine.detach(self.micMixer)
+        self.engine.detach(self.playlistMixer)
+        self.engine.detach(self.micProgramSend)
+        self.engine.detach(self.playlistProgramSend)
+        self.engine.detach(self.masterMixer)
+        self.engine.detach(self.cueMixer)
+        self.engine.detach(self.micCueSend)
+        self.engine.detach(self.playlistCueSend)
+        self.engine.detach(self.programMonitor)
+      }
+      for player in self.playerNodes.values {
+        self.engine.detach(player)
+      }
+    }
+    nodesAttached = false
+  }
+
+  /// Disconnect mix-bus edges before rewiring (keeps player nodes attached).
+  private func disconnectMixBuses() {
+    var err: NSError?
+    _ = SMCatchException(&err) { [self] in
+      self.engine.disconnectNodeOutput(self.engine.inputNode)
+      self.engine.disconnectNodeOutput(self.micMixer)
+      self.engine.disconnectNodeOutput(self.playlistMixer)
+      self.engine.disconnectNodeOutput(self.micProgramSend)
+      self.engine.disconnectNodeOutput(self.playlistProgramSend)
+      self.engine.disconnectNodeOutput(self.micCueSend)
+      self.engine.disconnectNodeOutput(self.playlistCueSend)
+      self.engine.disconnectNodeOutput(self.masterMixer)
+      self.engine.disconnectNodeOutput(self.cueMixer)
+      self.engine.disconnectNodeOutput(self.programMonitor)
+      for player in self.playerNodes.values {
+        self.engine.disconnectNodeOutput(player)
+      }
+    }
+  }
+
+  /// Program: mic/playlist → program sends (mute×fader) → master → (WHIP tap) → programMonitor → HP.
+  /// Cue: strip fan-out → cue sends (pre-mute) → cueMixer → HP.
+  /// Fan-out is mixer→mixer only (never from inputNode — that caused !dev / -10867).
+  /// Wire sinks first so fan-out destinations are initialized before multi-tap connect.
+  private func wireMixGraph(micFormat: AVAudioFormat) -> NSError? {
+    var err: NSError?
+    let wired = SMCatchException(&err) { [self] in
+      // Engine must be stopped for graph surgery; prepare so AUHAL formats settle.
+      if self.engine.isRunning {
+        self.engine.stop()
+      }
+      self.engine.prepare()
+
+      let busFormat = micFormat
+      // Downstream first — avoids avfaudio `inNodeUpstream.IsInitialized()` on fan-out.
+      self.engine.connect(self.micProgramSend, to: self.masterMixer, format: busFormat)
+      self.engine.connect(self.playlistProgramSend, to: self.masterMixer, format: busFormat)
+      self.engine.connect(self.micCueSend, to: self.cueMixer, format: busFormat)
+      self.engine.connect(self.playlistCueSend, to: self.cueMixer, format: busFormat)
+      // Master stays at unity into programMonitor so the WHIP tap (on master) is unaffected
+      // by headphone cue ducking.
+      self.engine.connect(self.masterMixer, to: self.programMonitor, format: busFormat)
+      // nil into mainMixer lets the engine match hardware output rate.
+      self.engine.connect(self.programMonitor, to: self.engine.mainMixerNode, format: nil)
+      self.engine.connect(self.cueMixer, to: self.engine.mainMixerNode, format: nil)
+
+      // Mic strip → program send + cue send (pre-fader / pre-mute cue).
+      self.engine.connect(
+        self.micMixer,
+        to: [
+          AVAudioConnectionPoint(node: self.micProgramSend, bus: 0),
+          AVAudioConnectionPoint(node: self.micCueSend, bus: 0),
+        ],
+        fromBus: 0,
+        format: busFormat
+      )
+      // Playlist strip → program send + cue send.
+      self.engine.connect(
+        self.playlistMixer,
+        to: [
+          AVAudioConnectionPoint(node: self.playlistProgramSend, bus: 0),
+          AVAudioConnectionPoint(node: self.playlistCueSend, bus: 0),
+        ],
+        fromBus: 0,
+        format: busFormat
+      )
+
+      let activeInput = self.engine.inputNode
+      // nil format lets the engine match the input node's HW format.
+      self.engine.connect(activeInput, to: self.micMixer, format: nil)
+
+      for (id, player) in self.playerNodes {
+        if let file = self.playerFiles[id] {
+          self.engine.connect(player, to: self.playlistMixer, format: file.processingFormat)
+        }
+      }
+    }
+    if wired { return nil }
+    return err ?? NSError(
+      domain: "NativeAudio",
+      code: 11,
+      userInfo: [
+        NSLocalizedDescriptionKey:
+          "Could not build mixer graph. Try System Default Microphone.",
+      ]
+    )
   }
 
   /// Drop the engine and reattach nodes — clears stuck AU "!dev" / -10867 state.
@@ -713,28 +904,224 @@ final class NativeAudioEngine {
     if engine.isRunning {
       engine.stop()
     }
+    // Critical: detach before releasing the old engine. Re-attaching nodes that
+    // still report another owningEngine throws com.apple.coreaudio.avfaudio and
+    // terminates the app (uncaught).
+    disconnectMixBuses()
+    detachOwnedNodes()
     engine = AVAudioEngine()
     nodesAttached = false
     attachNodesIfNeeded()
-    for (id, player) in playerNodes {
-      engine.attach(player)
-      if let file = playerFiles[id] {
-        engine.connect(player, to: playlistMixer, format: file.processingFormat)
+    for player in playerNodes.values {
+      var err: NSError?
+      _ = SMCatchException(&err) { [self] in
+        self.engine.attach(player)
       }
     }
+    // Players are connected in wireMixGraph after the mix buses exist.
   }
 
-  /// Minimal graph: input → mic → master → output (+ playlist → master).
-  /// Capture via tap after start. No sink / fan-out (those caused !dev and -10867).
+  /// Rebuild full mix graph (program + cue PFL) and start capture.
+  /// On failure, resetEngineInstance detaches nodes before replacing the engine.
   private func rebuildAndStart(deviceId: String?) throws {
+    let preservePublish = micWired
+    if preservePublish {
+      beginInputHotSwap()
+    }
     do {
       try rebuildAndStartOnce(deviceId: deviceId, allowDeviceBind: true)
+      if preservePublish {
+        scheduleEndInputHotSwap()
+      }
       return
     } catch {
       onStatus?("Resetting audio engine…")
       resetEngineInstance()
     }
     try rebuildAndStartOnce(deviceId: deviceId, allowDeviceBind: false)
+    if preservePublish {
+      scheduleEndInputHotSwap()
+    }
+  }
+
+  /// Hot-swap capture hardware while keeping playlist/master/WHIP pipeline continuity.
+  /// Brief gap is OK (injector holds last PCM); permanent silence is not.
+  private func hotSwapInputDevice(deviceId: String) throws {
+    beginInputHotSwap()
+    onStatus?("Switching input…")
+
+    do {
+      try hotSwapInputDeviceOnce(deviceId: deviceId, allowDeviceBind: true)
+      scheduleEndInputHotSwap()
+      return
+    } catch {
+      onStatus?("Input switch retry…")
+      resetEngineInstance()
+    }
+
+    // Full rebuild fallback — still under continuity hold so Listen doesn't drop to −inf.
+    try rebuildAndStartOnce(deviceId: deviceId, allowDeviceBind: true)
+    scheduleEndInputHotSwap()
+  }
+
+  private func hotSwapInputDeviceOnce(deviceId: String, allowDeviceBind: Bool) throws {
+    attachNodesIfNeeded()
+    removeAllTapsSafely()
+
+    let devices = listInputDevices()
+    if engine.isRunning {
+      engine.stop()
+    }
+
+    // Drop only the capture edge first; rebuild mix buses if the new HW rate differs.
+    var disconnectErr: NSError?
+    _ = SMCatchException(&disconnectErr) { [self] in
+      self.engine.disconnectNodeOutput(self.engine.inputNode)
+    }
+
+    var didChangeSystemDefault = false
+    if deviceId != "default" {
+      selectedDeviceId = deviceId
+      if let match = devices.first(where: { $0.deviceId == deviceId }),
+         match.audioDeviceID != 0 {
+        selectedDeviceId = match.deviceId
+        if allowDeviceBind {
+          do {
+            try setEngineInputDevice(match.audioDeviceID)
+          } catch {
+            do {
+              try setSystemDefaultInput(match.audioDeviceID)
+              didChangeSystemDefault = true
+            } catch {
+              throw NSError(
+                domain: "NativeAudio",
+                code: 16,
+                userInfo: [
+                  NSLocalizedDescriptionKey:
+                    "Could not switch to \(match.label). Pick it in System Settings → Sound → Input, then retry.",
+                ]
+              )
+            }
+          }
+        }
+      } else {
+        throw NSError(
+          domain: "NativeAudio",
+          code: 17,
+          userInfo: [NSLocalizedDescriptionKey: "Microphone not found — pick another input."]
+        )
+      }
+    } else {
+      selectedDeviceId = "default"
+      if allowDeviceBind, let preferred = preferredConcreteInputId(),
+         let match = devices.first(where: { $0.deviceId == preferred }),
+         match.audioDeviceID != 0 {
+        try? setEngineInputDevice(match.audioDeviceID)
+      }
+    }
+
+    if didChangeSystemDefault {
+      // Stale AUHAL after system-default rewrite — recreate, then rewire full graph.
+      resetEngineInstance()
+      try rebuildAndStartOnce(deviceId: deviceId, allowDeviceBind: false)
+      return
+    }
+
+    // Keep cue / monitor output binding stable across input swaps.
+    let outputs = listOutputDevices()
+    let outId = selectedOutputDeviceId ?? "default"
+    if outId != "default",
+       let out = outputs.first(where: { $0.deviceId == outId }),
+       out.audioDeviceID != 0 {
+      try? setEngineOutputDevice(out.audioDeviceID)
+    }
+
+    ensureVoiceProcessingDisabled()
+
+    guard let micFormat = waitForValidInputFormat() else {
+      throw NSError(
+        domain: "NativeAudio",
+        code: 14,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "Input HW format is invalid after device switch. Try System Default Microphone.",
+        ]
+      )
+    }
+
+    // Rewire mix buses to the new hardware rate so master taps keep feeding the 48 kHz ring.
+    disconnectMixBuses()
+
+    if let wireErr = wireMixGraph(micFormat: micFormat) {
+      throw NSError(
+        domain: "NativeAudio",
+        code: 11,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            wireErr.localizedDescription.localizedCaseInsensitiveContains("HW format")
+            ? wireErr.localizedDescription
+            : "Could not rebuild mixer after input switch. Try again or End and Go live.",
+        ]
+      )
+    }
+
+    applyGains()
+    micWired = true
+    engine.prepare()
+    do {
+      try engine.start()
+    } catch {
+      micWired = false
+      throw NSError(
+        domain: "NativeAudio",
+        code: 12,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "Could not restart audio after input switch (\(error.localizedDescription)).",
+        ]
+      )
+    }
+
+    // Drop stale PCM at the previous device rate; keep wetMaster for continuity scaling.
+    clearMixRing(resetWetFlag: false)
+    installMeterAndCaptureTaps()
+    engineSampleRate = micFormat.sampleRate > 0 ? micFormat.sampleRate : engineSampleRate
+  }
+
+  private func beginInputHotSwap() {
+    hotSwapEndWorkItem?.cancel()
+    hotSwapEndWorkItem = nil
+    inputHotSwapActive = true
+  }
+
+  private func endInputHotSwap() {
+    hotSwapEndWorkItem?.cancel()
+    hotSwapEndWorkItem = nil
+    inputHotSwapActive = false
+  }
+
+  /// Keep continuity hold until the master tap has refilled the WHIP ring (or timeout).
+  private func scheduleEndInputHotSwap() {
+    hotSwapEndWorkItem?.cancel()
+    let work = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      // Poll briefly for ring refill so Listen never sticks on held silence forever.
+      var attempts = 0
+      func poll() {
+        attempts += 1
+        if self.availableMixFrames() >= 48 || attempts >= 40 {
+          self.inputHotSwapActive = false
+          self.hotSwapEndWorkItem = nil
+          return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) {
+          poll()
+        }
+      }
+      poll()
+    }
+    hotSwapEndWorkItem = work
+    DispatchQueue.main.async(execute: work)
   }
 
   /// Always use plain HAL — Apple Voice Processing caused meter/route instability.
@@ -759,14 +1146,7 @@ final class NativeAudioEngine {
     }
 
     // Clear prior edges so HAL can rebind cleanly.
-    engine.disconnectNodeOutput(engine.inputNode)
-    engine.disconnectNodeOutput(micMixer)
-    engine.disconnectNodeOutput(playlistMixer)
-    engine.disconnectNodeOutput(masterMixer)
-    engine.disconnectNodeOutput(cueMixer)
-    for player in playerNodes.values {
-      engine.disconnectNodeOutput(player)
-    }
+    disconnectMixBuses()
 
     // Prefer AU CurrentDevice bind so we do not rewrite the macOS system default
     // input (that steals the mic from a concurrent web Studio on another channel).
@@ -844,24 +1224,8 @@ final class NativeAudioEngine {
       )
     }
 
-    let activeInput = engine.inputNode
-    var err: NSError?
-    let wired = SMCatchException(&err) { [self] in
-      // Single linear chain — converters inserted automatically toward hardware out.
-      // nil format lets the engine match the input node's HW format (avoids HW mismatch).
-      self.engine.connect(activeInput, to: self.micMixer, format: nil)
-      self.engine.connect(self.micMixer, to: self.masterMixer, format: micFormat)
-      self.engine.connect(self.playlistMixer, to: self.masterMixer, format: micFormat)
-      // nil into mainMixer lets the engine match hardware output rate.
-      self.engine.connect(self.masterMixer, to: self.engine.mainMixerNode, format: nil)
-      for (id, player) in self.playerNodes {
-        if let file = self.playerFiles[id] {
-          self.engine.connect(player, to: self.playlistMixer, format: file.processingFormat)
-        }
-      }
-    }
-    guard wired else {
-      let message = err?.localizedDescription ?? ""
+    if let wireErr = wireMixGraph(micFormat: micFormat) {
+      let message = wireErr.localizedDescription
       if message.localizedCaseInsensitiveContains("HW format")
         || message.localizedCaseInsensitiveContains("hw format")
       {
@@ -874,14 +1238,7 @@ final class NativeAudioEngine {
           ]
         )
       }
-      throw err ?? NSError(
-        domain: "NativeAudio",
-        code: 11,
-        userInfo: [
-          NSLocalizedDescriptionKey:
-            "Could not build mixer graph. Try System Default Microphone.",
-        ]
-      )
+      throw wireErr
     }
 
     applyGains()
@@ -905,12 +1262,11 @@ final class NativeAudioEngine {
     installMeterAndCaptureTaps()
   }
 
-  /// Volume 0 stops the graph from pulling — taps go silent and WHIP gets no mic.
-  /// Keep a small pull when cue is off; full volume when cue monitoring.
-  private var monitorPullVolume: Float {
+  /// Volume 0 on the output edge stops the graph from pulling — taps go silent.
+  /// Cue-off: tiny program pull (inaudible). Cue-on: full HP level for the cue bus.
+  private var headphonesOutputVolume: Float {
     if micCue || playlistCue { return 1.0 }
-    // Plain HAL needs a real pull so input taps see PCM (meters + WHIP).
-    return 0.35
+    return 0.001
   }
 
   private func removeAllTapsSafely() {
@@ -933,11 +1289,10 @@ final class NativeAudioEngine {
     removeAllTapsSafely()
     let tapFormat = engine.inputNode.outputFormat(forBus: 0)
     if tapFormat.sampleRate > 0 {
-      mixSampleRate = tapFormat.sampleRate
+      engineSampleRate = tapFormat.sampleRate
     }
 
-    // Prefer micMixer (nil format): more reliable than tapping inputNode with an
-    // explicit format, which can install successfully but deliver silence.
+    // Mic strip meter only — WHIP always comes from the master bus (below).
     var micErr: NSError?
     let micOk = SMCatchException(&micErr) { [self] in
       self.micMixer.installTap(onBus: 0, bufferSize: 1024, format: nil) {
@@ -945,6 +1300,9 @@ final class NativeAudioEngine {
         guard let self, let ch = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
         guard frames > 0 else { return }
+        if buffer.format.sampleRate > 0 {
+          self.engineSampleRate = buffer.format.sampleRate
+        }
         let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
         var acc: Float = 0
         for f in 0..<frames {
@@ -957,21 +1315,14 @@ final class NativeAudioEngine {
           self.micLevel = 0
           return
         }
-        // Ignore near-silence so we don't fill the WHIP ring with zeros and
-        // wipe the live ADM mic when the engine briefly loses the device.
-        guard rms > 0.0003 else { return }
-        // Post-mic-fader; include master so the strip matches Listen.
-        let next = self.meterLevel(rms: rms * max(self.masterFader, 0))
+        // Strip tap is pre-fader; scale for console meter.
+        let next = self.meterLevel(
+          rms: rms * max(self.micFader, 0) * max(self.masterFader, 0)
+        )
         self.micLevel = max(self.micLevel * 0.5, next)
-        if Date().timeIntervalSince(self.lastMasterRingWrite) > 0.05 {
-          // micMixer output is post-fader — undo so the ring stays dry and
-          // MixCaptureInjector can apply the live Mic×Master gain.
-          self.writeDryMicToRing(left: ch[0], right: right, frames: frames)
-        }
       }
     }
 
-    // Fallback: input node when micMixer tap is unavailable (already dry).
     var inputErr: NSError?
     var inputOk = false
     if !micOk {
@@ -995,20 +1346,8 @@ final class NativeAudioEngine {
             self.micLevel = 0
             return
           }
-          guard rms > 0.0003 else { return }
-          // Dry input — apply console gain so the meter follows the faders.
           let scaled = rms * max(self.micFader, 0) * max(self.masterFader, 0)
-          let next = self.meterLevel(rms: scaled)
-          self.micLevel = max(self.micLevel * 0.5, next)
-          if Date().timeIntervalSince(self.lastMasterRingWrite) > 0.05 {
-            self.writePcmToRing(
-              left: ch[0],
-              right: right,
-              frames: frames,
-              updateMaster: false,
-              includesMaster: false
-            )
-          }
+          self.micLevel = max(self.micLevel * 0.5, self.meterLevel(rms: scaled))
         }
       }
     }
@@ -1029,21 +1368,25 @@ final class NativeAudioEngine {
           acc += l * l + r * r
         }
         let rms = sqrt(acc / Float(max(frames * 2, 1)))
-        self.playlistLevel = self.meterLevel(rms: rms)
+        if self.playlistMuted {
+          self.playlistLevel = 0
+          return
+        }
+        self.playlistLevel = self.meterLevel(rms: rms * max(self.playlistFader, 0))
       }
     }
 
-    // Master bus: meters. When playlist is audible, also feed WHIP with the full mix.
+    // Master bus: meters + sole WHIP feed (resampled to 48 kHz in the ring).
     var masterErr: NSError?
     let masterOk = SMCatchException(&masterErr) { [self] in
-      self.masterMixer.installTap(onBus: 0, bufferSize: 4096, format: nil) {
+      self.masterMixer.installTap(onBus: 0, bufferSize: 2048, format: nil) {
         [weak self] buffer, _ in
         guard let self, let ch = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
         guard frames > 0 else { return }
         let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
         if buffer.format.sampleRate > 0 {
-          self.mixSampleRate = buffer.format.sampleRate
+          self.engineSampleRate = buffer.format.sampleRate
         }
         var acc: Float = 0
         for f in 0..<frames {
@@ -1052,23 +1395,17 @@ final class NativeAudioEngine {
           acc += l * l + r * r
         }
         let rms = sqrt(acc / Float(max(frames * 2, 1)))
-        // masterMixer is unity; include master fader for the strip / header meter.
         let next = self.meterLevel(rms: rms * max(self.masterFader, 0))
         self.masterLevel = max(self.masterLevel * 0.5, next)
 
-        // Playlist present → publish master (mic+playlist). Mic-only uplink is
-        // handled by the mic tap to avoid double-writing / double-speed audio.
-        let playlistHot = !self.playlistMuted && self.playlistFader > 0.02
-        if playlistHot, rms > 0.0003 {
-          self.lastMasterRingWrite = Date()
-          self.writePcmToRing(
-            left: ch[0],
-            right: right,
-            frames: frames,
-            updateMaster: false,
-            includesMaster: true
-          )
-        }
+        // Always publish master (mic ± playlist). Matches console meters / Listen.
+        self.writePcmToRing(
+          left: ch[0],
+          right: right,
+          frames: frames,
+          updateMaster: false,
+          includesMaster: true
+        )
       }
     }
 
@@ -1077,33 +1414,7 @@ final class NativeAudioEngine {
     }
   }
 
-  /// Undo micMixer.outputVolume so the WHIP ring stores dry mic PCM.
-  private func writeDryMicToRing(
-    left: UnsafeMutablePointer<Float>,
-    right: UnsafeMutablePointer<Float>,
-    frames: Int
-  ) {
-    let baked = max(micFader, 0.0001)
-    let inv = 1 / baked
-    let dryL = UnsafeMutablePointer<Float>.allocate(capacity: frames)
-    let dryR = UnsafeMutablePointer<Float>.allocate(capacity: frames)
-    defer {
-      dryL.deallocate()
-      dryR.deallocate()
-    }
-    for f in 0..<frames {
-      dryL[f] = left[f] * inv
-      dryR[f] = right[f] * inv
-    }
-    writePcmToRing(
-      left: dryL,
-      right: dryR,
-      frames: frames,
-      updateMaster: false,
-      includesMaster: false
-    )
-  }
-
+  /// Write engine-rate PCM into the 48 kHz WHIP ring (linear resample when needed).
   private func writePcmToRing(
     left: UnsafeMutablePointer<Float>,
     right: UnsafeMutablePointer<Float>,
@@ -1112,13 +1423,72 @@ final class NativeAudioEngine {
     includesMaster: Bool
   ) {
     guard frames > 0 else { return }
+    let srcRate = engineSampleRate > 0 ? engineSampleRate : publishSampleRate
+    let needsResample = abs(srcRate - publishSampleRate) >= 1.0
+
+    if !needsResample {
+      appendStereoToRing(
+        left: left,
+        right: right,
+        frames: frames,
+        includesMaster: includesMaster
+      )
+    } else {
+      // Convert device rate → 48 kHz at write time so WebRTC pulls 1:1.
+      let ratio = publishSampleRate / srcRate
+      let outFrames = max(1, Int((Double(frames) * ratio).rounded(.toNearestOrAwayFromZero)))
+      let outL = UnsafeMutablePointer<Float>.allocate(capacity: outFrames)
+      let outR = UnsafeMutablePointer<Float>.allocate(capacity: outFrames)
+      defer {
+        outL.deallocate()
+        outR.deallocate()
+      }
+      for of in 0..<outFrames {
+        let srcPos = Double(of) / ratio
+        let i0 = min(Int(srcPos), frames - 1)
+        let i1 = min(i0 + 1, frames - 1)
+        let frac = Float(srcPos - Double(i0))
+        let l0 = left[i0]
+        let l1 = left[i1]
+        let r0 = right[i0]
+        let r1 = right[i1]
+        outL[of] = l0 + (l1 - l0) * frac
+        outR[of] = r0 + (r1 - r0) * frac
+      }
+      appendStereoToRing(
+        left: outL,
+        right: outR,
+        frames: outFrames,
+        includesMaster: includesMaster
+      )
+    }
+
+    guard updateMaster else { return }
     var masterAcc: Float = 0
+    for f in 0..<frames {
+      let l = left[f]
+      let r = right[f]
+      masterAcc += l * l + r * r
+    }
+    let rms = sqrt(masterAcc / Float(max(frames * 2, 1)))
+    let nextMaster = meterLevel(rms: rms)
+    masterLevel = max(masterLevel * 0.5, nextMaster)
+    if !micMuted, micFader > 0.01, nextMaster > micLevel {
+      micLevel = max(micLevel, nextMaster)
+    }
+  }
+
+  private func appendStereoToRing(
+    left: UnsafeMutablePointer<Float>,
+    right: UnsafeMutablePointer<Float>,
+    frames: Int,
+    includesMaster: Bool
+  ) {
     bufferLock.lock()
     ringHasMasterGain = includesMaster
     for f in 0..<frames {
       let l = left[f]
       let r = right[f]
-      masterAcc += l * l + r * r
       for sample in [l, r] {
         if ringCount < ringCapacity {
           ring[ringWrite] = sample
@@ -1132,13 +1502,6 @@ final class NativeAudioEngine {
       }
     }
     bufferLock.unlock()
-    guard updateMaster else { return }
-    let rms = sqrt(masterAcc / Float(max(frames * 2, 1)))
-    let nextMaster = meterLevel(rms: rms)
-    masterLevel = max(masterLevel * 0.5, nextMaster)
-    if !micMuted, micFader > 0.01, nextMaster > micLevel {
-      micLevel = max(micLevel, nextMaster)
-    }
   }
 
   /// Apple: check input node's HW format for non-zero sample rate + channel count.
@@ -1441,11 +1804,11 @@ final class NativeAudioEngine {
   }
 
   private func applyGains() {
-    // Graph carries mic/playlist faders for local monitor + playlist mix.
-    // Mic tap undoes mic fader when writing the WHIP ring (dry PCM).
-    // MixCaptureInjector always applies cachedPublishGain (or master-only on wet mix).
-    micMixer.outputVolume = micMuted ? 0 : max(0, micFader)
-    playlistMixer.outputVolume = playlistMuted ? 0 : max(0, playlistFader)
+    // Strips stay at unity; mute×fader live on program sends so cue can stay pre-mute.
+    micMixer.outputVolume = 1
+    playlistMixer.outputVolume = 1
+    micProgramSend.outputVolume = micMuted ? 0 : max(0, micFader)
+    playlistProgramSend.outputVolume = playlistMuted ? 0 : max(0, playlistFader)
     masterMixer.outputVolume = 1
 
     let publish = micMuted ? Float(0) : max(0, micFader) * max(0, masterFader)
@@ -1453,10 +1816,17 @@ final class NativeAudioEngine {
     cachedPublishGain = publish
     bufferLock.unlock()
 
-    if nodesAttached {
-      engine.mainMixerNode.outputVolume =
-        monitorPullVolume * max(0, masterFader)
-    }
+    guard nodesAttached else { return }
+
+    let cueActive = micCue || playlistCue
+    // Pre-fader / pre-mute PFL — hear the strip even when muted for air.
+    micCueSend.outputVolume = micCue ? 1 : 0
+    playlistCueSend.outputVolume = playlistCue ? 1 : 0
+    cueMixer.outputVolume = 1
+    // Duck program in HP while cueing; keep a tiny pull so the master edge stays alive.
+    programMonitor.outputVolume = cueActive ? 0 : 0.001
+    // Cue level is independent of the master fader (operator monitoring).
+    engine.mainMixerNode.outputVolume = headphonesOutputVolume
   }
 
   private func startMeters() {

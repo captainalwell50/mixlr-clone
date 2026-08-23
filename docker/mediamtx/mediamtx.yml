@@ -1,5 +1,6 @@
 # Browser publish: POST SDP to http://<host>:8889/live/<uuid>/whip
 # HLS playback:    http://<host>:8888/live/<uuid>/index.m3u8
+# AAC HLS (CDN):   http://<host>:8888/live/<uuid>/aac/index.m3u8  (ffmpeg remux from WHIP Opus)
 # Azure / NAT: set webrtcAdditionalHosts to your public hostname or VM IP.
 
 logLevel: info
@@ -12,6 +13,15 @@ authHTTPExclude:
   - action: api
   - action: metrics
   - action: pprof
+  # Public listen (HLS/WHEP) must never challenge Basic auth in the browser.
+  # Publish/WHIP still goes through authHTTPAddress.
+  - action: read
+  - action: playback
+
+# Internal RTSP for ffmpeg Opus→AAC sidecar (do not expose publicly).
+rtsp: true
+rtspAddress: :8554
+rtspEncryption: "no"
 
 webrtc: true
 webrtcAddress: :8889
@@ -33,7 +43,7 @@ hlsAllowOrigins: ['*']
 hlsVariant: fmp4
 hlsSegmentCount: 5
 hlsSegmentDuration: 4s
-# Remux Opus as-is into fMP4; do not re-encode (preserves studio bitrate).
+# Remux as-is into fMP4; AAC sidecar re-encodes for browser/CDN listen.
 hlsAlwaysRemux: true
 
 # OBS / ffmpeg ingest (publish auth via Laravel HTTP callback + stream_key)
@@ -51,10 +61,16 @@ pathDefaults:
   recordPartDuration: 1s
   recordSegmentDuration: 4h
   recordDeleteAfter: 8760h
-  runOnReady: sh /hooks/run-ready.sh
-  runOnNotReady: sh /hooks/run-not-ready.sh
-  runOnRecordSegmentComplete: sh /hooks/run-record-segment-complete.sh
 
 paths:
+  # Primary WHIP / RTMP publish path.
   '~^live/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$':
     source: publisher
+    runOnReady: sh /hooks/run-ready.sh
+    runOnReadyRestart: yes
+    runOnNotReady: sh /hooks/run-not-ready.sh
+    runOnRecordSegmentComplete: sh /hooks/run-record-segment-complete.sh
+  # Browser-safe AAC HLS for CDN / mass listen (fed by ffmpeg from primary).
+  '~^live/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/aac$':
+    source: publisher
+    record: false

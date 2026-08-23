@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -19,6 +20,7 @@ class User extends Authenticatable
         'email',
         'password',
         'is_admin',
+        'avatar_path',
     ];
 
     protected $hidden = [
@@ -106,5 +108,19 @@ class User extends Authenticatable
     public function canManageEvent(Event $event): bool
     {
         return $this->canManageOrganization($event->organization);
+    }
+
+    public function avatarUrl(): ?string
+    {
+        $path = $this->avatar_path;
+        if (! is_string($path) || $path === '') {
+            return null;
+        }
+
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            return $path;
+        }
+
+        return Storage::disk('public')->url($path);
     }
 }

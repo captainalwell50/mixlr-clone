@@ -7,6 +7,9 @@ use App\Models\Organization;
 use App\Models\Stream;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -87,7 +90,56 @@ class ApiMobileAuthTest extends TestCase
         $this->getJson('/api/v1/listen/'.$stream->uuid)
             ->assertOk()
             ->assertJsonPath('stream.uuid', $stream->uuid)
-            ->assertJsonStructure(['stream' => ['hls_url', 'whep_url'], 'organization']);
+            ->assertJsonStructure(['stream' => ['hls_url', 'whep_url', 'playback_mode', 'prefer_hls'], 'organization'])
+            ->assertJsonPath('stream.playback_mode', 'whep')
+            ->assertJsonPath('stream.prefer_hls', false);
+
+        config([
+            'streaming.listen.prefer_hls' => true,
+            'streaming.mediamtx.hls_cdn_base' => 'https://cdn.example.org/hls',
+        ]);
+
+        $this->getJson('/api/v1/listen/'.$stream->uuid)
+            ->assertOk()
+            ->assertJsonPath('stream.playback_mode', 'hls')
+            ->assertJsonPath('stream.prefer_hls', true)
+            ->assertJsonPath('stream.hls_url', 'https://cdn.example.org/hls/'.$stream->mediaPath().'/index.m3u8');
+    }
+
+    public function test_user_can_update_profile_password_and_avatar(): void
+    {
+        Storage::fake('public');
+
+        $user = User::factory()->create([
+            'name' => 'Old Name',
+            'password' => 'OldPass1!xx',
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/v1/me', ['name' => 'New Name'])
+            ->assertOk()
+            ->assertJsonPath('user.name', 'New Name');
+
+        $this->putJson('/api/v1/auth/password', [
+            'current_password' => 'OldPass1!xx',
+            'password' => 'NewPass2!yy',
+            'password_confirmation' => 'NewPass2!yy',
+        ])
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $this->assertTrue(Hash::check('NewPass2!yy', $user->fresh()->password));
+
+        $file = UploadedFile::fake()->image('avatar.jpg', 240, 240);
+        $this->post('/api/v1/auth/avatar', ['avatar' => $file], [
+            'Accept' => 'application/json',
+        ])
+            ->assertOk()
+            ->assertJsonStructure(['user' => ['avatar_url']]);
+
+        $this->assertNotNull($user->fresh()->avatar_path);
+        Storage::disk('public')->assertExists($user->fresh()->avatar_path);
     }
 
     private function makeManagedStream(): Stream

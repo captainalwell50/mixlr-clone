@@ -10,6 +10,15 @@ authHTTPExclude:
   - action: api
   - action: metrics
   - action: pprof
+  # Public listen (HLS/WHEP) must never challenge Basic auth in the browser.
+  # Publish/WHIP still goes through authHTTPAddress.
+  - action: read
+  - action: playback
+
+# Internal RTSP for ffmpeg Opus→AAC sidecar (bound in-container only; do not publish :8554).
+rtsp: true
+rtspAddress: :8554
+rtspEncryption: "no"
 
 webrtc: true
 webrtcAddress: :8889
@@ -43,10 +52,14 @@ pathDefaults:
   recordPartDuration: 1s
   recordSegmentDuration: 4h
   recordDeleteAfter: 8760h
-  runOnReady: sh /hooks/run-ready.sh
-  runOnNotReady: sh /hooks/run-not-ready.sh
-  runOnRecordSegmentComplete: sh /hooks/run-record-segment-complete.sh
 
 paths:
   '~^live/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$':
     source: publisher
+    runOnReady: sh /hooks/run-ready.sh
+    runOnReadyRestart: yes
+    runOnNotReady: sh /hooks/run-not-ready.sh
+    runOnRecordSegmentComplete: sh /hooks/run-record-segment-complete.sh
+  '~^live/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/aac$':
+    source: publisher
+    record: false

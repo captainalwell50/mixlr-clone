@@ -71,6 +71,10 @@ final class MixerEnginePlugin: NSObject {
     whip.onIce = { [weak self] state in
       self?.post(["type": "ice", "state": state])
     }
+    audio.onInputDeviceChanged = { [weak self] in
+      // Re-point WebRTC ADM after Studio rebinds CoreAudio (live mic hot-swap).
+      self?.whip.rebindAdmAfterDeviceSwap()
+    }
   }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -119,9 +123,19 @@ final class MixerEnginePlugin: NSObject {
         return
       }
       do {
+        // Pause ADM first so Scarlett/Built-in can rebind under AVAudioEngine without
+        // leaving the WHIP ring starved (live publish → silence bug).
+        // Successful setInputDevice fires onInputDeviceChanged → rebindAdmAfterDeviceSwap.
+        let live = whip.state == .connected || whip.state == .connecting
+        if live {
+          whip.pauseCaptureForDeviceSwap()
+        }
         try audio.setInputDevice(deviceId)
         result(nil)
       } catch {
+        if whip.state == .connected || whip.state == .connecting {
+          whip.rebindAdmAfterDeviceSwap()
+        }
         result(FlutterError(code: "input", message: error.localizedDescription, details: nil))
       }
 

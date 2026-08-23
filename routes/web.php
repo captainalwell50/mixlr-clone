@@ -2,13 +2,14 @@
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Admin\AnalyticsController;
-use App\Http\Controllers\Admin\EventController as AdminEventController;
 use App\Http\Controllers\Admin\ChannelCustomiseController;
+use App\Http\Controllers\Admin\EventController as AdminEventController;
 use App\Http\Controllers\Admin\OrganizationController;
 use App\Http\Controllers\Admin\OrganizationMemberController;
 use App\Http\Controllers\Admin\PlanController;
 use App\Http\Controllers\Admin\RecordingDestroyController;
 use App\Http\Controllers\Admin\RecordingDownloadController;
+use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\StreamController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\ArchiveController;
@@ -16,7 +17,6 @@ use App\Http\Controllers\BillingController;
 use App\Http\Controllers\CaddyOnDemandController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ChannelFollowController;
-use App\Models\Organization;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\CreatorHomeController;
 use App\Http\Controllers\DashboardController;
@@ -25,6 +25,7 @@ use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventEngageController;
 use App\Http\Controllers\GalleryController;
 use App\Http\Controllers\GoogleDriveController;
+use App\Http\Controllers\LegalController;
 use App\Http\Controllers\ListenController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PaystackWebhookController;
@@ -32,11 +33,12 @@ use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlayController;
 use App\Http\Controllers\ScriptureController;
 use App\Http\Controllers\SongController;
-use App\Http\Controllers\StudioSessionController;
 use App\Http\Controllers\StreamEngageController;
 use App\Http\Controllers\StudioAudioLibraryController;
-use App\Http\Controllers\StudioDesktopMixerController;
 use App\Http\Controllers\StudioController;
+use App\Http\Controllers\StudioDesktopMixerController;
+use App\Http\Controllers\StudioSessionController;
+use App\Models\Organization;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -52,6 +54,114 @@ Route::get('/downloads', function () {
         'platforms' => config('downloads'),
     ]);
 })->name('downloads');
+
+// Unlisted store-listing kit (URL-only; not in public nav/footer).
+Route::get('/listing', function () {
+    $title = 'Sound Mix Live';
+    $shortDescription = 'Live audio for creators and listeners — Studio mic publish + listen.';
+    $fullDescription = <<<'TXT'
+Sound Mix Live brings creators and listeners together over live audio — not another muted video player.
+
+• Discover live channels and keep listening with background audio
+• Creators go live from Studio with mic publish
+• Share one link for events, chat, and hearts on the web
+• Gallery and scripture tools for gatherings (where enabled)
+
+Privacy: https://soundmix.live/privacy
+Terms: https://soundmix.live/terms
+Support: https://soundmix.live/support
+TXT;
+
+    $base = asset('listing/play-store');
+    $assets = [
+        [
+            'label' => 'App icon',
+            'filename' => 'icon-512.png',
+            'url' => $base.'/icon-512.png',
+            'width' => 512,
+            'height' => 512,
+            'note' => 'Play Store high-res icon',
+        ],
+        [
+            'label' => 'Feature graphic',
+            'filename' => 'feature-graphic-1024x500.png',
+            'url' => $base.'/feature-graphic-1024x500.png',
+            'width' => 1024,
+            'height' => 500,
+            'note' => 'Play Console feature banner',
+        ],
+        [
+            'label' => 'Screenshot 1 — Welcome (“Broadcast. Listen close.”)',
+            'filename' => 'screenshot-1.png',
+            'url' => $base.'/screenshot-1.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Phone welcome — matches app Get started screen (1080×1920)',
+            'tall' => true,
+        ],
+        [
+            'label' => 'Screenshot 2 — Discover',
+            'filename' => 'screenshot-2.png',
+            'url' => $base.'/screenshot-2.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Phone (1080×1920)',
+            'tall' => true,
+        ],
+        [
+            'label' => 'Screenshot 3 — Listen live',
+            'filename' => 'screenshot-3.png',
+            'url' => $base.'/screenshot-3.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Phone (1080×1920)',
+            'tall' => true,
+        ],
+        [
+            'label' => 'Screenshot 4 — Studio',
+            'filename' => 'screenshot-4.png',
+            'url' => $base.'/screenshot-4.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Phone (1080×1920)',
+            'tall' => true,
+        ],
+        [
+            'label' => 'Screenshot — Scripture board',
+            'filename' => 'screenshot-scripture.png',
+            'url' => $base.'/screenshot-scripture.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Phone (1080×1920)',
+            'tall' => true,
+        ],
+        [
+            'label' => 'Screenshot — Live Gallery',
+            'filename' => 'screenshot-gallery.png',
+            'url' => $base.'/screenshot-gallery.png',
+            'width' => 1080,
+            'height' => 1920,
+            'note' => 'Phone (1080×1920)',
+            'tall' => true,
+        ],
+    ];
+
+    $apk = config('downloads.android_apk');
+
+    return view('listing', [
+        'title' => $title,
+        'shortDescription' => $shortDescription,
+        'fullDescription' => trim($fullDescription),
+        'assets' => $assets,
+        'appVersion' => '1.2.14',
+        'supportEmail' => config('app.support_email', 'support@soundmix.live'),
+        'apkUrl' => ($apk['available'] ?? false) ? ($apk['url'] ?? null) : null,
+    ]);
+})->name('listing');
+
+Route::get('/privacy', [LegalController::class, 'privacy'])->name('legal.privacy');
+Route::get('/terms', [LegalController::class, 'terms'])->name('legal.terms');
+Route::get('/support', [LegalController::class, 'support'])->name('legal.support');
 
 Route::get('/discover', [DiscoverController::class, 'index'])->name('discover');
 
@@ -260,6 +370,9 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/account', [AccountController::class, 'edit'])->name('account.edit');
     Route::put('/account', [AccountController::class, 'update'])->name('account.update');
+    Route::delete('/account', [AccountController::class, 'destroy'])
+        ->middleware('throttle:5,1')
+        ->name('account.destroy');
 
     Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding.show');
     Route::post('/onboarding/type', [OnboardingController::class, 'storeType'])->name('onboarding.type');
@@ -287,6 +400,9 @@ Route::middleware('auth')->group(function (): void {
 });
 
 Route::middleware(['auth', 'onboarded'])->prefix('admin')->name('admin.')->group(function (): void {
+    Route::get('settings', [SettingsController::class, 'edit'])->name('settings.edit');
+    Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
+
     Route::get('users', [UserController::class, 'index'])->name('users.index');
     Route::get('users/create', [UserController::class, 'create'])->name('users.create');
     Route::post('users', [UserController::class, 'store'])->name('users.store');

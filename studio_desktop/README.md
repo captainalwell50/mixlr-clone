@@ -5,7 +5,7 @@ Sign in → live console with **mic + playlist + cue**, Go live / Pause / End.
 
 Separate from the Android listener app in `../mobile/`.
 
-Requires the web **desktop mixer embed** (`/studio/{uuid}/desktop-mixer`) deployed on the API host.
+Uses a **native AVAudioEngine + WHIP** mixer on macOS (MethodChannel). Sign-in hits `{API_BASE}/api/v1`.
 
 ## Run
 
@@ -36,6 +36,19 @@ App:
 flutter run -d windows --dart-define=API_BASE=https://soundmix.live
 flutter build windows --release --dart-define=API_BASE=https://soundmix.live
 ```
+
+## Mic hot-swap while live (regression)
+
+Changing the input device **while ON AIR** must not leave Listen / publish at permanent silence.
+
+Native path (`NativeAudioEngine.hotSwapInputDevice` + `NativeWhipPublisher.pauseCaptureForDeviceSwap`):
+
+1. Pause WebRTC ADM (releases device contention)
+2. Stop capture edge → bind new CoreAudio input → rewire mic/playlist → master
+3. Reinstall master tap into the same 48 kHz WHIP ring
+4. Rebind ADM; `PublishContinuityHold` bridges the brief gap with last good PCM
+
+XCTest: `macos/RunnerTests/RunnerTests.swift` (`PublishContinuityHold`).
 
 ## Downloads page
 

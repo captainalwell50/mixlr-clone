@@ -2,8 +2,8 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CreatorApiController;
-use App\Http\Controllers\Api\ListenApiController;
 use App\Http\Controllers\Api\GalleryApiController;
+use App\Http\Controllers\Api\ListenApiController;
 use App\Http\Controllers\Api\ScriptureApiController;
 use App\Http\Controllers\Api\SongApiController;
 use App\Http\Controllers\Api\StudioLibraryApiController;
@@ -41,7 +41,15 @@ Route::prefix('v1')->group(function (): void {
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
+        Route::delete('/auth/account', [AuthController::class, 'destroy'])
+            ->middleware('throttle:5,1');
         Route::get('/me', [AuthController::class, 'me']);
+        Route::patch('/me', [AuthController::class, 'updateProfile'])
+            ->middleware('throttle:30,1');
+        Route::put('/auth/password', [AuthController::class, 'updatePassword'])
+            ->middleware('throttle:10,1');
+        Route::post('/auth/avatar', [AuthController::class, 'updateAvatar'])
+            ->middleware('throttle:20,1');
 
         Route::get('/creator/home', [CreatorApiController::class, 'home']);
         Route::get('/streams/{stream}/publish', [CreatorApiController::class, 'publish']);

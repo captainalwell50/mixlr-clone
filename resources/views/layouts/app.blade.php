@@ -30,6 +30,7 @@
                         <a href="{{ route('admin.streams.index') }}">Streams</a>
                         <a href="{{ route('admin.plans.index') }}">Packages</a>
                         <a href="{{ route('admin.users.index') }}">Users</a>
+                        <a href="{{ route('admin.settings.edit') }}">Settings</a>
                     @elseif(auth()->user()->organizations()->exists())
                         <a href="{{ route('creator.home') }}">Home</a>
                         <a href="{{ route('admin.events.index') }}">Events</a>

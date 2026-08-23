@@ -236,9 +236,16 @@ class MixerBridge extends ChangeNotifier {
             ),
           );
       _publish = MixerPublishState.connected;
+      _error = null;
+    } on PlatformException catch (e) {
+      _publish = MixerPublishState.failed;
+      _error = e.message?.isNotEmpty == true
+          ? e.message!
+          : 'WHIP publish failed. Check network and try again.';
+      throw Exception(_error);
     } catch (e) {
       _publish = MixerPublishState.failed;
-      _error = e.toString();
+      _error = e.toString().replaceFirst('Exception: ', '');
       rethrow;
     } finally {
       notifyListeners();
@@ -301,9 +308,21 @@ class MixerBridge extends ChangeNotifier {
             'failed' => MixerPublishState.failed,
             _ => MixerPublishState.idle,
           };
+          if (_publish == MixerPublishState.failed) {
+            final msg = data['message'] as String?;
+            _error = (msg != null && msg.isNotEmpty)
+                ? msg
+                : 'WHIP publish failed. Check network and try Go live again.';
+          }
           break;
         case 'ice':
           _iceState = data['state'] as String?;
+          break;
+        case 'error':
+          final msg = data['message'] as String?;
+          if (msg != null && msg.isNotEmpty) {
+            _error = msg;
+          }
           break;
       }
       notifyListeners();

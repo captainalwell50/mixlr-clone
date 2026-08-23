@@ -6,6 +6,7 @@ import '../services/auth_state.dart';
 import '../services/network_status.dart';
 import '../theme.dart';
 import '../widgets/brand_mark.dart';
+import '../widgets/legal_links.dart';
 import '../widgets/network_banner.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -100,6 +101,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _busy ? null : _submit,
                     child: Text(_busy ? 'Signing in…' : 'Sign in'),
                   ),
+                  const SizedBox(height: 28),
+                  const LegalLinks(dense: true),
                 ],
               ),
             ),

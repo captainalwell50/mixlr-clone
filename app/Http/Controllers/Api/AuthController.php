@@ -4,10 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AccountDeletionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class AuthController extends Controller
 {
@@ -54,6 +58,94 @@ class AuthController extends Controller
         ]);
     }
 
+    public function updateProfile(Request $request): JsonResponse
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user !== null, 401);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $user->forceFill(['name' => $validated['name']])->save();
+
+        return response()->json([
+            'user' => $this->userPayload($user->fresh()),
+        ]);
+    }
+
+    public function updatePassword(Request $request): JsonResponse
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user !== null, 401);
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'current_password'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+
+        $user->forceFill([
+            'password' => $validated['password'],
+        ])->save();
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Password updated.',
+            'user' => $this->userPayload($user->fresh()),
+        ]);
+    }
+
+    public function updateAvatar(Request $request): JsonResponse
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user !== null, 401);
+
+        $validated = $request->validate([
+            'avatar' => ['required', 'image', 'max:5120'],
+        ]);
+
+        $path = $validated['avatar']->store('avatars/'.$user->id, 'public');
+
+        $previous = $user->avatar_path;
+        if (is_string($previous) && $previous !== '' && ! str_starts_with($previous, 'http')) {
+            Storage::disk('public')->delete($previous);
+        }
+
+        $user->forceFill(['avatar_path' => $path])->save();
+
+        return response()->json([
+            'user' => $this->userPayload($user->fresh()),
+        ]);
+    }
+
+    public function destroy(Request $request, AccountDeletionService $deletion): JsonResponse
+    {
+        $validated = $request->validate([
+            'password' => ['required', 'string'],
+        ]);
+
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user !== null, 401);
+
+        if (! Hash::check($validated['password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'password' => ['The password is incorrect.'],
+            ]);
+        }
+
+        try {
+            $deletion->delete($user);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['ok' => true, 'message' => 'Account deleted.']);
+    }
+
     /** @return array<string, mixed> */
     private function userPayload(User $user): array
     {
@@ -75,6 +167,7 @@ class AuthController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'avatar_url' => $user->avatarUrl(),
             'is_admin' => $user->isAdmin(),
             'onboarded' => $user->isAdmin() || $user->organizations()->exists(),
             'organizations' => $orgs,

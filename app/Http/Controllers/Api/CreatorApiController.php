@@ -34,6 +34,7 @@ class CreatorApiController extends Controller
         }
 
         $stream = $organization->defaultStream();
+        $openEvent = $stream ? $this->broadcast->openEventForStream($stream) : null;
 
         return response()->json([
             'onboarded' => true,
@@ -48,6 +49,7 @@ class CreatorApiController extends Controller
             ],
             'stream' => $stream ? $this->streamSummary($stream) : null,
             'streams' => $organization->streams->map(fn (Stream $s) => $this->streamSummary($s))->values(),
+            'open_event' => $openEvent ? $this->broadcast->eventPayload($openEvent) : null,
             'can_broadcast' => $organization->allowsBroadcast(),
             'subscription' => [
                 'status' => $organization->subscription?->status?->value,

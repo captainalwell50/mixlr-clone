@@ -18,7 +18,7 @@ Broadcaster (Studio WHIP or OBS RTMP) --> MediaMTX --HLS (+ optional CDN)--> Lis
 - Studio: signed volunteer URL or org/platform admin; event “Go live”
 - Discover, follow + email notify, hearts, listener count, auth chat, analytics
 - Installable PWA (manifest + service worker) for creator and listener
-- CDN: set `MEDIAMTX_HLS_CDN_BASE` (see [deploy/azure/CDN.md](deploy/azure/CDN.md))
+- CDN + mass listen: set `MEDIAMTX_HLS_CDN_BASE`, enable AAC sidecar for Studio WHIP (`LISTEN_HLS_AAC_SIDECAR=true`), prefer HLS for public listen (see [deploy/azure/CDN.md](deploy/azure/CDN.md))
 - Registration is off by default (`REGISTRATION_ENABLED=false`)
 - **SaaS mode:** enable registration, creator onboarding (church / radio / event), Free plan for testing, Paystack paid plans, and creator home at `/home`
 
@@ -93,8 +93,11 @@ Do **not** put MediaMTX on Azure App Service alone — WebRTC needs UDP and cust
 | `PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` | Paystack API keys (billing) |
 | `PAYSTACK_PLAN_STARTER` / `PAYSTACK_PLAN_PRO` | Paystack plan codes from dashboard |
 | `ADMIN_EMAIL` | Seeded admin |
-| `MEDIAMTX_WEBRTC_PUBLIC_BASE` | Public WHIP base (e.g. `https://stream.example.org/rtc`) |
-| `MEDIAMTX_HLS_PUBLIC_BASE` | Public HLS base (e.g. `https://stream.example.org/hls`) |
+| `MEDIAMTX_WEBRTC_PUBLIC_BASE` | Public WHIP/WHEP base (e.g. `https://stream.example.org/rtc`) |
+| `MEDIAMTX_HLS_PUBLIC_BASE` | Public HLS origin base (e.g. `https://stream.example.org/hls`) |
+| `MEDIAMTX_HLS_CDN_BASE` | Optional CDN base in front of `/hls` only |
+| `LISTEN_PREFER_HLS` | `true`/`false` or unset (auto when CDN or AAC sidecar) |
+| `LISTEN_HLS_AAC_SIDECAR` | `true` → playlists use `live/<uuid>/aac` (Studio WHIP → browser HLS) |
 | `MEDIAMTX_WEBHOOK_URL` | `https://…/api/webhooks/mediamtx` (from MediaMTX container) |
 | `MEDIAMTX_WEBHOOK_SECRET` | Bearer secret (required; empty → webhooks return 503) |
 | `MEDIAMTX_PUBLISH_SECRET` | Optional shared secret for WHIP publish auth |

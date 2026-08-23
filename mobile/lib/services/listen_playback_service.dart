@@ -3,11 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 /// Keeps WHEP/WebRTC listen audio alive when Android hibernates the app.
 ///
 /// Starts a `mediaPlayback` foreground service with a persistent notification.
+/// Call [PermissionDisclosure.ensureNotifications] from the UI before [start]
+/// so Play-required disclosure runs ahead of the OS prompt.
 /// Failures are swallowed — foreground playback must keep working even if the
 /// notification / FGS path is blocked by the OEM or permission state.
 /// No-op on non-Android platforms.
@@ -45,15 +46,6 @@ class ListenPlaybackService {
   }) async {
     if (kIsWeb || !Platform.isAndroid) return;
     _ensureEventListen();
-
-    try {
-      // Android 13+ notification permission for the FG notification.
-      // Never block playback if the user denies — FGS may still start.
-      final notif = await Permission.notification.status;
-      if (!notif.isGranted && !notif.isPermanentlyDenied) {
-        await Permission.notification.request();
-      }
-    } catch (_) {}
 
     try {
       await _channel.invokeMethod('start', {

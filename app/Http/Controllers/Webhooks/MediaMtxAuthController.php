@@ -18,13 +18,13 @@ class MediaMtxAuthController extends Controller
     {
         $action = (string) $request->input('action', '');
         $path = (string) $request->input('path', '');
+        $parsed = $this->parseLivePath($path);
 
-        if (! $this->isLiveStreamPath($path)) {
+        if ($parsed === null) {
             return response('forbidden', Response::HTTP_FORBIDDEN);
         }
 
-        $uuid = substr($path, strlen('live/'));
-        $stream = Stream::query()->where('uuid', $uuid)->first();
+        $stream = Stream::query()->where('uuid', $parsed['uuid'])->first();
 
         if ($stream === null) {
             return response('unknown stream', Response::HTTP_FORBIDDEN);
@@ -32,13 +32,18 @@ class MediaMtxAuthController extends Controller
 
         return match ($action) {
             'read', 'playback' => response('ok', Response::HTTP_OK),
-            'publish' => $this->authorizePublish($request, $stream),
+            'publish' => $this->authorizePublish($request, $stream, $parsed['aac']),
             default => response('forbidden', Response::HTTP_FORBIDDEN),
         };
     }
 
-    private function authorizePublish(Request $request, Stream $stream): Response
+    private function authorizePublish(Request $request, Stream $stream, bool $aacSidecar): Response
     {
+        // Internal ffmpeg Opus→AAC remux publishes to live/<uuid>/aac from loopback.
+        if ($aacSidecar && $this->isLoopbackIp((string) $request->input('ip', ''))) {
+            return response('ok', Response::HTTP_OK);
+        }
+
         $candidates = $this->credentialCandidates($request);
         $global = config('streaming.mediamtx.publish_secret');
         $streamKey = (string) $stream->stream_key;
@@ -61,7 +66,54 @@ class MediaMtxAuthController extends Controller
             return response('ok', Response::HTTP_OK);
         }
 
+        // RTSP clients often probe without credentials first — ask for them.
+        if ($candidates === [] || $this->allEmpty($candidates)) {
+            return response('credentials required', Response::HTTP_UNAUTHORIZED);
+        }
+
         return response('publish secret required', Response::HTTP_FORBIDDEN);
+    }
+
+    /**
+     * @return array{uuid: string, aac: bool}|null
+     */
+    private function parseLivePath(string $path): ?array
+    {
+        if (! preg_match(
+            '/^live\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/aac)?$/i',
+            $path,
+            $matches
+        )) {
+            return null;
+        }
+
+        return [
+            'uuid' => strtolower($matches[1]),
+            'aac' => ($matches[2] ?? '') === '/aac',
+        ];
+    }
+
+    private function isLoopbackIp(string $ip): bool
+    {
+        if ($ip === '127.0.0.1' || $ip === '::1') {
+            return true;
+        }
+
+        return str_starts_with($ip, '127.');
+    }
+
+    /**
+     * @param  list<string>  $candidates
+     */
+    private function allEmpty(array $candidates): bool
+    {
+        foreach ($candidates as $candidate) {
+            if ($candidate !== '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -86,13 +138,5 @@ class MediaMtxAuthController extends Controller
         }
 
         return $candidates;
-    }
-
-    private function isLiveStreamPath(string $path): bool
-    {
-        return (bool) preg_match(
-            '/^live\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
-            $path
-        );
     }
 }

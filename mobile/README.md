@@ -1,8 +1,10 @@
 # Sound Mix Live
 
-Flutter app with **Listen** and **Studio** modes — Android, macOS, and Windows.
+Flutter app with **Listen** and **Studio** modes — Android, iOS, macOS, and Windows.
 
 API host: **https://soundmix.live**
+
+Store prep: see `STORE_SUBMISSION.md`, `STORE_LISTING.md`, and `DATA_SAFETY.md`.
 
 ## Features
 
@@ -27,7 +29,22 @@ flutter pub get
 ```bash
 flutter run --dart-define=API_BASE=https://soundmix.live
 flutter build apk --release --dart-define=API_BASE=https://soundmix.live
+# Play upload (with upload keystore configured):
+flutter build appbundle --release --dart-define=API_BASE=https://soundmix.live
 ```
+
+### iOS
+
+Requires full **Xcode**. Bundle id `com.livemixaudio.liveMix`.
+
+```bash
+cd mobile/ios && pod install && cd ..
+flutter run -d ios --dart-define=API_BASE=https://soundmix.live
+flutter build ipa --release --dart-define=API_BASE=https://soundmix.live \
+  --export-options-plist=ios/ExportOptions.plist
+```
+
+TestFlight steps (Apple ID, Team, upload): see **TestFlight — build & upload runbook** in `STORE_SUBMISSION.md`. Replace `YOUR_TEAM_ID` in `ios/ExportOptions.plist` first.
 
 ### macOS (Desktop Studio)
 

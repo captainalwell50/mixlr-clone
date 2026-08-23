@@ -83,8 +83,10 @@ ADMIN_EMAIL=admin@yourchurch.org
 
 MEDIAMTX_WEBRTC_PUBLIC_BASE=https://stream.yourchurch.org/rtc
 MEDIAMTX_HLS_PUBLIC_BASE=https://stream.yourchurch.org/hls
-# Optional CDN for ~1k listeners (see CDN.md):
-# MEDIAMTX_HLS_CDN_BASE=https://<afd-endpoint>/hls
+# Optional CDN for ~1k listeners (see CDN.md — Cloudflare or Azure):
+# MEDIAMTX_HLS_CDN_BASE=https://cdn.yourchurch.org/hls
+# LISTEN_PREFER_HLS=true
+# LISTEN_HLS_AAC_SIDECAR=true
 MEDIAMTX_RTMP_PUBLIC_BASE=rtmp://stream.yourchurch.org:1935
 
 MEDIAMTX_WEBHOOK_URL=https://stream.yourchurch.org/api/webhooks/mediamtx

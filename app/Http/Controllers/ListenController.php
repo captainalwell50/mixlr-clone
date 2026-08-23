@@ -49,6 +49,7 @@ class ListenController extends Controller
             'organization' => $organization,
             'hlsUrl' => $stream->hlsPlaylistUrl(),
             'whepUrl' => $stream->whepUrl(),
+            'preferHls' => $stream->preferHlsListen(),
             'likeCount' => $likeCount,
             'userLiked' => $userLiked,
             'listenerCount' => $listenerCount,
@@ -77,6 +78,7 @@ class ListenController extends Controller
             'stream' => $stream,
             'hlsUrl' => $stream->hlsPlaylistUrl(),
             'whepUrl' => $stream->whepUrl(),
+            'preferHls' => $stream->preferHlsListen(),
         ]);
     }
 
