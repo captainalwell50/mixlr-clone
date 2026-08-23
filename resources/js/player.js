@@ -79,7 +79,10 @@ function connectAnalyser(audio) {
     try {
         // Prefer playback buffering over interactive latency — fewer audible underruns.
         audioCtx = audioCtx || new AudioContext({ latencyHint: 'playback' });
-        analyser = audioCtx.createAnalyser();
+        if (audioCtx.state === 'suspended') {
+            void audioCtx.resume();
+        }
+        analyser = analyser || audioCtx.createAnalyser();
         analyser.fftSize = 128;
         if (stream) {
             // WebRTC/WHEP: MediaElementSource is flaky with srcObject — tap the stream instead.
@@ -87,9 +90,22 @@ function connectAnalyser(audio) {
             sourceNode.connect(analyser);
             // Keep element output for audible playback; analyser is meter-only.
         } else {
-            sourceNode = audioCtx.createMediaElementSource(audio);
-            sourceNode.connect(analyser);
-            analyser.connect(audioCtx.destination);
+            // NEVER createMediaElementSource here — it permanently hijacks <audio> output.
+            // If AudioContext later suspends/interrupts, HLS plays as silence while the
+            // element still looks "playing". Meter via captureStream when available.
+            if (typeof audio.captureStream === 'function') {
+                try {
+                    sourceNode = audioCtx.createMediaStreamSource(audio.captureStream());
+                    sourceNode.connect(analyser);
+                } catch {
+                    sourceMode = mode;
+                    return;
+                }
+            } else {
+                // No safe meter path — leave element on the default speaker route.
+                sourceMode = mode;
+                return;
+            }
         }
         sourceMode = mode;
     } catch {
@@ -109,8 +125,9 @@ function syncButton(audio, btn) {
 
 /**
  * @param {HTMLAudioElement} audio
+ * @param {{ onUserPlay?: () => boolean|void|Promise<boolean|void>, onUserPause?: () => void }} [options]
  */
-export function bindStagePlayer(audio) {
+export function bindStagePlayer(audio, options = {}) {
     const btn = document.getElementById('btn-play');
     const wave = document.getElementById('stage-wave');
     const playShell = document.getElementById('stage-play-shell');
@@ -123,15 +140,23 @@ export function bindStagePlayer(audio) {
         wired = true;
         btn.addEventListener('click', async () => {
             if (audio.paused) {
+                const handled = await options.onUserPlay?.();
+                if (handled === true) {
+                    return;
+                }
                 try {
-                    if (audioCtx?.state === 'suspended') {
+                    audioCtx = audioCtx || new AudioContext({ latencyHint: 'playback' });
+                    if (audioCtx.state === 'suspended') {
                         await audioCtx.resume();
                     }
                     await audio.play();
+                    // Wire HLS metering only after the context can output audio.
+                    connectAnalyser(audio);
                 } catch {
                     /* listen.js sets status */
                 }
             } else {
+                options.onUserPause?.();
                 audio.pause();
             }
         });

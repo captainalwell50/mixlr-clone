@@ -39,6 +39,10 @@ let whepSucceeded = false;
 let hlsSucceeded = false;
 /** @type {ReturnType<typeof bindStagePlayer> | null} */
 let stagePlayer = null;
+/** Listener clicked Pause — do not auto-resume via poll/retry/WHEP. */
+let userPaused = false;
+/** True while we are tearing down media (ignore the resulting pause event). */
+let tearingDown = false;
 
 function preferHls() {
     return root?.dataset.preferHls === '1' || root?.dataset.preferHls === 'true';
@@ -65,6 +69,33 @@ function waitingMessage() {
     return isMarkedLive()
         ? 'Stream interrupted — reconnecting…'
         : 'Waiting for the broadcast to start. This page will keep trying.';
+}
+
+function pausedStatusMessage() {
+    return isMarkedLive() ? 'Paused — press play to resume.' : 'Paused';
+}
+
+function hasAttachedMedia() {
+    return Boolean(audio && (audio.srcObject || audio.src));
+}
+
+function setUserPaused(paused) {
+    userPaused = paused;
+    if (paused) {
+        clearRetry();
+        setStatus(pausedStatusMessage());
+    }
+}
+
+function playAudioElement() {
+    if (!audio || userPaused) {
+        return Promise.resolve();
+    }
+    return audio.play().catch(() => {
+        if (!userPaused) {
+            setStatus('Press play when you are ready.');
+        }
+    });
 }
 
 function applyPlaybackUrls(data) {
@@ -122,6 +153,10 @@ function audioStillPlaying() {
  * listeners permanently silent after publisher network gaps.
  */
 function playbackLooksHealthy() {
+    // Intentional pause is not a dead session — never reconnect over it.
+    if (userPaused) {
+        return true;
+    }
     if (peerIsTerminal()) {
         return false;
     }
@@ -211,6 +246,10 @@ function trySoftIceRestart() {
 }
 
 function scheduleRetry(reason) {
+    if (userPaused) {
+        setStatus(pausedStatusMessage());
+        return;
+    }
     if (retryTimer) {
         return;
     }
@@ -227,6 +266,10 @@ function scheduleRetry(reason) {
     const delay = nextRetryDelayMs();
     retryTimer = window.setTimeout(() => {
         retryTimer = null;
+        if (userPaused) {
+            setStatus(pausedStatusMessage());
+            return;
+        }
         if (playbackLooksHealthy()) {
             resetRetryBackoff();
             setStatus(isMarkedLive() ? 'On air' : 'Playing');
@@ -237,7 +280,7 @@ function scheduleRetry(reason) {
 }
 
 function armDisconnectRecovery() {
-    if (disconnectTimer) {
+    if (userPaused || disconnectTimer) {
         return;
     }
     setStatus('Connection unstable — holding…');
@@ -248,6 +291,10 @@ function armDisconnectRecovery() {
         }
         const state = pc.connectionState;
         if (state === 'connected' || state === 'connecting') {
+            return;
+        }
+        if (userPaused) {
+            setStatus(pausedStatusMessage());
             return;
         }
         // Still getting frames — hold quietly; soft-refresh ICE in the background.
@@ -262,7 +309,7 @@ function armDisconnectRecovery() {
                 if (!pc || pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
                     return;
                 }
-                if (playbackLooksHealthy()) {
+                if (userPaused || playbackLooksHealthy()) {
                     return;
                 }
                 scheduleRetry(waitingMessage());
@@ -284,7 +331,7 @@ function handlePeerConnectionChange() {
         resetRetryBackoff();
         clearDisconnectGrace();
         clearRetry();
-        setStatus(isMarkedLive() ? 'On air' : 'Playing');
+        setStatus(userPaused ? pausedStatusMessage() : (isMarkedLive() ? 'On air' : 'Playing'));
         return;
     }
 
@@ -294,11 +341,18 @@ function handlePeerConnectionChange() {
 
     // Brief ICE blips often report "disconnected" then recover — wait, then soft ICE.
     if (state === 'disconnected') {
+        if (userPaused) {
+            return;
+        }
         armDisconnectRecovery();
         return;
     }
 
     if (state === 'failed' || state === 'closed') {
+        if (userPaused) {
+            setStatus(pausedStatusMessage());
+            return;
+        }
         clearDisconnectGrace();
         if (state === 'failed' && trySoftIceRestart()) {
             disconnectTimer = window.setTimeout(() => {
@@ -306,7 +360,7 @@ function handlePeerConnectionChange() {
                 if (!pc || pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
                     return;
                 }
-                if (playbackLooksHealthy()) {
+                if (userPaused || playbackLooksHealthy()) {
                     return;
                 }
                 scheduleRetry(waitingMessage());
@@ -360,6 +414,11 @@ async function applyLive({ force = false } = {}) {
         root.dataset.streamStatus = 'live';
     }
     updateBroadcastBadge(true);
+    if (userPaused) {
+        stagePlayer?.enable();
+        setStatus(pausedStatusMessage());
+        return;
+    }
     if (!force && playbackLooksHealthy()) {
         return;
     }
@@ -406,7 +465,9 @@ async function refreshStreamStatus() {
             }
             // Stayed live but listener session died (publisher path replace /
             // MediaMTX destroy) — resubscribe without waiting for offline→live.
-            if (!playbackLooksHealthy() && !startingPlayback && !retryTimer) {
+            if (userPaused) {
+                setStatus(pausedStatusMessage());
+            } else if (!playbackLooksHealthy() && !startingPlayback && !retryTimer) {
                 scheduleRetry(waitingMessage());
             }
         } else if (root) {
@@ -449,32 +510,37 @@ async function waitForIce(peer) {
 }
 
 async function teardown() {
-    if (hls) {
-        hls.destroy();
-        hls = null;
-    }
-    if (whepResourceUrl) {
-        try {
-            await fetch(whepResourceUrl, { method: 'DELETE' });
-        } catch {
-            /* ignore */
+    tearingDown = true;
+    try {
+        if (hls) {
+            hls.destroy();
+            hls = null;
         }
-        whepResourceUrl = null;
-    }
-    if (pc) {
-        pc.ontrack = null;
-        pc.onconnectionstatechange = null;
-        pc.close();
-        pc = null;
-    }
-    if (audio) {
-        audio.srcObject = null;
-        audio.removeAttribute('src');
-        try {
-            audio.load();
-        } catch {
-            /* ignore */
+        if (whepResourceUrl) {
+            try {
+                await fetch(whepResourceUrl, { method: 'DELETE' });
+            } catch {
+                /* ignore */
+            }
+            whepResourceUrl = null;
         }
+        if (pc) {
+            pc.ontrack = null;
+            pc.onconnectionstatechange = null;
+            pc.close();
+            pc = null;
+        }
+        if (audio) {
+            audio.srcObject = null;
+            audio.removeAttribute('src');
+            try {
+                audio.load();
+            } catch {
+                /* ignore */
+            }
+        }
+    } finally {
+        tearingDown = false;
     }
 }
 
@@ -497,9 +563,7 @@ async function startWhep(whepUrl) {
         tuneReceiveAudio(event.receiver, event.track);
         const stream = event.streams[0] ?? new MediaStream([event.track]);
         audio.srcObject = stream;
-        audio.play().catch(() => {
-            setStatus('Press play when you are ready.');
-        });
+        void playAudioElement();
     };
 
     pc.onconnectionstatechange = () => handlePeerConnectionChange();
@@ -575,7 +639,7 @@ async function startHls(hlsUrl, opts = {}) {
                 }
                 settled = true;
                 window.clearTimeout(timer);
-                setStatus(isMarkedLive() ? 'On air' : 'Playing');
+                setStatus(userPaused ? pausedStatusMessage() : (isMarkedLive() ? 'On air' : 'Playing'));
                 hlsSucceeded = true;
                 resolve();
             };
@@ -590,16 +654,25 @@ async function startHls(hlsUrl, opts = {}) {
             audio.addEventListener('playing', onPlaying, { once: true });
             audio.addEventListener('error', onError, { once: true });
             audio.src = hlsUrlWithCacheBust(hlsUrl);
-            audio.play().catch(() => {
-                // Autoplay blocked — still treat as connected if metadata arrives.
+            if (userPaused) {
                 if (!settled) {
                     settled = true;
                     window.clearTimeout(timer);
-                    setStatus('Press play when you are ready.');
                     hlsSucceeded = true;
                     resolve();
                 }
-            });
+            } else {
+                audio.play().catch(() => {
+                    // Autoplay blocked — still treat as connected if metadata arrives.
+                    if (!settled) {
+                        settled = true;
+                        window.clearTimeout(timer);
+                        setStatus('Press play when you are ready.');
+                        hlsSucceeded = true;
+                        resolve();
+                    }
+                });
+            }
         });
         return;
     }
@@ -644,6 +717,10 @@ async function startHls(hlsUrl, opts = {}) {
         hls.loadSource(hlsUrlWithCacheBust(hlsUrl));
         hls.attachMedia(audio);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (userPaused) {
+                finish(null);
+                return;
+            }
             audio.play().catch(() => {
                 setStatus('Press play when you are ready.');
                 finish(null);
@@ -665,10 +742,18 @@ async function startHls(hlsUrl, opts = {}) {
                     finish(new Error('HLS network error'));
                     return;
                 }
+                if (userPaused) {
+                    setStatus(pausedStatusMessage());
+                    return;
+                }
                 void teardown().then(() => scheduleRetry('Trying again…'));
                 return;
             }
             if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                if (userPaused) {
+                    setStatus(pausedStatusMessage());
+                    return;
+                }
                 try {
                     hls?.recoverMediaError();
                     setStatus('Recovering playback…');
@@ -678,6 +763,10 @@ async function startHls(hlsUrl, opts = {}) {
                 }
                 return;
             }
+            if (userPaused) {
+                setStatus(pausedStatusMessage());
+                return;
+            }
             setStatus('Playback error.');
             finish(new Error('HLS playback error'));
             void teardown().then(() => scheduleRetry('Trying again…'));
@@ -685,7 +774,7 @@ async function startHls(hlsUrl, opts = {}) {
         audio.addEventListener(
             'playing',
             () => {
-                setStatus('On air');
+                setStatus(userPaused ? pausedStatusMessage() : 'On air');
                 finish(null);
             },
             { once: true },
@@ -698,6 +787,12 @@ async function startPlayback({ force = false } = {}) {
         return;
     }
 
+    if (userPaused) {
+        stagePlayer?.enable();
+        setStatus(pausedStatusMessage());
+        return;
+    }
+
     // Already listening — do not tear down a healthy session.
     if (!force && playbackLooksHealthy()) {
         resetRetryBackoff();
@@ -705,9 +800,7 @@ async function startPlayback({ force = false } = {}) {
         return;
     }
 
-    if (!stagePlayer) {
-        stagePlayer = bindStagePlayer(audio);
-    }
+    ensureStagePlayer();
 
     if (hasStatusUrl() && !isMarkedLive()) {
         stagePlayer.disable();
@@ -732,6 +825,10 @@ async function startPlayback({ force = false } = {}) {
 
     try {
         await teardown();
+        if (userPaused) {
+            setStatus(pausedStatusMessage());
+            return;
+        }
 
         const tryHlsFirst = preferHls() || hlsSucceeded;
         // After a successful WHEP session, stay on WHEP unless HLS is preferred (CDN/AAC).
@@ -743,6 +840,10 @@ async function startPlayback({ force = false } = {}) {
                 resetRetryBackoff();
                 return;
             } catch {
+                if (userPaused) {
+                    setStatus(pausedStatusMessage());
+                    return;
+                }
                 // Fall through to WHEP (Studio Opus / sidecar not ready yet).
             }
         }
@@ -753,6 +854,10 @@ async function startPlayback({ force = false } = {}) {
                 resetRetryBackoff();
                 return;
             } catch {
+                if (userPaused) {
+                    setStatus(pausedStatusMessage());
+                    return;
+                }
                 if (whepSucceeded && !preferHls()) {
                     scheduleRetry(waitingMessage());
                     return;
@@ -767,7 +872,10 @@ async function startPlayback({ force = false } = {}) {
                 resetRetryBackoff();
                 return;
             } catch {
-                /* retry below */
+                if (userPaused) {
+                    setStatus(pausedStatusMessage());
+                    return;
+                }
             }
         }
 
@@ -787,7 +895,34 @@ window.addEventListener('beforeunload', () => {
     void teardown();
 });
 
+function ensureStagePlayer() {
+    if (!audio || stagePlayer) {
+        return;
+    }
+    stagePlayer = bindStagePlayer(audio, {
+        onUserPause: () => setUserPaused(true),
+        onUserPlay: () => {
+            setUserPaused(false);
+            if (!hasAttachedMedia() || peerIsTerminal()) {
+                void startPlayback({ force: true });
+                return true;
+            }
+            return false;
+        },
+    });
+    audio.addEventListener('pause', () => {
+        if (tearingDown || startingPlayback) {
+            return;
+        }
+        if (!hasAttachedMedia()) {
+            return;
+        }
+        setUserPaused(true);
+    });
+}
+
 startStatusPolling();
+ensureStagePlayer();
 void startPlayback();
 bindInitialGalleryFromDom();
 bindScriptureListen(root);
