@@ -17,6 +17,24 @@ import '../services/live_board_sync.dart';
 import '../services/mixer_bridge.dart';
 import '../theme.dart';
 
+/// speech_to_text session for "Listen for scripture".
+///
+/// [SpeechListenOptions.pauseFor] is omitted on purpose. The plugin's Dart
+/// timer treats that as a hard stop (this app previously used 4 seconds),
+/// which ended listening after a brief pause in a verse reference.
+/// [SpeechListenOptions.listenFor] is also omitted so a 2-minute cap does
+/// not kill the session. Apple/Android may still finalize an utterance;
+/// we restart until the operator taps Stop or the panel is disposed.
+@visibleForTesting
+stt.SpeechListenOptions scriptureSpeechListenOptions() {
+  return stt.SpeechListenOptions(
+    listenMode: stt.ListenMode.dictation,
+    partialResults: true,
+    cancelOnError: false,
+    localeId: 'en_US',
+  );
+}
+
 /// Church-only EasyWorship cue panel — mirrors web Studio Scripture controls.
 class ScripturePanel extends StatefulWidget {
   const ScripturePanel({
@@ -222,7 +240,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
     if (status == stt.SpeechToText.notListeningStatus ||
         status == stt.SpeechToText.doneStatus) {
-      setState(() => _listening = false);
+      // Engine ended (silence / utterance final / native cap). Keep the
+      // operator session up and recycle, matching web Studio onend restart.
       _scheduleListenRestart();
     }
   }
@@ -231,12 +250,39 @@ class _ScripturePanelState extends State<ScripturePanel> {
     if (!_wantListen || _restartScheduled) return;
     _restartScheduled = true;
     _restartTimer?.cancel();
-    _restartTimer = Timer(const Duration(milliseconds: 450), () async {
+    _restartTimer = Timer(const Duration(milliseconds: 350), () async {
       _restartScheduled = false;
       if (!mounted || !_wantListen) return;
+      if (_useMixerSpeech) {
+        await _restartMixerSession();
+        return;
+      }
       if (_speech.isListening) return;
       await _beginListenSession();
     });
+  }
+
+  Future<void> _restartMixerSession() async {
+    final mixer = widget.mixer;
+    if (mixer == null || !_wantListen) return;
+    mixer.onScriptureSpeech = _onMixerSpeech;
+    mixer.onScriptureSpeechStatus = _onMixerSpeechStatus;
+    mixer.onScriptureSpeechError = _onMixerSpeechError;
+    final ok = await mixer.startScriptureListen();
+    if (!mounted || !_wantListen) return;
+    if (ok) {
+      setState(() {
+        _listening = true;
+        if (_pendingRef == null) {
+          _status = 'Listening for scripture references…';
+        }
+      });
+      return;
+    }
+    setState(() {
+      _status = 'Could not start speech recognition. Retrying…';
+    });
+    _scheduleListenRestart();
   }
 
   Future<void> _beginListenSession() async {
@@ -244,15 +290,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
     try {
       await _speech.listen(
         onResult: _onSpeechResult,
-        listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
-          partialResults: true,
-          cancelOnError: false,
-          localeId: 'en_US',
-          listenFor: const Duration(minutes: 2),
-          // Shorter pause so finals flush sooner mid-reference without killing dictation.
-          pauseFor: const Duration(seconds: 4),
-        ),
+        listenOptions: scriptureSpeechListenOptions(),
       );
       if (!mounted || !_wantListen) return;
       setState(() {
@@ -503,9 +541,32 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   void _onMixerSpeechError(String message) {
     if (!mounted || !_wantListen) return;
+    final msg = message.toLowerCase();
+    final permanent = msg.contains('permission') ||
+        msg.contains('not authorized') ||
+        msg.contains('not allowed') ||
+        msg.contains('denied') ||
+        msg.contains('disabled') ||
+        msg.contains('restricted');
+    if (permanent) {
+      _wantListen = false;
+      _restartTimer?.cancel();
+      _restartScheduled = false;
+      _watchdogTimer?.cancel();
+      _watchdogTimer = null;
+      _unbindMixerSpeech();
+      setState(() {
+        _listening = false;
+        _status = message;
+      });
+      return;
+    }
     setState(() {
-      _status = message;
+      if (_pendingRef == null) {
+        _status = 'Listening for scripture references…';
+      }
     });
+    _scheduleListenRestart();
   }
 
   Future<void> _toggleMixerListen() async {

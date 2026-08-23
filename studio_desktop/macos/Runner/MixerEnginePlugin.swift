@@ -335,6 +335,9 @@ final class MixerEnginePlugin: NSObject {
 }
 
 /// Scripture listen uses the Studio mixer tap — never a second AVAudioEngine.
+///
+/// Apple's recognizer still finalizes after a short pause (~2–3s). That must
+/// not end the operator session: debounce-restart the task until stop().
 final class ScriptureSpeechController {
   private weak var audio: NativeAudioEngine?
   private var recognizer: SFSpeechRecognizer?
@@ -342,6 +345,8 @@ final class ScriptureSpeechController {
   private var task: SFSpeechRecognitionTask?
   private var listening = false
   private var localeId = "en_US"
+  private var restartWork: DispatchWorkItem?
+  private var generation = 0
 
   var onPartial: ((String, Bool) -> Void)?
   var onStatus: ((String) -> Void)?
@@ -367,11 +372,12 @@ final class ScriptureSpeechController {
           completion(false, "English speech recognition is not available on this Mac.")
           return
         }
-        self.startTask()
-        self.audio?.onMicBuffer = { [weak self] buffer in
-          self?.request?.append(buffer)
-        }
         self.listening = true
+        self.ensureMicTap()
+        let state = self.task?.state
+        if state != .running && state != .starting {
+          self.startTask()
+        }
         self.onStatus?("listening")
         completion(true, nil)
       } catch {
@@ -402,12 +408,25 @@ final class ScriptureSpeechController {
 
   func stop() {
     listening = false
+    restartWork?.cancel()
+    restartWork = nil
+    generation += 1
     audio?.onMicBuffer = nil
-    request?.endAudio()
-    task?.cancel()
+    let oldRequest = request
+    let oldTask = task
     request = nil
     task = nil
+    oldRequest?.endAudio()
+    if oldTask?.state == .running || oldTask?.state == .starting {
+      oldTask?.cancel()
+    }
     onStatus?("notListening")
+  }
+
+  private func ensureMicTap() {
+    audio?.onMicBuffer = { [weak self] buffer in
+      self?.request?.append(buffer)
+    }
   }
 
   private func prepareRecognizer() {
@@ -416,8 +435,15 @@ final class ScriptureSpeechController {
   }
 
   private func startTask() {
-    request?.endAudio()
-    task?.cancel()
+    let oldRequest = request
+    let oldTask = task
+    request = nil
+    task = nil
+    oldRequest?.endAudio()
+    if oldTask?.state == .running || oldTask?.state == .starting {
+      oldTask?.cancel()
+    }
+
     let next = SFSpeechAudioBufferRecognitionRequest()
     next.shouldReportPartialResults = true
     next.taskHint = .dictation
@@ -425,38 +451,63 @@ final class ScriptureSpeechController {
       next.addsPunctuation = true
     }
     request = next
+    generation += 1
+    let gen = generation
     task = recognizer?.recognitionTask(with: next) { [weak self] result, error in
-      guard let self, self.listening else { return }
+      guard let self, self.listening, self.generation == gen else { return }
+      var ended = false
       if let result {
         let words = result.bestTranscription.formattedString
         DispatchQueue.main.async {
           self.onPartial?(words, result.isFinal)
         }
         if result.isFinal {
-          DispatchQueue.main.async { [weak self] in
-            self?.restartTaskIfListening()
-          }
+          ended = true
         }
       }
       if let error {
         let ns = error as NSError
-        let retryable = ns.domain == "kAFAssistantErrorDomain" || ns.code == 203 || ns.code == 216 || ns.code == 1110
-        if retryable {
-          DispatchQueue.main.async { [weak self] in
-            self?.restartTaskIfListening()
+        if self.isPermanentSpeechError(ns) {
+          DispatchQueue.main.async {
+            guard self.listening else { return }
+            self.listening = false
+            self.restartWork?.cancel()
+            self.audio?.onMicBuffer = nil
+            self.onError?(error.localizedDescription)
+            self.onStatus?("notListening")
           }
           return
         }
-        DispatchQueue.main.async {
-          self.onError?(error.localizedDescription)
+        ended = true
+      }
+      if ended {
+        DispatchQueue.main.async { [weak self] in
+          self?.scheduleRestart()
         }
       }
     }
   }
 
-  private func restartTaskIfListening() {
+  private func isPermanentSpeechError(_ ns: NSError) -> Bool {
+    let msg = ns.localizedDescription.lowercased()
+    if msg.contains("not authorized") || msg.contains("permission") || msg.contains("not allowed") ||
+        msg.contains("denied") || msg.contains("disabled") || msg.contains("restricted") {
+      return true
+    }
+    return ns.code == 1700
+  }
+
+  private func scheduleRestart() {
     guard listening else { return }
-    startTask()
+    restartWork?.cancel()
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, self.listening else { return }
+      self.startTask()
+      self.onStatus?("listening")
+    }
+    restartWork = work
+    // Match web Studio: brief delay so Apple can finish the prior utterance.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
   }
 }
 
