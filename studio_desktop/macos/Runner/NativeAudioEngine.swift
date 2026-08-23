@@ -93,6 +93,8 @@ final class NativeAudioEngine {
   var onStatus: ((String) -> Void)?
   /// Fired after a successful input (re)bind so WHIP can re-point ADM at the new mic.
   var onInputDeviceChanged: (() -> Void)?
+  /// Live mic PCM for scripture speech — must not start a second AVAudioEngine.
+  var onMicBuffer: ((AVAudioPCMBuffer) -> Void)?
 
   /// Label for the selected mic — used to bind WebRTC ADM on go-live.
   var selectedInputLabel: String? {
@@ -1311,6 +1313,7 @@ final class NativeAudioEngine {
           acc += l * l + r * r
         }
         let rms = sqrt(acc / Float(max(frames * 2, 1)))
+        self.onMicBuffer?(buffer)
         if self.micMuted {
           self.micLevel = 0
           return
@@ -1342,6 +1345,7 @@ final class NativeAudioEngine {
             acc += l * l + r * r
           }
           let rms = sqrt(acc / Float(max(frames * 2, 1)))
+          self.onMicBuffer?(buffer)
           if self.micMuted {
             self.micLevel = 0
             return

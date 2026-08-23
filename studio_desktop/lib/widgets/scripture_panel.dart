@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -12,6 +14,7 @@ import '../scripture/book_completion.dart';
 import '../scripture/spoken_reference.dart';
 import '../services/api_client.dart';
 import '../services/live_board_sync.dart';
+import '../services/mixer_bridge.dart';
 import '../theme.dart';
 
 /// Church-only EasyWorship cue panel — mirrors web Studio Scripture controls.
@@ -21,11 +24,13 @@ class ScripturePanel extends StatefulWidget {
     required this.api,
     required this.streamUuid,
     this.liveBoard,
+    this.mixer,
   });
 
   final ApiClient api;
   final String streamUuid;
   final LiveBoardSync? liveBoard;
+  final MixerBridge? mixer;
 
   @override
   State<ScripturePanel> createState() => _ScripturePanelState();
@@ -84,11 +89,30 @@ class _ScripturePanelState extends State<ScripturePanel> {
     _confirmTimer?.cancel();
     _restartTimer?.cancel();
     _watchdogTimer?.cancel();
+    _unbindMixerSpeech();
     _controller.dispose();
-    if (_speech.isListening) {
+    if (!Platform.isMacOS && _speech.isListening) {
       unawaited(_speech.stop());
     }
     super.dispose();
+  }
+
+  bool get _useMixerSpeech =>
+      !kIsWeb && Platform.isMacOS && widget.mixer != null;
+
+  void _unbindMixerSpeech() {
+    final mixer = widget.mixer;
+    if (mixer == null) return;
+    if (mixer.onScriptureSpeech == _onMixerSpeech) {
+      mixer.onScriptureSpeech = null;
+    }
+    if (mixer.onScriptureSpeechStatus == _onMixerSpeechStatus) {
+      mixer.onScriptureSpeechStatus = null;
+    }
+    if (mixer.onScriptureSpeechError == _onMixerSpeechError) {
+      mixer.onScriptureSpeechError = null;
+    }
+    unawaited(mixer.stopScriptureListen());
   }
 
   void _armWatchdog() {
@@ -435,7 +459,11 @@ class _ScripturePanelState extends State<ScripturePanel> {
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
-    final words = result.recognizedWords.trim();
+    _handleHeardWords(result.recognizedWords, result.finalResult);
+  }
+
+  void _handleHeardWords(String rawWords, bool isFinal) {
+    final words = rawWords.trim();
     // Keep the last heard line on empty partials / silent ticks — don't flash back to idle.
     if (words.isEmpty) {
       return;
@@ -448,24 +476,97 @@ class _ScripturePanelState extends State<ScripturePanel> {
     if (mounted && _wantListen) {
       setState(() {
         _liveTranscript = words;
-        _liveTranscriptFinal = result.finalResult;
+        _liveTranscriptFinal = isFinal;
       });
     }
 
     // Prefer finals; also accept partials that clearly parse (STT often lags on final).
     final ref = parseSpokenReference(words);
     if (ref == null) {
-      if (result.finalResult && words != _lastHeard) {
+      if (isFinal && words != _lastHeard) {
         _lastHeard = words;
       }
       return;
     }
-    if (!result.finalResult && words.length < 6) return;
+    if (!isFinal && words.length < 6) return;
     _lastHeard = words;
     _offerConfirm(ref);
   }
 
+  void _onMixerSpeech(String words, bool isFinal) {
+    _handleHeardWords(words, isFinal);
+  }
+
+  void _onMixerSpeechStatus(String status) {
+    _onSpeechStatus(status);
+  }
+
+  void _onMixerSpeechError(String message) {
+    if (!mounted || !_wantListen) return;
+    setState(() {
+      _status = message;
+    });
+  }
+
+  Future<void> _toggleMixerListen() async {
+    final mixer = widget.mixer;
+    if (mixer == null) {
+      setState(() {
+        _status =
+            'Speech recognition uses the Studio mixer mic. Type a reference instead.';
+      });
+      return;
+    }
+    if (_wantListen || _listening) {
+      _wantListen = false;
+      _restartTimer?.cancel();
+      _restartScheduled = false;
+      _watchdogTimer?.cancel();
+      _watchdogTimer = null;
+      _gotResultOnce = false;
+      _unbindMixerSpeech();
+      if (!mounted) return;
+      setState(() {
+        _listening = false;
+        _liveTranscript = '';
+        _liveTranscriptFinal = false;
+        _status = _current != null
+            ? 'Showing ${_current!.ref} on listen'
+            : 'Speech recognition off';
+      });
+      return;
+    }
+
+    mixer.onScriptureSpeech = _onMixerSpeech;
+    mixer.onScriptureSpeechStatus = _onMixerSpeechStatus;
+    mixer.onScriptureSpeechError = _onMixerSpeechError;
+    _wantListen = true;
+    _gotResultOnce = false;
+    setState(() {
+      _listening = true;
+      _liveTranscript = '';
+      _liveTranscriptFinal = false;
+      _status = 'Listening for scripture references…';
+    });
+    _armWatchdog();
+    final ok = await mixer.startScriptureListen();
+    if (!mounted) return;
+    if (!ok) {
+      _wantListen = false;
+      _watchdogTimer?.cancel();
+      setState(() {
+        _listening = false;
+        _status =
+            'Speech recognition unavailable — allow Speech Recognition in System Settings, or type a reference.';
+      });
+    }
+  }
+
   Future<void> _toggleListen() async {
+    if (_useMixerSpeech || Platform.isMacOS) {
+      await _toggleMixerListen();
+      return;
+    }
     if (_wantListen || _listening) {
       _wantListen = false;
       _restartTimer?.cancel();

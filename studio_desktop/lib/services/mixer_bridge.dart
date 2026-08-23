@@ -24,6 +24,9 @@ class MixerBridge extends ChangeNotifier {
   String? _iceState;
   String? _status;
   String? _error;
+  void Function(String words, bool isFinal)? onScriptureSpeech;
+  void Function(String status)? onScriptureSpeechStatus;
+  void Function(String message)? onScriptureSpeechError;
   List<MixerTrack> _tracks = const [];
   List<AudioInputDevice> _inputs = const [];
   List<AudioInputDevice> _outputs = const [];
@@ -252,6 +255,35 @@ class MixerBridge extends ChangeNotifier {
     }
   }
 
+  Future<bool> startScriptureListen({String localeId = 'en_US'}) async {
+    _ensureListen();
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('startScriptureListen', {
+        'localeId': localeId,
+      });
+      if (raw is Map && raw['ok'] == true) return true;
+      return raw == true;
+    } on PlatformException catch (e) {
+      onScriptureSpeechError?.call(
+        e.message?.isNotEmpty == true
+            ? e.message!
+            : 'Speech recognition unavailable. Type a reference instead.',
+      );
+      return false;
+    } catch (_) {
+      onScriptureSpeechError?.call(
+        'Speech recognition unavailable. Type a reference instead.',
+      );
+      return false;
+    }
+  }
+
+  Future<void> stopScriptureListen() async {
+    try {
+      await _channel.invokeMethod<void>('stopScriptureListen');
+    } catch (_) {}
+  }
+
   Future<void> stopPublish() async {
     try {
       await _channel.invokeMethod<void>('stopPublish');
@@ -318,6 +350,20 @@ class MixerBridge extends ChangeNotifier {
         case 'ice':
           _iceState = data['state'] as String?;
           break;
+        case 'scriptureSpeech':
+          onScriptureSpeech?.call(
+            data['words'] as String? ?? '',
+            data['final'] == true,
+          );
+          return;
+        case 'scriptureSpeechStatus':
+          onScriptureSpeechStatus?.call(data['status'] as String? ?? '');
+          return;
+        case 'scriptureSpeechError':
+          onScriptureSpeechError?.call(
+            data['message'] as String? ?? 'Speech recognition failed.',
+          );
+          return;
         case 'error':
           final msg = data['message'] as String?;
           if (msg != null && msg.isNotEmpty) {

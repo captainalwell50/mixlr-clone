@@ -1,11 +1,13 @@
 import Cocoa
 import FlutterMacOS
+import Speech
 
 /// Native mixer MethodChannel — AVAudioEngine + WHIP (no WebView).
 final class MixerEnginePlugin: NSObject {
   private var channel: FlutterMethodChannel?
   private let audio = NativeAudioEngine()
   private let whip = NativeWhipPublisher()
+  private let scriptureSpeech = ScriptureSpeechController()
 
   static func register(with registrar: FlutterPluginRegistrar, hostView: NSView) {
     let channel = FlutterMethodChannel(
@@ -15,6 +17,7 @@ final class MixerEnginePlugin: NSObject {
     let instance = MixerEnginePlugin()
     instance.channel = channel
     instance.whip.attach(engine: instance.audio)
+    instance.scriptureSpeech.attach(engine: instance.audio)
     instance.bindCallbacks()
     channel.setMethodCallHandler(instance.handle)
   }
@@ -74,6 +77,25 @@ final class MixerEnginePlugin: NSObject {
     audio.onInputDeviceChanged = { [weak self] in
       // Re-point WebRTC ADM after Studio rebinds CoreAudio (live mic hot-swap).
       self?.whip.rebindAdmAfterDeviceSwap()
+    }
+    scriptureSpeech.onPartial = { [weak self] words, isFinal in
+      self?.post([
+        "type": "scriptureSpeech",
+        "words": words,
+        "final": isFinal,
+      ])
+    }
+    scriptureSpeech.onStatus = { [weak self] status in
+      self?.post([
+        "type": "scriptureSpeechStatus",
+        "status": status,
+      ])
+    }
+    scriptureSpeech.onError = { [weak self] message in
+      self?.post([
+        "type": "scriptureSpeechError",
+        "message": message,
+      ])
     }
   }
 
@@ -259,7 +281,28 @@ final class MixerEnginePlugin: NSObject {
       whip.stop()
       result(nil)
 
+    case "startScriptureListen":
+      let localeId = (call.arguments as? [String: Any])?["localeId"] as? String ?? "en_US"
+      scriptureSpeech.start(localeId: localeId) { ok, message in
+        DispatchQueue.main.async {
+          if ok {
+            result(["ok": true])
+          } else {
+            result(FlutterError(
+              code: "scripture_speech",
+              message: message ?? "Speech recognition unavailable",
+              details: nil
+            ))
+          }
+        }
+      }
+
+    case "stopScriptureListen":
+      scriptureSpeech.stop()
+      result(nil)
+
     case "dispose":
+      scriptureSpeech.stop()
       whip.stop()
       audio.tearDown()
       result(nil)
@@ -288,5 +331,137 @@ final class MixerEnginePlugin: NSObject {
     if let f = value as? Float { return f }
     if let i = value as? Int { return Float(i) }
     return nil
+  }
+}
+
+/// Scripture listen uses the Studio mixer tap — never a second AVAudioEngine.
+final class ScriptureSpeechController {
+  private weak var audio: NativeAudioEngine?
+  private var recognizer: SFSpeechRecognizer?
+  private var request: SFSpeechAudioBufferRecognitionRequest?
+  private var task: SFSpeechRecognitionTask?
+  private var listening = false
+  private var localeId = "en_US"
+
+  var onPartial: ((String, Bool) -> Void)?
+  var onStatus: ((String) -> Void)?
+  var onError: ((String) -> Void)?
+
+  func attach(engine: NativeAudioEngine) {
+    audio = engine
+  }
+
+  func start(localeId: String, completion: @escaping (Bool, String?) -> Void) {
+    self.localeId = localeId
+    let begin: () -> Void = { [weak self] in
+      guard let self else {
+        completion(false, "Speech recognition unavailable")
+        return
+      }
+      do {
+        if self.audio != nil {
+          try self.audio?.startIfNeeded()
+        }
+        self.prepareRecognizer()
+        guard self.recognizer != nil else {
+          completion(false, "English speech recognition is not available on this Mac.")
+          return
+        }
+        self.startTask()
+        self.audio?.onMicBuffer = { [weak self] buffer in
+          self?.request?.append(buffer)
+        }
+        self.listening = true
+        self.onStatus?("listening")
+        completion(true, nil)
+      } catch {
+        completion(false, error.localizedDescription)
+      }
+    }
+
+    let status = SFSpeechRecognizer.authorizationStatus()
+    switch status {
+    case .authorized:
+      DispatchQueue.main.async(execute: begin)
+    case .notDetermined:
+      SFSpeechRecognizer.requestAuthorization { next in
+        DispatchQueue.main.async {
+          if next == .authorized {
+            begin()
+          } else {
+            completion(false, "Allow Speech Recognition in System Settings → Privacy & Security.")
+          }
+        }
+      }
+    case .denied, .restricted:
+      completion(false, "Allow Speech Recognition in System Settings → Privacy & Security.")
+    @unknown default:
+      completion(false, "Speech recognition unavailable on this Mac.")
+    }
+  }
+
+  func stop() {
+    listening = false
+    audio?.onMicBuffer = nil
+    request?.endAudio()
+    task?.cancel()
+    request = nil
+    task = nil
+    onStatus?("notListening")
+  }
+
+  private func prepareRecognizer() {
+    let requested = Locale(identifier: localeId)
+    recognizer = SFSpeechRecognizer(locale: requested) ?? SFSpeechRecognizer(locale: Locale(identifier: "en_US")) ?? SFSpeechRecognizer()
+  }
+
+  private func startTask() {
+    request?.endAudio()
+    task?.cancel()
+    let next = SFSpeechAudioBufferRecognitionRequest()
+    next.shouldReportPartialResults = true
+    next.taskHint = .dictation
+    if #available(macOS 13, *) {
+      next.addsPunctuation = true
+    }
+    request = next
+    task = recognizer?.recognitionTask(with: next) { [weak self] result, error in
+      guard let self, self.listening else { return }
+      if let result {
+        let words = result.bestTranscription.formattedString
+        DispatchQueue.main.async {
+          self.onPartial?(words, result.isFinal)
+        }
+        if result.isFinal {
+          DispatchQueue.main.async { [weak self] in
+            self?.restartTaskIfListening()
+          }
+        }
+      }
+      if let error {
+        let ns = error as NSError
+        let retryable = ns.domain == "kAFAssistantErrorDomain" || ns.code == 203 || ns.code == 216 || ns.code == 1110
+        if retryable {
+          DispatchQueue.main.async { [weak self] in
+            self?.restartTaskIfListening()
+          }
+          return
+        }
+        DispatchQueue.main.async {
+          self.onError?(error.localizedDescription)
+        }
+      }
+    }
+  }
+
+  private func restartTaskIfListening() {
+    guard listening else { return }
+    startTask()
+  }
+}
+
+extension NativeAudioEngine {
+  fileprivate func startIfNeeded() throws {
+    try start()
   }
 }

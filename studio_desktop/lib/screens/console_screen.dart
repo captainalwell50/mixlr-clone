@@ -896,6 +896,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                               scriptureEnabled:
                                   _home?.organization?.isChurch == true,
                               streamUuid: _stream?.uuid,
+                              mixer: _mixer,
                               api: context.read<AuthState>().api,
                               onRefresh: _refreshGallery,
                               onUploadPhoto: _uploadPhoto,
@@ -1419,10 +1420,12 @@ class _ChurchLiveBoard extends StatefulWidget {
   const _ChurchLiveBoard({
     required this.api,
     required this.streamUuid,
+    this.mixer,
   });
 
   final ApiClient api;
   final String streamUuid;
+  final MixerBridge? mixer;
 
   @override
   State<_ChurchLiveBoard> createState() => _ChurchLiveBoardState();
@@ -1447,6 +1450,7 @@ class _ChurchLiveBoardState extends State<_ChurchLiveBoard> {
           api: widget.api,
           streamUuid: widget.streamUuid,
           liveBoard: _liveBoard,
+          mixer: widget.mixer,
         ),
         const SizedBox(height: 16),
         SongPanel(
@@ -1466,6 +1470,7 @@ class _AdvancePanel extends StatelessWidget {
     required this.galleryReady,
     required this.scriptureEnabled,
     required this.streamUuid,
+    this.mixer,
     required this.api,
     required this.onRefresh,
     required this.onUploadPhoto,
@@ -1479,6 +1484,7 @@ class _AdvancePanel extends StatelessWidget {
   final bool galleryReady;
   final bool scriptureEnabled;
   final String? streamUuid;
+  final MixerBridge? mixer;
   final ApiClient api;
   final Future<void> Function() onRefresh;
   final VoidCallback onUploadPhoto;
@@ -1489,7 +1495,7 @@ class _AdvancePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final board = scriptureEnabled && streamUuid != null
-        ? _ChurchLiveBoard(api: api, streamUuid: streamUuid!)
+        ? _ChurchLiveBoard(api: api, streamUuid: streamUuid!, mixer: mixer)
         : null;
     final gallerySection = _GallerySection(
       gallery: gallery,

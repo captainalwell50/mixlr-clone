@@ -198,6 +198,21 @@ void main() {
     expect(find.text('Go live'), findsWidgets);
   });
 
+  testWidgets('Listen for scripture does not throw without mixer', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 800));
+    final api = _studioApi();
+    await tester.pumpWidget(
+      _advanceShell(
+        child: ScripturePanel(api: api, streamUuid: 'abc'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Listen for scripture'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('Type a reference'), findsOneWidget);
+  });
+
   testWidgets('Advance narrow ListView + Expanded gallery', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 700));
     final api = _studioApi();
