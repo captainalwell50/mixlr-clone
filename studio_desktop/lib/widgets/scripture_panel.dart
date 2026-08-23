@@ -35,6 +35,20 @@ stt.SpeechListenOptions scriptureSpeechListenOptions() {
   );
 }
 
+@visibleForTesting
+const scriptureMicDeniedStatus =
+    'Microphone permission denied. Enable Microphone in System Settings → Privacy & Security, then tap Listen again.';
+
+@visibleForTesting
+const scriptureSpeechDeniedStatus =
+    'Speech Recognition permission denied. Enable Speech Recognition in System Settings → Privacy & Security, then tap Listen again.';
+
+@visibleForTesting
+String? scriptureListenPreflightError(String micStatus) {
+  if (micStatus == 'denied') return scriptureMicDeniedStatus;
+  return null;
+}
+
 /// Church-only EasyWorship cue panel — mirrors web Studio Scripture controls.
 class ScripturePanel extends StatefulWidget {
   const ScripturePanel({
@@ -135,15 +149,11 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   void _armWatchdog() {
     _watchdogTimer?.cancel();
-    _watchdogTimer = Timer(const Duration(seconds: 12), () {
+    _watchdogTimer = Timer(const Duration(seconds: 8), () {
       if (!mounted || !_wantListen || _gotResultOnce) return;
       setState(() {
         _status =
-            'Speech recognition isn’t returning words. Allow Microphone and Speech Recognition in System Settings, check the mic isn’t muted, or type a reference.';
-        if (_liveTranscript.isEmpty) {
-          _liveTranscript = '';
-          _liveTranscriptFinal = false;
-        }
+            'Hearing no words yet. Allow Microphone and Speech Recognition in System Settings, unmute the Studio SOURCE, or type a reference.';
       });
     });
   }
@@ -561,11 +571,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
       });
       return;
     }
-    setState(() {
-      if (_pendingRef == null) {
-        _status = 'Listening for scripture references…';
-      }
-    });
+    // Keep the diagnostic visible — a silent "Listening…" hid missing mic/audio.
+    setState(() => _status = message);
     _scheduleListenRestart();
   }
 
@@ -598,9 +605,48 @@ class _ScripturePanelState extends State<ScripturePanel> {
       return;
     }
 
+    final micStatus = await mixer.refreshMicPermissionStatus();
+    if (!mounted) return;
+    final preflight = scriptureListenPreflightError(micStatus);
+    if (preflight != null) {
+      setState(() {
+        _listening = false;
+        _status = preflight;
+      });
+      return;
+    }
+    if (micStatus == 'notDetermined') {
+      final granted = await mixer.ensureMicAccess(promptIfNeeded: true);
+      if (!mounted) return;
+      if (!granted) {
+        setState(() {
+          _listening = false;
+          _status = scriptureMicDeniedStatus;
+        });
+        return;
+      }
+    }
+    if (!mixer.isArmed) {
+      try {
+        await mixer.armMic();
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _listening = false;
+          _status =
+              'Could not enable the Studio microphone. Pick a SOURCE on the mixer, then tap Listen.';
+        });
+        return;
+      }
+    }
+
     mixer.onScriptureSpeech = _onMixerSpeech;
     mixer.onScriptureSpeechStatus = _onMixerSpeechStatus;
-    mixer.onScriptureSpeechError = _onMixerSpeechError;
+    String? startFail;
+    mixer.onScriptureSpeechError = (message) {
+      startFail = message;
+      _onMixerSpeechError(message);
+    };
     _wantListen = true;
     _gotResultOnce = false;
     setState(() {
@@ -614,11 +660,12 @@ class _ScripturePanelState extends State<ScripturePanel> {
     if (!mounted) return;
     if (!ok) {
       _wantListen = false;
+      _restartTimer?.cancel();
+      _restartScheduled = false;
       _watchdogTimer?.cancel();
       setState(() {
         _listening = false;
-        _status =
-            'Speech recognition unavailable — allow Speech Recognition in System Settings, or type a reference.';
+        _status = startFail ?? scriptureSpeechDeniedStatus;
       });
     }
   }

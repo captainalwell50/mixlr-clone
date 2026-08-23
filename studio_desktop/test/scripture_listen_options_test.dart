@@ -8,5 +8,13 @@ void main() {
     expect(opts.listenFor, isNull);
     expect(opts.partialResults, isTrue);
     expect(opts.cancelOnError, isFalse);
+    expect(opts.localeId, 'en_US');
+  });
+
+  test('denied microphone is a visible preflight error', () {
+    expect(scriptureListenPreflightError('denied'), scriptureMicDeniedStatus);
+    expect(scriptureListenPreflightError('authorized'), isNull);
+    expect(scriptureListenPreflightError('notDetermined'), isNull);
+    expect(scriptureSpeechDeniedStatus.toLowerCase(), contains('speech recognition'));
   });
 }

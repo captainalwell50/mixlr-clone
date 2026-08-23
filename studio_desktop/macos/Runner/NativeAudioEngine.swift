@@ -112,6 +112,12 @@ final class NativeAudioEngine {
     tearDown()
   }
 
+  /// Scripture listen needs a running input graph — `start()` only prepares the session.
+  func ensureArmedForSpeech() throws {
+    if armed && engine.isRunning && micWired { return }
+    try armMic(deviceId: selectedDeviceId)
+  }
+
   /// Prepare session + device list. Engine starts only after mic is armed
   /// (avoids avfaudio -10875 from starting with a mismatched IO graph).
   func start() throws {

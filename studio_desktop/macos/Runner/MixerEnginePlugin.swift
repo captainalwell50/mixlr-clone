@@ -336,8 +336,8 @@ final class MixerEnginePlugin: NSObject {
 
 /// Scripture listen uses the Studio mixer tap — never a second AVAudioEngine.
 ///
-/// Apple's recognizer still finalizes after a short pause (~2–3s). That must
-/// not end the operator session: debounce-restart the task until stop().
+/// Apple's recognizer finalizes after a short pause (~2–3s). Recycle only after
+/// a finished utterance — do not cancel a live task or results never arrive.
 final class ScriptureSpeechController {
   private weak var audio: NativeAudioEngine?
   private var recognizer: SFSpeechRecognizer?
@@ -346,7 +346,12 @@ final class ScriptureSpeechController {
   private var listening = false
   private var localeId = "en_US"
   private var restartWork: DispatchWorkItem?
+  private var healthWork: DispatchWorkItem?
   private var generation = 0
+  private var buffersAppended = 0
+  private var peakRms: Float = 0
+  private var taskStartedAt: TimeInterval = 0
+  private var gotPartial = false
 
   var onPartial: ((String, Bool) -> Void)?
   var onStatus: ((String) -> Void)?
@@ -364,24 +369,32 @@ final class ScriptureSpeechController {
         return
       }
       do {
-        if self.audio != nil {
-          try self.audio?.startIfNeeded()
-        }
+        try self.audio?.ensureArmedForSpeech()
         self.prepareRecognizer()
-        guard self.recognizer != nil else {
-          completion(false, "English speech recognition is not available on this Mac.")
+        guard let recognizer = self.recognizer else {
+          completion(false, "Speech recognition is not available on this Mac. Type a reference instead.")
+          return
+        }
+        guard recognizer.isAvailable else {
+          completion(
+            false,
+            "Speech recognition isn’t available right now (check network and Dictation in System Settings). Type a reference instead."
+          )
           return
         }
         self.listening = true
         self.ensureMicTap()
         let state = self.task?.state
         if state != .running && state != .starting {
-          self.startTask()
+          self.startTask(force: false)
         }
         self.onStatus?("listening")
         completion(true, nil)
       } catch {
-        completion(false, error.localizedDescription)
+        completion(
+          false,
+          "Could not enable the Studio microphone for speech. Pick a SOURCE on the mixer, allow Microphone in System Settings, then tap Listen."
+        )
       }
     }
 
@@ -395,14 +408,20 @@ final class ScriptureSpeechController {
           if next == .authorized {
             begin()
           } else {
-            completion(false, "Allow Speech Recognition in System Settings → Privacy & Security.")
+            completion(
+              false,
+              "Speech Recognition permission denied. Enable Speech Recognition in System Settings → Privacy & Security, then tap Listen again."
+            )
           }
         }
       }
     case .denied, .restricted:
-      completion(false, "Allow Speech Recognition in System Settings → Privacy & Security.")
+      completion(
+        false,
+        "Speech Recognition permission denied. Enable Speech Recognition in System Settings → Privacy & Security, then tap Listen again."
+      )
     @unknown default:
-      completion(false, "Speech recognition unavailable on this Mac.")
+      completion(false, "Speech recognition unavailable on this Mac. Type a reference instead.")
     }
   }
 
@@ -410,6 +429,8 @@ final class ScriptureSpeechController {
     listening = false
     restartWork?.cancel()
     restartWork = nil
+    healthWork?.cancel()
+    healthWork = nil
     generation += 1
     audio?.onMicBuffer = nil
     let oldRequest = request
@@ -425,16 +446,56 @@ final class ScriptureSpeechController {
 
   private func ensureMicTap() {
     audio?.onMicBuffer = { [weak self] buffer in
-      self?.request?.append(buffer)
+      self?.appendMicBuffer(buffer)
     }
   }
 
-  private func prepareRecognizer() {
-    let requested = Locale(identifier: localeId)
-    recognizer = SFSpeechRecognizer(locale: requested) ?? SFSpeechRecognizer(locale: Locale(identifier: "en_US")) ?? SFSpeechRecognizer()
+  private func appendMicBuffer(_ buffer: AVAudioPCMBuffer) {
+    request?.append(buffer)
+    buffersAppended += 1
+    guard let ch = buffer.floatChannelData else { return }
+    let frames = Int(buffer.frameLength)
+    guard frames > 0 else { return }
+    var peak: Float = 0
+    let step = max(1, frames / 32)
+    for i in stride(from: 0, to: frames, by: step) {
+      peak = max(peak, abs(ch[0][i]))
+    }
+    if peak > peakRms { peakRms = peak }
   }
 
-  private func startTask() {
+  private func prepareRecognizer() {
+    recognizer = Self.resolveRecognizer(localeId: localeId)
+  }
+
+  static func resolveRecognizer(localeId: String) -> SFSpeechRecognizer? {
+    let normalized = localeId.replacingOccurrences(of: "-", with: "_")
+    var seen = Set<String>()
+    var candidates: [Locale] = [
+      Locale(identifier: normalized),
+      Locale.current,
+      Locale(identifier: "en_US"),
+    ]
+    for locale in candidates {
+      let id = locale.identifier
+      if seen.contains(id) { continue }
+      seen.insert(id)
+      if let rec = SFSpeechRecognizer(locale: locale), rec.isAvailable {
+        return rec
+      }
+    }
+    if let rec = SFSpeechRecognizer(), rec.isAvailable {
+      return rec
+    }
+    return SFSpeechRecognizer(locale: Locale(identifier: normalized))
+      ?? SFSpeechRecognizer(locale: Locale(identifier: "en_US"))
+      ?? SFSpeechRecognizer()
+  }
+
+  private func startTask(force: Bool = false) {
+    let state = task?.state
+    if !force && (state == .running || state == .starting) { return }
+
     let oldRequest = request
     let oldTask = task
     request = nil
@@ -453,17 +514,27 @@ final class ScriptureSpeechController {
     request = next
     generation += 1
     let gen = generation
+    buffersAppended = 0
+    peakRms = 0
+    gotPartial = false
+    taskStartedAt = Date().timeIntervalSince1970
+    armHealthCheck()
     task = recognizer?.recognitionTask(with: next) { [weak self] result, error in
       guard let self, self.listening, self.generation == gen else { return }
-      var ended = false
       if let result {
         let words = result.bestTranscription.formattedString
+        if !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          self.gotPartial = true
+        }
         DispatchQueue.main.async {
           self.onPartial?(words, result.isFinal)
         }
         if result.isFinal {
-          ended = true
+          DispatchQueue.main.async { [weak self] in
+            self?.scheduleRestart(afterUtterance: true)
+          }
         }
+        return
       }
       if let error {
         let ns = error as NSError
@@ -472,20 +543,50 @@ final class ScriptureSpeechController {
             guard self.listening else { return }
             self.listening = false
             self.restartWork?.cancel()
+            self.healthWork?.cancel()
             self.audio?.onMicBuffer = nil
-            self.onError?(error.localizedDescription)
+            self.onError?(self.humanSpeechError(ns))
             self.onStatus?("notListening")
           }
           return
         }
-        ended = true
-      }
-      if ended {
-        DispatchQueue.main.async { [weak self] in
-          self?.scheduleRestart()
+        let age = Date().timeIntervalSince1970 - self.taskStartedAt
+        let finished = self.task?.state == .completed || self.task?.state == .canceling
+        // Do not recycle a live task — that was dropping every transcript.
+        if finished || (age >= 2 && !self.gotPartial && (ns.code == 203 || ns.code == 1110)) {
+          DispatchQueue.main.async { [weak self] in
+            self?.scheduleRestart(afterUtterance: false)
+          }
         }
       }
     }
+  }
+
+  private func armHealthCheck() {
+    healthWork?.cancel()
+    let work = DispatchWorkItem { [weak self] in
+      self?.checkHealth()
+    }
+    healthWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
+  }
+
+  private func checkHealth() {
+    guard listening, !gotPartial else { return }
+    if buffersAppended == 0 {
+      onError?(
+        "Microphone audio isn’t reaching speech recognition. Enable the Studio microphone (SOURCE), allow Microphone in System Settings, then tap Listen."
+      )
+      do {
+        try audio?.ensureArmedForSpeech()
+        ensureMicTap()
+      } catch {
+        return
+      }
+      scheduleRestart(afterUtterance: false)
+      return
+    }
+    // Audio is flowing. Wait for words — a brief quiet stretch is normal.
   }
 
   private func isPermanentSpeechError(_ ns: NSError) -> Bool {
@@ -497,22 +598,29 @@ final class ScriptureSpeechController {
     return ns.code == 1700
   }
 
-  private func scheduleRestart() {
+  private func humanSpeechError(_ ns: NSError) -> String {
+    let msg = ns.localizedDescription.lowercased()
+    if msg.contains("not authorized") || msg.contains("permission") || msg.contains("not allowed")
+        || ns.code == 1700 {
+      return "Speech Recognition permission denied. Enable Speech Recognition in System Settings → Privacy & Security, then tap Listen again."
+    }
+    return ns.localizedDescription
+  }
+
+  private func scheduleRestart(afterUtterance: Bool) {
     guard listening else { return }
+    let state = task?.state
+    if !afterUtterance && (state == .running || state == .starting) {
+      return
+    }
     restartWork?.cancel()
     let work = DispatchWorkItem { [weak self] in
       guard let self, self.listening else { return }
-      self.startTask()
+      self.startTask(force: true)
       self.onStatus?("listening")
     }
     restartWork = work
     // Match web Studio: brief delay so Apple can finish the prior utterance.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
-  }
-}
-
-extension NativeAudioEngine {
-  fileprivate func startIfNeeded() throws {
-    try start()
   }
 }
