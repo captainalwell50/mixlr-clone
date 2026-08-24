@@ -29,9 +29,9 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Sound Mix Live Studio needs the microphone to broadcast live audio and detect spoken Bible references.</string>
+	<string>Sound Mix Live Studio needs microphone access to broadcast live audio and to listen for spoken Bible references on the Live Board.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Sound Mix Live Studio uses speech recognition to detect spoken Bible references for the Live Board.</string>
+	<string>Sound Mix Live Studio needs speech recognition to detect spoken Bible references and show scripture on the Live Board.</string>
 </dict>
 </plist>
 
