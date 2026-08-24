@@ -25,4 +25,13 @@ void main() {
     expect(scriptureStatusIsDiagnostic(scriptureNoWordsYetStatus), isFalse);
     expect(scriptureStatusIsDiagnostic('Listening for scripture references…'), isFalse);
   });
+
+  test('native hearing status is distinct from permission and silence', () {
+    expect(scriptureStatusForNativeEvent('listening'),
+        'Listening for scripture references…');
+    expect(scriptureStatusForNativeEvent('hearing'), scriptureHearingStatus);
+    expect(scriptureStatusForNativeEvent('notListening'), isNull);
+    expect(scriptureHearingStatus.toLowerCase(), contains('hearing'));
+    expect(scriptureStatusIsDiagnostic(scriptureHearingStatus), isFalse);
+  });
 }

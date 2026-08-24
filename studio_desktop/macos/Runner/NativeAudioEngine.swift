@@ -38,6 +38,9 @@ final class NativeAudioEngine {
   /// Master → headphones pad. Near-silent pull when cue is off; muted when cueing
   /// so HP hears only the cue bus (WHIP still taps master upstream at full level).
   private let programMonitor = AVAudioMixerNode()
+  /// Always-on near-silent pull from the mic strip so meter/speech taps keep firing
+  /// when SOURCE is muted and CUE is off (program+cue sends at 0 stop the graph).
+  private let micTapPull = AVAudioMixerNode()
 
   private var playerNodes: [String: AVAudioPlayerNode] = [:]
   private var playerFiles: [String: AVAudioFile] = [:]
@@ -69,6 +72,10 @@ final class NativeAudioEngine {
   private var sessionReady = false
   private var nodesAttached = false
   private var micWired = false
+  /// True when the micMixer meter tap is installed (inputNode may still feed speech).
+  private var micMixerTapInstalled = false
+  /// True when scripture speech PCM comes from the inputNode tap (preferred).
+  private var speechFromInputNode = false
   /// Ring PCM is a full wet master mix (mic+playlist faders baked; master applied at inject).
   private var ringHasMasterGain = false
   /// Mute × mic × master — read from the WebRTC audio callback.
@@ -152,6 +159,8 @@ final class NativeAudioEngine {
     sessionReady = false
     armed = false
     micWired = false
+    micMixerTapInstalled = false
+    speechFromInputNode = false
     speechListening = false
   }
 
@@ -796,6 +805,7 @@ final class NativeAudioEngine {
       self.engine.attach(self.micCueSend)
       self.engine.attach(self.playlistCueSend)
       self.engine.attach(self.programMonitor)
+      self.engine.attach(self.micTapPull)
     }
     nodesAttached = ok
     if !ok {
@@ -818,6 +828,7 @@ final class NativeAudioEngine {
         self.engine.detach(self.micCueSend)
         self.engine.detach(self.playlistCueSend)
         self.engine.detach(self.programMonitor)
+        self.engine.detach(self.micTapPull)
       }
       for player in self.playerNodes.values {
         self.engine.detach(player)
@@ -840,6 +851,7 @@ final class NativeAudioEngine {
       self.engine.disconnectNodeOutput(self.masterMixer)
       self.engine.disconnectNodeOutput(self.cueMixer)
       self.engine.disconnectNodeOutput(self.programMonitor)
+      self.engine.disconnectNodeOutput(self.micTapPull)
       for player in self.playerNodes.values {
         self.engine.disconnectNodeOutput(player)
       }
@@ -848,6 +860,7 @@ final class NativeAudioEngine {
 
   /// Program: mic/playlist → program sends (mute×fader) → master → (WHIP tap) → programMonitor → HP.
   /// Cue: strip fan-out → cue sends (pre-mute) → cueMixer → HP.
+  /// micTapPull: near-silent side-chain so mic taps stay live when muted + CUE off.
   /// Fan-out is mixer→mixer only (never from inputNode — that caused !dev / -10867).
   /// Wire sinks first so fan-out destinations are initialized before multi-tap connect.
   private func wireMixGraph(micFormat: AVAudioFormat) -> NSError? {
@@ -871,13 +884,15 @@ final class NativeAudioEngine {
       // nil into mainMixer lets the engine match hardware output rate.
       self.engine.connect(self.programMonitor, to: self.engine.mainMixerNode, format: nil)
       self.engine.connect(self.cueMixer, to: self.engine.mainMixerNode, format: nil)
+      self.engine.connect(self.micTapPull, to: self.engine.mainMixerNode, format: nil)
 
-      // Mic strip → program send + cue send (pre-fader / pre-mute cue).
+      // Mic strip → program send + cue send (pre-fader / pre-mute cue) + silent tap pull.
       self.engine.connect(
         self.micMixer,
         to: [
           AVAudioConnectionPoint(node: self.micProgramSend, bus: 0),
           AVAudioConnectionPoint(node: self.micCueSend, bus: 0),
+          AVAudioConnectionPoint(node: self.micTapPull, bus: 0),
         ],
         fromBus: 0,
         format: busFormat
@@ -1312,14 +1327,51 @@ final class NativeAudioEngine {
       engineSampleRate = tapFormat.sampleRate
     }
 
-    // Mic strip meter only — WHIP always comes from the master bus (below).
+    // Prefer raw inputNode PCM for scripture speech (HW format, pre-strip).
+    // micMixer tap stays for strip meters; it only forwards speech if input tap fails.
+    speechFromInputNode = false
+    micMixerTapInstalled = false
+    var inputErr: NSError?
+    let inputOk = SMCatchException(&inputErr) { [self] in
+      let format = self.engine.inputNode.outputFormat(forBus: 0)
+      guard format.sampleRate > 0, format.channelCount > 0 else { return }
+      self.engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) {
+        [weak self] buffer, _ in
+        guard let self else { return }
+        self.onMicBuffer?(buffer)
+        // Meter fallback only when micMixer tap is missing.
+        guard !self.micMixerTapInstalled else { return }
+        guard let ch = buffer.floatChannelData else { return }
+        let frames = Int(buffer.frameLength)
+        guard frames > 0 else { return }
+        let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
+        var acc: Float = 0
+        for f in 0..<frames {
+          let l = ch[0][f]
+          let r = right[f]
+          acc += l * l + r * r
+        }
+        let rms = sqrt(acc / Float(max(frames * 2, 1)))
+        if self.micMuted {
+          self.micLevel = 0
+          return
+        }
+        let scaled = rms * max(self.micFader, 0) * max(self.masterFader, 0)
+        self.micLevel = max(self.micLevel * 0.5, self.meterLevel(rms: scaled))
+      }
+      self.speechFromInputNode = true
+    }
+
+    // Mic strip meter — WHIP always comes from the master bus (below).
     var micErr: NSError?
     let micOk = SMCatchException(&micErr) { [self] in
       self.micMixer.installTap(onBus: 0, bufferSize: 1024, format: nil) {
         [weak self] buffer, _ in
         guard let self else { return }
-        // Forward PCM before meter math — speech must work even if floatChannelData is nil.
-        self.onMicBuffer?(buffer)
+        // Only feed speech from the strip when inputNode tap is unavailable.
+        if !self.speechFromInputNode {
+          self.onMicBuffer?(buffer)
+        }
         guard let ch = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
         guard frames > 0 else { return }
@@ -1344,37 +1396,7 @@ final class NativeAudioEngine {
         )
         self.micLevel = max(self.micLevel * 0.5, next)
       }
-    }
-
-    var inputErr: NSError?
-    var inputOk = false
-    if !micOk {
-      inputOk = SMCatchException(&inputErr) { [self] in
-        let format = self.engine.inputNode.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { return }
-        self.engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) {
-          [weak self] buffer, _ in
-          guard let self else { return }
-          self.onMicBuffer?(buffer)
-          guard let ch = buffer.floatChannelData else { return }
-          let frames = Int(buffer.frameLength)
-          guard frames > 0 else { return }
-          let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
-          var acc: Float = 0
-          for f in 0..<frames {
-            let l = ch[0][f]
-            let r = right[f]
-            acc += l * l + r * r
-          }
-          let rms = sqrt(acc / Float(max(frames * 2, 1)))
-          if self.micMuted {
-            self.micLevel = 0
-            return
-          }
-          let scaled = rms * max(self.micFader, 0) * max(self.masterFader, 0)
-          self.micLevel = max(self.micLevel * 0.5, self.meterLevel(rms: scaled))
-        }
-      }
+      self.micMixerTapInstalled = true
     }
     let micMeterOk = micOk || inputOk
 
@@ -1852,6 +1874,8 @@ final class NativeAudioEngine {
     // gain so the master→HP edge stays connected, but put the real pull on mainMixer
     // (see headphonesOutputVolume) — otherwise meter/speech taps starve when armed.
     programMonitor.outputVolume = cueActive ? 0 : 0.001
+    // Keep the mic strip pulling even when muted + CUE off so taps stay live.
+    micTapPull.outputVolume = (micWired || speechListening) ? 0.001 : 0
     // Cue level is independent of the master fader (operator monitoring).
     engine.mainMixerNode.outputVolume = headphonesOutputVolume
   }

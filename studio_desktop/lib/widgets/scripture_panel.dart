@@ -56,6 +56,10 @@ const scriptureNoWordsYetStatus =
     'Hearing the mic but no words yet. Speak a reference like “John 3 16”, or type one.';
 
 @visibleForTesting
+const scriptureHearingStatus =
+    'Hearing the mic — speak a scripture reference…';
+
+@visibleForTesting
 String? scriptureListenPreflightError(String micStatus) {
   if (micStatus == 'denied') return scriptureMicDeniedStatus;
   return null;
@@ -69,6 +73,21 @@ bool scriptureStatusIsDiagnostic(String status) {
       lower.contains("isn't reaching") ||
       lower.contains('is silent') ||
       lower.contains('could not enable');
+}
+
+@visibleForTesting
+String? scriptureStatusForNativeEvent(String status) {
+  switch (status) {
+    case 'listening':
+      return 'Listening for scripture references…';
+    case 'hearing':
+      return scriptureHearingStatus;
+    case 'notListening':
+    case 'done':
+      return null;
+    default:
+      return null;
+  }
 }
 
 /// Church-only EasyWorship cue panel — mirrors web Studio Scripture controls.
@@ -299,12 +318,14 @@ class _ScripturePanelState extends State<ScripturePanel> {
     mixer.onScriptureSpeech = _onMixerSpeech;
     mixer.onScriptureSpeechStatus = _onMixerSpeechStatus;
     mixer.onScriptureSpeechError = _onMixerSpeechError;
+    // Native already keeps the SFSpeech task alive across pauses; only re-arm
+    // if the session actually stopped.
     final ok = await mixer.startScriptureListen();
     if (!mounted || !_wantListen) return;
     if (ok) {
       setState(() {
         _listening = true;
-        if (_pendingRef == null) {
+        if (_pendingRef == null && !scriptureStatusIsDiagnostic(_status)) {
           _status = 'Listening for scripture references…';
         }
       });
@@ -567,7 +588,35 @@ class _ScripturePanelState extends State<ScripturePanel> {
   }
 
   void _onMixerSpeechStatus(String status) {
-    _onSpeechStatus(status);
+    if (!mounted || !_wantListen) return;
+    // Native "notListening"/"done" is handled by the Swift recycler — do not
+    // bounce startScriptureListen from Dart or we cancel a live task mid-utterance.
+    if (status == stt.SpeechToText.notListeningStatus ||
+        status == stt.SpeechToText.doneStatus ||
+        status == 'notListening' ||
+        status == 'done') {
+      setState(() => _listening = _wantListen);
+      return;
+    }
+    if (status == stt.SpeechToText.listeningStatus || status == 'listening') {
+      setState(() {
+        _listening = true;
+        if (_pendingRef == null && !scriptureStatusIsDiagnostic(_status)) {
+          _status = 'Listening for scripture references…';
+        }
+      });
+      return;
+    }
+    if (status == 'hearing') {
+      setState(() {
+        _listening = true;
+        if (_pendingRef == null &&
+            !_gotResultOnce &&
+            !scriptureStatusIsDiagnostic(_status)) {
+          _status = scriptureHearingStatus;
+        }
+      });
+    }
   }
 
   void _onMixerSpeechError(String message) {
@@ -594,12 +643,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
     // Keep the diagnostic visible — a silent "Listening…" hid missing mic/audio.
     setState(() => _status = message);
-    final noAudio = msg.contains("isn't reaching") ||
-        msg.contains('isn’t reaching') ||
-        msg.contains('is silent');
-    if (!noAudio) {
-      _scheduleListenRestart();
-    }
+    // Native Swift already recycles the recognizer; avoid a second start that
+    // cancels the live SFSpeech task (that was dropping transcripts).
   }
 
   Future<void> _toggleMixerListen() async {

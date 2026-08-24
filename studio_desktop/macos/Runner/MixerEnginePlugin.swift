@@ -734,6 +734,10 @@ final class ScriptureSpeechController {
     if #available(macOS 13, *) {
       next.addsPunctuation = false
     }
+    // Prefer on-device when available — avoids silent network stalls with live PCM.
+    if recognizer?.supportsOnDeviceRecognition == true {
+      next.requiresOnDeviceRecognition = true
+    }
     requestLock.lock()
     request = next
     requestLock.unlock()
@@ -819,7 +823,8 @@ final class ScriptureSpeechController {
       )
       return
     }
-    // Audio is flowing with level — wait for Apple to return words.
+    // Audio is flowing with level — tell the UI we hear the mic, waiting for words.
+    onStatus?("hearing")
   }
 
   private static let scriptureContextPhrases: [String] = [
