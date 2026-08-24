@@ -138,12 +138,19 @@ final class NativeAudioEngine {
     if armed && engine.isRunning && micWired {
       // Re-assert pull + taps so a prior mute/CUE-off starve does not leave Listen deaf.
       applyGains()
-      if !micMixerTapInstalled && !speechFromInputNode {
-        installMeterAndCaptureTaps()
+      installMeterAndCaptureTaps()
+      if !engine.isRunning {
+        engine.prepare()
+        try engine.start()
       }
       return
     }
     try armMic(deviceId: device)
+    if !engine.isRunning {
+      engine.prepare()
+      try engine.start()
+      installMeterAndCaptureTaps()
+    }
   }
 
   /// Prefer last SOURCE, else Built-in / MacBook, else system default — never "none".

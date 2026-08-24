@@ -173,12 +173,12 @@ class _ScripturePanelState extends State<ScripturePanel> {
     super.dispose();
   }
 
-  /// Native mixer-tap SFSpeech only while Go Live — otherwise pause mixer and
-  /// use speech_to_text (Aug 9 path) so two AVAudioEngines never fight.
+  /// Always use shared-engine SFSpeech on macOS when the mixer exists.
+  /// speech_to_text starts a second AVAudioEngine and crashes the Studio app
+  /// even after suspend — proved by Lost connection right after mixer suspend.
   bool get _useMixerSpeech {
     final mixer = widget.mixer;
-    if (kIsWeb || !Platform.isMacOS || mixer == null) return false;
-    return mixer.publish == MixerPublishState.connected;
+    return !kIsWeb && Platform.isMacOS && mixer != null;
   }
 
   Future<void> _releaseMixerAfterSpeech() async {
@@ -844,11 +844,9 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   Future<void> _toggleListen() async {
     if (Platform.isMacOS) {
-      if (_useMixerSpeech) {
-        await _toggleMixerListen();
-      } else {
-        await _toggleSuspendedSpeechListen();
-      }
+      // Never speech_to_text while the Studio mixer owns AVAudioEngine — that
+      // second engine kills the process (even after suspend).
+      await _toggleMixerListen();
       return;
     }
     if (_wantListen || _listening) {
