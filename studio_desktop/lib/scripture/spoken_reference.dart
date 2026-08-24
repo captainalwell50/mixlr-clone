@@ -1,13 +1,15 @@
 /// Parse a spoken (or typed-from-STT) Bible reference into canonical form.
 ///
 /// Handles common church cues: "John 3:16", "John three sixteen",
-/// "chapter 3 verse 16", "first John 1:9", "1 John 1 9".
+/// "chapter 3 verse 16", "John 13 start from 16", "first John 1:9".
 ///
 /// When a transcript contains multiple book cues, prefers the **last**
 /// complete chapter:verse (most recent spoken reference). Ranges are only
 /// formed when the end verse is strictly after the start (avoids STT noise
 /// like restated "chapter 1" turning `1:7` into `1:7-1`).
 String? parseSpokenReference(String transcript) {
+  // Word numbers through ninety-nine cover Bible chapter/verse speech
+  // ("sixteen", "thirty one", "twenty-eight"). Hyphens are stripped below.
   const words = <String, int>{
     'zero': 0,
     'oh': 0,
@@ -124,6 +126,14 @@ String? parseSpokenReference(String transcript) {
       .replaceAll('in the book of', ' ')
       .replaceAll(RegExp(r'\bchapters?\b'), ' ')
       .replaceAll(RegExp(r'\bverses?\b'), ' ')
+      // "John 13 start from 16" / "begin at" / "beginning at" / "starting from"
+      .replaceAll(
+        RegExp(r'\b(start|starting|begin|beginning)\s+(from|at)\b'),
+        ' ',
+      )
+      .replaceAll(RegExp(r'\b(start|starting|begin|beginning)\b'), ' ')
+      .replaceAll(RegExp(r'\bfrom\b'), ' ')
+      .replaceAll(RegExp(r'\bat\b'), ' ')
       .replaceAll(RegExp(r'\band\b'), ' ')
       .replaceAll(RegExp(r'\bthrough\b'), ' ')
       .replaceAll(RegExp(r'\bto\b'), ' ')
@@ -205,6 +215,42 @@ String? parseSpokenReference(String transcript) {
   return best;
 }
 
+bool _isTensWord(int? n) => n != null && n >= 20 && n % 10 == 0;
+
+bool _isOnesWord(int? n) => n != null && n >= 1 && n <= 9;
+
+/// How many numeric values remain in [tokens] from [from] (tens+ones count as one).
+int _countNumericValuesAhead(
+  List<String> tokens,
+  int from,
+  Map<String, int> words,
+) {
+  var count = 0;
+  var i = from;
+  while (i < tokens.length) {
+    if (int.tryParse(tokens[i]) != null) {
+      count += 1;
+      i += 1;
+      continue;
+    }
+    final n = words[tokens[i]];
+    if (n == null) {
+      i += 1;
+      continue;
+    }
+    if (_isTensWord(n) &&
+        i + 1 < tokens.length &&
+        _isOnesWord(words[tokens[i + 1]])) {
+      count += 1;
+      i += 2;
+      continue;
+    }
+    count += 1;
+    i += 1;
+  }
+  return count;
+}
+
 String? _chapterVerseFromRest(
   String rest,
   String book,
@@ -257,11 +303,25 @@ String? _chapterVerseFromRest(
       continue;
     }
     if (i + 1 < tokens.length && words.containsKey(tokens[i + 1])) {
-      final two = parseNum([tokens[i], tokens[i + 1]]);
-      if (two != null && words[tokens[i]] != null && words[tokens[i]]! >= 20) {
-        nums.add(two);
-        i += 2;
-        continue;
+      final tens = words[tokens[i]];
+      final ones = words[tokens[i + 1]];
+      if (_isTensWord(tens) && _isOnesWord(ones)) {
+        // Prefer chapter:verse when two word-numbers follow a book with nothing
+        // after ("thirty one" → 30:1). Once a chapter is set, compound for the
+        // verse ("twenty three thirty one" → 23:31).
+        final moreAfter = _countNumericValuesAhead(tokens, i + 2, words);
+        if (nums.isEmpty && moreAfter == 0) {
+          nums.add(tens!);
+          nums.add(ones!);
+          i += 2;
+          continue;
+        }
+        final two = parseNum([tokens[i], tokens[i + 1]]);
+        if (two != null) {
+          nums.add(two);
+          i += 2;
+          continue;
+        }
       }
     }
     // Prefer "three sixteen" as 3 then 16 (not 19).

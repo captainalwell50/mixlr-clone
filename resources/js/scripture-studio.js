@@ -287,6 +287,40 @@ function parseSpokenNumber(tokens) {
     return total > 0 ? total : null;
 }
 
+function isTensWord(n) {
+    return n != null && n >= 20 && n % 10 === 0;
+}
+
+function isOnesWord(n) {
+    return n != null && n >= 1 && n <= 9;
+}
+
+/** How many numeric values remain from `from` (tens+ones count as one). */
+function countNumericValuesAhead(tokens, from) {
+    let count = 0;
+    let i = from;
+    while (i < tokens.length) {
+        if (/^\d+$/.test(tokens[i])) {
+            count += 1;
+            i += 1;
+            continue;
+        }
+        const n = WORDS[tokens[i]];
+        if (n == null) {
+            i += 1;
+            continue;
+        }
+        if (isTensWord(n) && i + 1 < tokens.length && isOnesWord(WORDS[tokens[i + 1]])) {
+            count += 1;
+            i += 2;
+            continue;
+        }
+        count += 1;
+        i += 1;
+    }
+    return count;
+}
+
 /**
  * @param {string} transcript
  * @returns {string|null} e.g. "John 3:16"
@@ -312,7 +346,18 @@ function chapterVerseFromRest(rest, book) {
         }
         if (i + 1 < tokens.length && tokens[i + 1] in WORDS) {
             const tens = WORDS[tokens[i]];
-            if (tens != null && tens >= 20) {
+            const ones = WORDS[tokens[i + 1]];
+            if (isTensWord(tens) && isOnesWord(ones)) {
+                // Prefer chapter:verse when two word-numbers follow a book with
+                // nothing after ("thirty one" → 30:1). Once chapter is set,
+                // compound for the verse ("twenty three thirty one" → 23:31).
+                const moreAfter = countNumericValuesAhead(tokens, i + 2);
+                if (nums.length === 0 && moreAfter === 0) {
+                    nums.push(tens);
+                    nums.push(ones);
+                    i += 2;
+                    continue;
+                }
                 const two = parseSpokenNumber([tokens[i], tokens[i + 1]]);
                 if (two != null) {
                     nums.push(two);
@@ -321,6 +366,7 @@ function chapterVerseFromRest(rest, book) {
                 }
             }
         }
+        // Prefer "three sixteen" as 3 then 16 (not 19).
         nums.push(one);
         i += 1;
     }
@@ -352,6 +398,11 @@ export function parseSpokenReference(transcript) {
         .replace(/\bin the book of\b/g, ' ')
         .replace(/\bchapters?\b/g, ' ')
         .replace(/\bverses?\b/g, ' ')
+        // "John 13 start from 16" / "begin at" / "beginning at" / "starting from"
+        .replace(/\b(start|starting|begin|beginning)\s+(from|at)\b/g, ' ')
+        .replace(/\b(start|starting|begin|beginning)\b/g, ' ')
+        .replace(/\bfrom\b/g, ' ')
+        .replace(/\bat\b/g, ' ')
         .replace(/\band\b/g, ' ')
         .replace(/\bthrough\b/g, ' ')
         .replace(/\bto\b/g, ' ')
