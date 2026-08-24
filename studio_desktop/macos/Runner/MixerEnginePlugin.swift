@@ -377,6 +377,8 @@ final class ScriptureSpeechController {
       do {
         try self.audio?.ensureArmedForSpeech()
         self.audio?.setSpeechListening(true)
+        // Reinstall strip taps so Listen always shares the same PCM path as meters.
+        self.audio?.refreshTapsForSpeech()
         self.prepareRecognizer()
         guard let recognizer = self.recognizer else {
           completion(false, "Speech recognition is not available on this Mac. Type a reference instead.")
@@ -389,6 +391,14 @@ final class ScriptureSpeechController {
           )
           return
         }
+        let auth = SFSpeechRecognizer.authorizationStatus()
+        NSLog(
+          "[scripture-speech] start auth=%d available=%d onDevice=%d locale=%@",
+          auth.rawValue,
+          recognizer.isAvailable,
+          recognizer.supportsOnDeviceRecognition,
+          recognizer.locale.identifier
+        )
         self.listening = true
         self.didLogFormat = false
         self.speechConverter = nil
@@ -396,7 +406,7 @@ final class ScriptureSpeechController {
         self.ensureMicTap()
         let state = self.task?.state
         if state != .running && state != .starting {
-          self.startTask(force: false)
+          self.startTask(force: true)
         }
         self.onStatus?("listening")
         completion(true, nil)
@@ -477,6 +487,7 @@ final class ScriptureSpeechController {
 
   private func processCopiedBuffer(_ buffer: AVAudioPCMBuffer) {
     guard listening, let converted = convertForSpeech(buffer) else { return }
+    let peak = Self.peakAbs(converted)
     if !didLogFormat {
       didLogFormat = true
       NSLog(
@@ -486,15 +497,25 @@ final class ScriptureSpeechController {
         converted.format.sampleRate,
         converted.format.channelCount,
         converted.frameLength,
-        Self.peakAbs(converted)
+        peak
       )
     }
     requestLock.lock()
+    let hasRequest = request != nil
     request?.append(converted)
     requestLock.unlock()
     buffersAppended += 1
-    let peak = Self.peakAbs(converted)
     if peak > peakRms { peakRms = peak }
+    // Periodic energy proof for flutter run logs (every ~50 buffers ≈ 1s @ 1024/48k).
+    if buffersAppended == 1 || buffersAppended % 50 == 0 {
+      NSLog(
+        "[scripture-speech] buffers=%d peak=%.4f request=%d listening=%d",
+        buffersAppended,
+        peakRms,
+        hasRequest ? 1 : 0,
+        listening ? 1 : 0
+      )
+    }
   }
 
   /// SFSpeech needs mono linear PCM at 8–48 kHz. Mixer taps are often 96 kHz / 8ch.
@@ -509,9 +530,10 @@ final class ScriptureSpeechController {
   }
 
   private func resampleToSpeechRate(_ mono: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    // Cap at 48 kHz (SFSpeech max). Prefer 48k over 16k — less lossy for 96 kHz interfaces.
     guard let destFormat = AVAudioFormat(
       commonFormat: .pcmFormatFloat32,
-      sampleRate: 16_000,
+      sampleRate: 48_000,
       channels: 1,
       interleaved: false
     ) else { return nil }
@@ -734,10 +756,8 @@ final class ScriptureSpeechController {
     if #available(macOS 13, *) {
       next.addsPunctuation = false
     }
-    // Prefer on-device when available — avoids silent network stalls with live PCM.
-    if recognizer?.supportsOnDeviceRecognition == true {
-      next.requiresOnDeviceRecognition = true
-    }
+    // Do NOT force on-device recognition. supportsOnDeviceRecognition can be true
+    // while the local model still returns empty/error; Apple's default path works.
     requestLock.lock()
     request = next
     requestLock.unlock()
@@ -747,6 +767,7 @@ final class ScriptureSpeechController {
     peakRms = 0
     gotPartial = false
     taskStartedAt = Date().timeIntervalSince1970
+    NSLog("[scripture-speech] recognition task started gen=%d", gen)
     armHealthCheck()
     task = recognizer?.recognitionTask(with: next) { [weak self] result, error in
       guard let self, self.listening, self.generation == gen else { return }
@@ -754,6 +775,11 @@ final class ScriptureSpeechController {
         let words = result.bestTranscription.formattedString
         if !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           self.gotPartial = true
+          NSLog(
+            "[scripture-speech] partial final=%d words=%@",
+            result.isFinal ? 1 : 0,
+            words
+          )
         }
         DispatchQueue.main.async {
           self.onPartial?(words, result.isFinal)
@@ -767,6 +793,12 @@ final class ScriptureSpeechController {
       }
       if let error {
         let ns = error as NSError
+        NSLog(
+          "[scripture-speech] task error code=%d domain=%@ desc=%@",
+          ns.code,
+          ns.domain,
+          ns.localizedDescription
+        )
         if self.isPermanentSpeechError(ns) {
           DispatchQueue.main.async {
             guard self.listening else { return }
@@ -803,6 +835,12 @@ final class ScriptureSpeechController {
 
   private func checkHealth() {
     guard listening, !gotPartial else { return }
+    NSLog(
+      "[scripture-speech] health buffers=%d peak=%.4f gen=%d",
+      buffersAppended,
+      peakRms,
+      generation
+    )
     if buffersAppended == 0 {
       onError?(
         "Microphone audio isn’t reaching speech recognition. Enable the Studio microphone (SOURCE), allow Microphone in System Settings, then tap Listen."
@@ -810,6 +848,7 @@ final class ScriptureSpeechController {
       do {
         try audio?.ensureArmedForSpeech()
         audio?.setSpeechListening(true)
+        audio?.refreshTapsForSpeech()
         ensureMicTap()
       } catch {
         return

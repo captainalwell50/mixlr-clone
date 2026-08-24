@@ -72,9 +72,9 @@ final class NativeAudioEngine {
   private var sessionReady = false
   private var nodesAttached = false
   private var micWired = false
-  /// True when the micMixer meter tap is installed (inputNode may still feed speech).
+  /// True when the micMixer meter/speech tap is installed.
   private var micMixerTapInstalled = false
-  /// True when scripture speech PCM comes from the inputNode tap (preferred).
+  /// True when scripture speech falls back to the inputNode tap (micMixer install failed).
   private var speechFromInputNode = false
   /// Ring PCM is a full wet master mix (mic+playlist faders baked; master applied at inject).
   private var ringHasMasterGain = false
@@ -123,12 +123,32 @@ final class NativeAudioEngine {
 
   /// Scripture listen needs a running input graph — `start()` only prepares the session.
   func ensureArmedForSpeech() throws {
-    if armed && engine.isRunning && micWired { return }
+    if armed && engine.isRunning && micWired {
+      // Re-assert pull + taps so a prior mute/CUE-off starve does not leave Listen deaf.
+      applyGains()
+      if !micMixerTapInstalled && !speechFromInputNode {
+        installMeterAndCaptureTaps()
+      }
+      return
+    }
     try armMic(deviceId: selectedDeviceId)
   }
 
   func setSpeechListening(_ active: Bool) {
     speechListening = active
+    applyGains()
+    if active, armed, engine.isRunning {
+      // Ensure the strip tap that feeds SFSpeech is alive the moment Listen arms.
+      if !micMixerTapInstalled && !speechFromInputNode {
+        installMeterAndCaptureTaps()
+      }
+    }
+  }
+
+  /// Reinstall meter/speech taps after Listen starts (safe if already installed).
+  func refreshTapsForSpeech() {
+    guard armed, engine.isRunning else { return }
+    installMeterAndCaptureTaps()
     applyGains()
   }
 
@@ -1327,51 +1347,20 @@ final class NativeAudioEngine {
       engineSampleRate = tapFormat.sampleRate
     }
 
-    // Prefer raw inputNode PCM for scripture speech (HW format, pre-strip).
-    // micMixer tap stays for strip meters; it only forwards speech if input tap fails.
+    // Scripture speech MUST come from micMixer (same path as working strip meters).
+    // Preferring inputNode previously installed a silent/wrong-layout HW tap while
+    // meters still moved — Listen heard nothing. inputNode is fallback only.
     speechFromInputNode = false
     micMixerTapInstalled = false
-    var inputErr: NSError?
-    let inputOk = SMCatchException(&inputErr) { [self] in
-      let format = self.engine.inputNode.outputFormat(forBus: 0)
-      guard format.sampleRate > 0, format.channelCount > 0 else { return }
-      self.engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) {
-        [weak self] buffer, _ in
-        guard let self else { return }
-        self.onMicBuffer?(buffer)
-        // Meter fallback only when micMixer tap is missing.
-        guard !self.micMixerTapInstalled else { return }
-        guard let ch = buffer.floatChannelData else { return }
-        let frames = Int(buffer.frameLength)
-        guard frames > 0 else { return }
-        let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
-        var acc: Float = 0
-        for f in 0..<frames {
-          let l = ch[0][f]
-          let r = right[f]
-          acc += l * l + r * r
-        }
-        let rms = sqrt(acc / Float(max(frames * 2, 1)))
-        if self.micMuted {
-          self.micLevel = 0
-          return
-        }
-        let scaled = rms * max(self.micFader, 0) * max(self.masterFader, 0)
-        self.micLevel = max(self.micLevel * 0.5, self.meterLevel(rms: scaled))
-      }
-      self.speechFromInputNode = true
-    }
 
-    // Mic strip meter — WHIP always comes from the master bus (below).
+    // Mic strip meter + primary speech PCM — WHIP always comes from the master bus.
     var micErr: NSError?
     let micOk = SMCatchException(&micErr) { [self] in
       self.micMixer.installTap(onBus: 0, bufferSize: 1024, format: nil) {
         [weak self] buffer, _ in
         guard let self else { return }
-        // Only feed speech from the strip when inputNode tap is unavailable.
-        if !self.speechFromInputNode {
-          self.onMicBuffer?(buffer)
-        }
+        // Forward PCM before meter math — speech must work even if floatChannelData is nil.
+        self.onMicBuffer?(buffer)
         guard let ch = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
         guard frames > 0 else { return }
@@ -1397,6 +1386,38 @@ final class NativeAudioEngine {
         self.micLevel = max(self.micLevel * 0.5, next)
       }
       self.micMixerTapInstalled = true
+    }
+
+    var inputOk = false
+    if !micOk {
+      var inputErr: NSError?
+      inputOk = SMCatchException(&inputErr) { [self] in
+        let format = self.engine.inputNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { return }
+        self.engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) {
+          [weak self] buffer, _ in
+          guard let self else { return }
+          self.onMicBuffer?(buffer)
+          guard let ch = buffer.floatChannelData else { return }
+          let frames = Int(buffer.frameLength)
+          guard frames > 0 else { return }
+          let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
+          var acc: Float = 0
+          for f in 0..<frames {
+            let l = ch[0][f]
+            let r = right[f]
+            acc += l * l + r * r
+          }
+          let rms = sqrt(acc / Float(max(frames * 2, 1)))
+          if self.micMuted {
+            self.micLevel = 0
+            return
+          }
+          let scaled = rms * max(self.micFader, 0) * max(self.masterFader, 0)
+          self.micLevel = max(self.micLevel * 0.5, self.meterLevel(rms: scaled))
+        }
+        self.speechFromInputNode = true
+      }
     }
     let micMeterOk = micOk || inputOk
 
