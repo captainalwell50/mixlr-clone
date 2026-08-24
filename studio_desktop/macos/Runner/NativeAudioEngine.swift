@@ -1411,6 +1411,19 @@ final class NativeAudioEngine {
   }
 
   private func installMeterAndCaptureTaps() {
+    // Taps never fire if the graph is stopped — restart when the mic is supposed to be live.
+    if micWired && !engine.isRunning && !suspendedForSpeech {
+      do {
+        engine.prepare()
+        try engine.start()
+        NSLog("[scripture-speech] restarted engine before installing taps")
+      } catch {
+        NSLog(
+          "[scripture-speech] engine start before taps failed: %@",
+          error.localizedDescription
+        )
+      }
+    }
     removeAllTapsSafely()
     let tapFormat = engine.inputNode.outputFormat(forBus: 0)
     if tapFormat.sampleRate > 0 {
