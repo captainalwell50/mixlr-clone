@@ -284,6 +284,31 @@ class MixerBridge extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Stop Studio's AVAudioEngine so speech_to_text can own the mic (no second-engine crash).
+  Future<void> suspendForSpeechListen() async {
+    _ensureListen();
+    try {
+      await _channel.invokeMethod<dynamic>('suspendForSpeechListen');
+      _armed = false;
+      _micLevel = 0;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  /// Rebuild the mixer graph after scripture Listen releases the mic.
+  Future<void> resumeAfterSpeechListen() async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('resumeAfterSpeechListen');
+      if (raw is Map) {
+        _armed = raw['armed'] == true;
+        if (raw['selected'] is String) {
+          _selectedDeviceId = raw['selected'] as String;
+        }
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
   Future<void> stopPublish() async {
     try {
       await _channel.invokeMethod<void>('stopPublish');

@@ -134,6 +134,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
   int _lastTypedLength = 0;
   String _ghostSuffix = '';
 
+  bool _mixerHeldForSpeech = false;
+
   @override
   void initState() {
     super.initState();
@@ -163,15 +165,29 @@ class _ScripturePanelState extends State<ScripturePanel> {
     _restartTimer?.cancel();
     _watchdogTimer?.cancel();
     _unbindMixerSpeech();
+    unawaited(_releaseMixerAfterSpeech());
     _controller.dispose();
-    if (!Platform.isMacOS && _speech.isListening) {
+    if (_speech.isListening) {
       unawaited(_speech.stop());
     }
     super.dispose();
   }
 
-  bool get _useMixerSpeech =>
-      !kIsWeb && Platform.isMacOS && widget.mixer != null;
+  /// Native mixer-tap SFSpeech only while Go Live — otherwise pause mixer and
+  /// use speech_to_text (Aug 9 path) so two AVAudioEngines never fight.
+  bool get _useMixerSpeech {
+    final mixer = widget.mixer;
+    if (kIsWeb || !Platform.isMacOS || mixer == null) return false;
+    return mixer.publish == MixerPublishState.connected;
+  }
+
+  Future<void> _releaseMixerAfterSpeech() async {
+    if (!_mixerHeldForSpeech) return;
+    _mixerHeldForSpeech = false;
+    final mixer = widget.mixer;
+    if (mixer == null) return;
+    await mixer.resumeAfterSpeechListen();
+  }
 
   void _unbindMixerSpeech() {
     final mixer = widget.mixer;
@@ -239,6 +255,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
       _watchdogTimer?.cancel();
       _watchdogTimer = null;
       unawaited(_speech.cancel());
+      unawaited(_releaseMixerAfterSpeech());
       setState(() {
         _listening = false;
         _liveTranscript = '';
@@ -697,18 +714,17 @@ class _ScripturePanelState extends State<ScripturePanel> {
         return;
       }
     }
-    if (!mixer.isArmed) {
-      try {
-        await mixer.armMic();
-      } catch (_) {
-        if (!mounted) return;
-        setState(() {
-          _listening = false;
-          _status =
-              'Could not enable the Studio microphone. Pick a SOURCE on the mixer, then tap Listen.';
-        });
-        return;
-      }
+    // Always (re)arm SOURCE so Listen never starts against a dead graph.
+    try {
+      await mixer.armMic();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _listening = false;
+        _status =
+            'Could not enable the Studio microphone. Pick a SOURCE on the mixer, then tap Listen.';
+      });
+      return;
     }
 
     mixer.onScriptureSpeech = _onMixerSpeech;
@@ -741,9 +757,98 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
   }
 
+  /// Default macOS path: pause Studio mixer, use speech_to_text (works like Aug 9).
+  Future<void> _toggleSuspendedSpeechListen() async {
+    final mixer = widget.mixer;
+    if (_wantListen || _listening) {
+      _wantListen = false;
+      _restartTimer?.cancel();
+      _restartScheduled = false;
+      _watchdogTimer?.cancel();
+      _watchdogTimer = null;
+      _gotResultOnce = false;
+      try {
+        await _speech.stop();
+      } catch (_) {}
+      await _releaseMixerAfterSpeech();
+      if (!mounted) return;
+      setState(() {
+        _listening = false;
+        _liveTranscript = '';
+        _liveTranscriptFinal = false;
+        _status = _current != null
+            ? 'Showing ${_current!.ref} on listen'
+            : 'Speech recognition off';
+      });
+      return;
+    }
+
+    if (mixer != null) {
+      final micStatus = await mixer.refreshMicPermissionStatus();
+      if (!mounted) return;
+      final preflight = scriptureListenPreflightError(micStatus);
+      if (preflight != null) {
+        setState(() {
+          _listening = false;
+          _status = preflight;
+        });
+        return;
+      }
+      if (micStatus == 'notDetermined') {
+        final granted = await mixer.ensureMicAccess(promptIfNeeded: true);
+        if (!mounted) return;
+        if (!granted) {
+          setState(() {
+            _listening = false;
+            _status = scriptureMicDeniedStatus;
+          });
+          return;
+        }
+      }
+      // Arm SOURCE first (auto-selects Built-in when unset), then release it
+      // so speech_to_text can open the mic without a second-engine crash.
+      try {
+        await mixer.armMic();
+      } catch (_) {
+        // Still try speech_to_text on the system default mic.
+      }
+      await mixer.suspendForSpeechListen();
+      _mixerHeldForSpeech = true;
+    }
+
+    if (!_speechReady) {
+      await _initSpeech();
+    }
+    if (!mounted) return;
+    if (!_speechReady) {
+      await _releaseMixerAfterSpeech();
+      setState(() {
+        _listening = false;
+        _status =
+            'Speech recognition unavailable — allow Microphone and Speech Recognition in System Settings, or type a reference.';
+      });
+      return;
+    }
+
+    _wantListen = true;
+    _gotResultOnce = false;
+    setState(() {
+      _listening = true;
+      _liveTranscript = '';
+      _liveTranscriptFinal = false;
+      _status = 'Listening for scripture references…';
+    });
+    _armWatchdog();
+    await _beginListenSession();
+  }
+
   Future<void> _toggleListen() async {
-    if (_useMixerSpeech || Platform.isMacOS) {
-      await _toggleMixerListen();
+    if (Platform.isMacOS) {
+      if (_useMixerSpeech) {
+        await _toggleMixerListen();
+      } else {
+        await _toggleSuspendedSpeechListen();
+      }
       return;
     }
     if (_wantListen || _listening) {
@@ -767,7 +872,6 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
 
     if (!_speechReady) {
-      // Re-try initialize in case the user just granted permissions.
       await _initSpeech();
       if (!_speechReady) {
         setState(() {
@@ -782,7 +886,6 @@ class _ScripturePanelState extends State<ScripturePanel> {
     _gotResultOnce = false;
     setState(() {
       _listening = true;
-      // Keep prior line only if still wanting listen mid-session; fresh start clears.
       _liveTranscript = '';
       _liveTranscriptFinal = false;
       _status = 'Listening for scripture references…';

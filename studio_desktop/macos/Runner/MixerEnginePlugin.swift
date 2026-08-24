@@ -302,9 +302,34 @@ final class MixerEnginePlugin: NSObject {
       scriptureSpeech.stop()
       result(nil)
 
+    case "suspendForSpeechListen":
+      // Release Studio's AVAudioEngine so speech_to_text can own the mic alone.
+      scriptureSpeech.stop()
+      audio.suspendForSpeechListen()
+      result(["ok": true, "suspended": true])
+
+    case "resumeAfterSpeechListen":
+      do {
+        try audio.resumeAfterSpeechListen()
+        result([
+          "ok": true,
+          "selected": audio.selectedDeviceId as Any,
+          "armed": audio.armed,
+        ])
+      } catch {
+        result(FlutterError(
+          code: "resume_speech",
+          message: error.localizedDescription,
+          details: nil
+        ))
+      }
+
     case "dispose":
       scriptureSpeech.stop()
       whip.stop()
+      if audio.isSuspendedForSpeech {
+        try? audio.resumeAfterSpeechListen()
+      }
       audio.tearDown()
       result(nil)
 
@@ -377,6 +402,8 @@ final class ScriptureSpeechController {
       do {
         try self.audio?.ensureArmedForSpeech()
         self.audio?.setSpeechListening(true)
+        // Wire the callback BEFORE reinstalling taps so the first buffer is not dropped.
+        self.ensureMicTap()
         // Reinstall strip taps so Listen always shares the same PCM path as meters.
         self.audio?.refreshTapsForSpeech()
         self.prepareRecognizer()
@@ -403,7 +430,6 @@ final class ScriptureSpeechController {
         self.didLogFormat = false
         self.speechConverter = nil
         self.speechConverterFrom = nil
-        self.ensureMicTap()
         let state = self.task?.state
         if state != .running && state != .starting {
           self.startTask(force: true)
@@ -479,14 +505,26 @@ final class ScriptureSpeechController {
   private func appendMicBuffer(_ buffer: AVAudioPCMBuffer) {
     // Tap buffers are reused — copy before leaving the realtime thread.
     // Never append raw multi-channel / high-rate PCM (SFSpeech hears silence).
-    guard let copy = Self.copyPCM(buffer) else { return }
+    guard let copy = Self.copyPCM(buffer) else {
+      NSLog("[scripture-speech] copyPCM failed ch=%u frames=%u", buffer.format.channelCount, buffer.frameLength)
+      return
+    }
     speechQueue.async { [weak self] in
       self?.processCopiedBuffer(copy)
     }
   }
 
   private func processCopiedBuffer(_ buffer: AVAudioPCMBuffer) {
-    guard listening, let converted = convertForSpeech(buffer) else { return }
+    guard listening else { return }
+    guard let converted = convertForSpeech(buffer) else {
+      NSLog(
+        "[scripture-speech] convert dropped sr=%.0f ch=%u frames=%u",
+        buffer.format.sampleRate,
+        buffer.format.channelCount,
+        buffer.frameLength
+      )
+      return
+    }
     let peak = Self.peakAbs(converted)
     if !didLogFormat {
       didLogFormat = true
@@ -835,11 +873,13 @@ final class ScriptureSpeechController {
 
   private func checkHealth() {
     guard listening, !gotPartial else { return }
+    let rawTaps = audio?.speechRawTapCount ?? 0
     NSLog(
-      "[scripture-speech] health buffers=%d peak=%.4f gen=%d",
+      "[scripture-speech] health buffers=%d peak=%.4f gen=%d rawTaps=%d",
       buffersAppended,
       peakRms,
-      generation
+      generation,
+      rawTaps
     )
     if buffersAppended == 0 {
       onError?(
@@ -848,8 +888,8 @@ final class ScriptureSpeechController {
       do {
         try audio?.ensureArmedForSpeech()
         audio?.setSpeechListening(true)
-        audio?.refreshTapsForSpeech()
         ensureMicTap()
+        audio?.refreshTapsForSpeech()
       } catch {
         return
       }

@@ -104,6 +104,12 @@ final class NativeAudioEngine {
   var onMicBuffer: ((AVAudioPCMBuffer) -> Void)?
   /// While scripture Listen is active, keep a stronger output pull so mic taps stay live.
   private var speechListening = false
+  /// Mixer graph stopped so speech_to_text can own the mic (Aug 9 path) without a second-engine crash.
+  private var suspendedForSpeech = false
+  private var resumeDeviceIdAfterSpeech: String?
+  private var wasArmedBeforeSpeechSuspend = false
+  /// Raw tap callbacks while Listen is armed (proves graph pull before SFSpeech conversion).
+  private(set) var speechRawTapCount: Int = 0
 
   /// Label for the selected mic — used to bind WebRTC ADM on go-live.
   var selectedInputLabel: String? {
@@ -123,6 +129,12 @@ final class NativeAudioEngine {
 
   /// Scripture listen needs a running input graph — `start()` only prepares the session.
   func ensureArmedForSpeech() throws {
+    if suspendedForSpeech {
+      // Resume first — shared SFSpeech cannot hear a suspended graph.
+      try resumeAfterSpeechListen()
+    }
+    // Auto-pick a concrete mic when SOURCE is unset / No Input.
+    let device = usableSpeechInputDeviceId()
     if armed && engine.isRunning && micWired {
       // Re-assert pull + taps so a prior mute/CUE-off starve does not leave Listen deaf.
       applyGains()
@@ -131,11 +143,20 @@ final class NativeAudioEngine {
       }
       return
     }
-    try armMic(deviceId: selectedDeviceId)
+    try armMic(deviceId: device)
+  }
+
+  /// Prefer last SOURCE, else Built-in / MacBook, else system default — never "none".
+  private func usableSpeechInputDeviceId() -> String? {
+    if let selectedDeviceId, selectedDeviceId != "none", !selectedDeviceId.isEmpty {
+      return selectedDeviceId
+    }
+    return preferredConcreteInputId() ?? "default"
   }
 
   func setSpeechListening(_ active: Bool) {
     speechListening = active
+    if active { speechRawTapCount = 0 }
     applyGains()
     if active, armed, engine.isRunning {
       // Ensure the strip tap that feeds SFSpeech is alive the moment Listen arms.
@@ -147,10 +168,55 @@ final class NativeAudioEngine {
 
   /// Reinstall meter/speech taps after Listen starts (safe if already installed).
   func refreshTapsForSpeech() {
-    guard armed, engine.isRunning else { return }
+    guard armed, engine.isRunning, !suspendedForSpeech else { return }
     installMeterAndCaptureTaps()
     applyGains()
   }
+
+  /// Stop the Studio AVAudioEngine so speech_to_text can open the mic alone.
+  /// Restores with [resumeAfterSpeechListen] when Listen ends — avoids two engines.
+  func suspendForSpeechListen() {
+    if suspendedForSpeech { return }
+    suspendedForSpeech = true
+    resumeDeviceIdAfterSpeech = selectedDeviceId
+    wasArmedBeforeSpeechSuspend = armed
+    speechListening = false
+    onMicBuffer = nil
+    speechRawTapCount = 0
+    removeAllTapsSafely()
+    if engine.isRunning {
+      engine.stop()
+    }
+    var err: NSError?
+    _ = SMCatchException(&err) { [self] in
+      self.engine.disconnectNodeOutput(self.engine.inputNode)
+    }
+    micWired = false
+    NSLog(
+      "[scripture-speech] mixer suspended for speech_to_text device=%@",
+      resumeDeviceIdAfterSpeech ?? "nil"
+    )
+    onStatus?("Mic paused for scripture Listen")
+  }
+
+  /// Rebuild the mixer graph after speech_to_text releases the mic.
+  func resumeAfterSpeechListen() throws {
+    guard suspendedForSpeech else { return }
+    suspendedForSpeech = false
+    let device = resumeDeviceIdAfterSpeech ?? selectedDeviceId ?? preferredConcreteInputId()
+    resumeDeviceIdAfterSpeech = nil
+    if wasArmedBeforeSpeechSuspend || (device != nil && device != "none") {
+      try armMic(deviceId: device)
+      NSLog("[scripture-speech] mixer resumed after speech_to_text device=%@", device ?? "nil")
+      onStatus?("Mic armed — speak to see levels (CUE optional for headphones)")
+    } else {
+      armed = false
+      onStatus?("Native mixer ready — enable microphone")
+    }
+    wasArmedBeforeSpeechSuspend = false
+  }
+
+  var isSuspendedForSpeech: Bool { suspendedForSpeech }
 
   /// Prepare session + device list. Engine starts only after mic is armed
   /// (avoids avfaudio -10875 from starting with a mismatched IO graph).
@@ -182,6 +248,10 @@ final class NativeAudioEngine {
     micMixerTapInstalled = false
     speechFromInputNode = false
     speechListening = false
+    suspendedForSpeech = false
+    resumeDeviceIdAfterSpeech = nil
+    wasArmedBeforeSpeechSuspend = false
+    speechRawTapCount = 0
   }
 
   func stopPublishSide() {
@@ -1360,7 +1430,10 @@ final class NativeAudioEngine {
         [weak self] buffer, _ in
         guard let self else { return }
         // Forward PCM before meter math — speech must work even if floatChannelData is nil.
-        self.onMicBuffer?(buffer)
+        if self.speechListening || self.onMicBuffer != nil {
+          self.speechRawTapCount += 1
+          self.onMicBuffer?(buffer)
+        }
         guard let ch = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
         guard frames > 0 else { return }
@@ -1397,7 +1470,10 @@ final class NativeAudioEngine {
         self.engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) {
           [weak self] buffer, _ in
           guard let self else { return }
-          self.onMicBuffer?(buffer)
+          if self.speechListening || self.onMicBuffer != nil {
+            self.speechRawTapCount += 1
+            self.onMicBuffer?(buffer)
+          }
           guard let ch = buffer.floatChannelData else { return }
           let frames = Int(buffer.frameLength)
           guard frames > 0 else { return }
@@ -1480,6 +1556,13 @@ final class NativeAudioEngine {
     if !micMeterOk || !playOk || !masterOk {
       onStatus?("Mixer armed (some meters unavailable)")
     }
+    NSLog(
+      "[scripture-speech] taps installed micMixer=%d inputNode=%d engineRunning=%d micWired=%d",
+      micOk ? 1 : 0,
+      inputOk ? 1 : 0,
+      engine.isRunning ? 1 : 0,
+      micWired ? 1 : 0
+    )
   }
 
   /// Write engine-rate PCM into the 48 kHz WHIP ring (linear resample when needed).
