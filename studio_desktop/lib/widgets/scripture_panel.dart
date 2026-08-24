@@ -176,12 +176,12 @@ class _ScripturePanelState extends State<ScripturePanel> {
     super.dispose();
   }
 
-  /// Always use shared-engine SFSpeech on macOS when the mixer exists.
-  /// speech_to_text starts a second AVAudioEngine and crashes the Studio app
-  /// even after suspend — proved by Lost connection right after mixer suspend.
+  /// Native mixer-tap SFSpeech only while Go Live — otherwise pause mixer and
+  /// use speech_to_text (Aug 9 path) so two AVAudioEngines never fight.
   bool get _useMixerSpeech {
     final mixer = widget.mixer;
-    return !kIsWeb && Platform.isMacOS && mixer != null;
+    if (kIsWeb || !Platform.isMacOS || mixer == null) return false;
+    return mixer.publish == MixerPublishState.connected;
   }
 
   Future<void> _releaseMixerAfterSpeech() async {
@@ -854,15 +854,19 @@ class _ScripturePanelState extends State<ScripturePanel> {
           return;
         }
       }
-      // Arm SOURCE first (auto-selects Built-in when unset), then release it
-      // so speech_to_text can open the mic without a second-engine crash.
+      // Arm SOURCE first (auto-selects Built-in when unset), then fully release
+      // the mixer engine so speech_to_text can open the mic alone.
       try {
         await mixer.armMic();
       } catch (_) {
         // Still try speech_to_text on the system default mic.
       }
+      await mixer.stopScriptureListen();
       await mixer.suspendForSpeechListen();
       _mixerHeldForSpeech = true;
+      // Brief yield so AVAudioEngine teardown finishes before speech_to_text.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!mounted) return;
     }
 
     if (!_speechReady) {
@@ -893,9 +897,11 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   Future<void> _toggleListen() async {
     if (Platform.isMacOS) {
-      // Never speech_to_text while the Studio mixer owns AVAudioEngine — that
-      // second engine kills the process (even after suspend).
-      await _toggleMixerListen();
+      if (_useMixerSpeech) {
+        await _toggleMixerListen();
+      } else {
+        await _toggleSuspendedSpeechListen();
+      }
       return;
     }
     if (_wantListen || _listening) {
