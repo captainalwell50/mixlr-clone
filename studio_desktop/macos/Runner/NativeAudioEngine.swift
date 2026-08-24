@@ -1569,6 +1569,20 @@ final class NativeAudioEngine {
     if !micMeterOk || !playOk || !masterOk {
       onStatus?("Mixer armed (some meters unavailable)")
     }
+    // removeTap/installTap can leave the graph stopped on some macOS builds —
+    // without a running engine, meters and scripture PCM stay at zero.
+    if micWired && !engine.isRunning && !suspendedForSpeech {
+      do {
+        engine.prepare()
+        try engine.start()
+        NSLog("[scripture-speech] restarted engine after installing taps")
+      } catch {
+        NSLog(
+          "[scripture-speech] engine start after taps failed: %@",
+          error.localizedDescription
+        )
+      }
+    }
     NSLog(
       "[scripture-speech] taps installed micMixer=%d inputNode=%d engineRunning=%d micWired=%d",
       micOk ? 1 : 0,
