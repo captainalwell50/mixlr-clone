@@ -120,6 +120,9 @@ class _ScripturePanelState extends State<ScripturePanel> {
   ScriptureCue? _current;
   String _status = 'No scripture on listen';
   String? _pendingRef;
+  /// After Dismiss (or a failed listen auto-cue), suppress this ref until a
+  /// distinct new reference is heard — STT re-emits the same utterance often.
+  String? _dismissedListenRef;
   bool _busy = false;
   bool _listening = false;
   bool _wantListen = false;
@@ -500,7 +503,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
     });
   }
 
-  Future<void> _show([String? ref]) async {
+  Future<void> _show([String? ref, bool fromListen = false]) async {
     final target = (ref ?? _controller.text).trim();
     if (target.isEmpty) {
       setState(() => _status = 'Enter a reference like John 3:16');
@@ -521,13 +524,33 @@ class _ScripturePanelState extends State<ScripturePanel> {
         _suggestions = const [];
         _activeSuggest = -1;
         _pendingRef = null;
+        _dismissedListenRef = null;
         _status = 'Showing ${cue.ref} on listen';
       });
       widget.liveBoard?.markScripture();
     } on ApiException catch (e) {
-      if (mounted) setState(() => _status = e.message);
+      if (!mounted) return;
+      setState(() {
+        if (fromListen) {
+          // Background listen match failed — don't sticky-spam KJV errors.
+          _dismissedListenRef = target;
+          _pendingRef = null;
+          _status = 'Listening for scripture references…';
+        } else {
+          _status = e.message;
+        }
+      });
     } catch (_) {
-      if (mounted) setState(() => _status = 'Could not show that verse.');
+      if (!mounted) return;
+      setState(() {
+        if (fromListen) {
+          _dismissedListenRef = target;
+          _pendingRef = null;
+          _status = 'Listening for scripture references…';
+        } else {
+          _status = 'Could not show that verse.';
+        }
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -550,8 +573,16 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
   }
 
+  bool _sameScriptureRef(String? a, String? b) {
+    if (a == null || b == null) return false;
+    return a.trim().toLowerCase() == b.trim().toLowerCase();
+  }
+
   void _offerConfirm(String ref) {
     if (ref == _pendingRef) return;
+    if (_sameScriptureRef(ref, _dismissedListenRef)) return;
+    // Already live — don't re-prompt or auto-cue the same verse.
+    if (_sameScriptureRef(ref, _current?.ref)) return;
     _confirmTimer?.cancel();
     setState(() {
       _pendingRef = ref;
@@ -560,7 +591,25 @@ class _ScripturePanelState extends State<ScripturePanel> {
     // Brief window to dismiss a wrong parse; keep short so listen clients see the cue fast.
     _confirmTimer = Timer(const Duration(milliseconds: 1200), () {
       if (_pendingRef == ref) {
-        unawaited(_show(ref));
+        unawaited(_show(ref, true));
+      }
+    });
+  }
+
+  void _dismissPendingListen() {
+    _confirmTimer?.cancel();
+    final dismissed = _pendingRef;
+    setState(() {
+      if (dismissed != null) {
+        _dismissedListenRef = dismissed;
+      }
+      _pendingRef = null;
+      final lower = _status.toLowerCase();
+      if (lower.contains('could not find') ||
+          lower.contains('could not show') ||
+          lower.startsWith('heard:') ||
+          lower.startsWith('showing ')) {
+        _status = 'Listening for scripture references…';
       }
     });
   }
@@ -1248,15 +1297,13 @@ class _ScripturePanelState extends State<ScripturePanel> {
                       final ref = _pendingRef!;
                       _confirmTimer?.cancel();
                       setState(() => _pendingRef = null);
+                      // Explicit Show — surface API errors (unlike listen auto-cue).
                       unawaited(_show(ref));
                     },
                     child: const Text('Show'),
                   ),
                   TextButton(
-                    onPressed: () {
-                      _confirmTimer?.cancel();
-                      setState(() => _pendingRef = null);
-                    },
+                    onPressed: _dismissPendingListen,
                     child: const Text('Dismiss'),
                   ),
                 ],

@@ -2,6 +2,11 @@
 ///
 /// Handles common church cues: "John 3:16", "John three sixteen",
 /// "chapter 3 verse 16", "first John 1:9", "1 John 1 9".
+///
+/// When a transcript contains multiple book cues, prefers the **last**
+/// complete chapter:verse (most recent spoken reference). Ranges are only
+/// formed when the end verse is strictly after the start (avoids STT noise
+/// like restated "chapter 1" turning `1:7` into `1:7-1`).
 String? parseSpokenReference(String transcript) {
   const words = <String, int>{
     'zero': 0,
@@ -72,6 +77,7 @@ String? parseSpokenReference(String transcript) {
     'psalm': 'Psalms',
     'proverbs': 'Proverbs',
     'ecclesiastes': 'Ecclesiastes',
+    'ecclesiastics': 'Ecclesiastes',
     'isaiah': 'Isaiah',
     'jeremiah': 'Jeremiah',
     'lamentations': 'Lamentations',
@@ -120,7 +126,9 @@ String? parseSpokenReference(String transcript) {
       .replaceAll(RegExp(r'\bverses?\b'), ' ')
       .replaceAll(RegExp(r'\band\b'), ' ')
       .replaceAll(RegExp(r'\bthrough\b'), ' ')
-      .replaceAll(RegExp(r'\bto\b'), ' ');
+      .replaceAll(RegExp(r'\bto\b'), ' ')
+      // "Ecclesiastes one by seven" — STT for chapter/verse separator.
+      .replaceAll(RegExp(r'\bby\b'), ' ');
 
   // Digits / roman cues → spoken ordinal book names ("1 john" → "first john").
   text = text
@@ -150,20 +158,60 @@ String? parseSpokenReference(String transcript) {
       )
       .replaceAll(RegExp(r'\s+'), ' ');
 
-  String? book;
-  var rest = text;
   final sorted = books.keys.toList()..sort((a, b) => b.length.compareTo(a.length));
+
+  // Collect every book hit; later complete refs win over earlier ones.
+  final hits = <({String book, int idx, int len})>[];
   for (final spoken in sorted) {
     final needle = ' $spoken ';
-    final idx = text.indexOf(needle);
-    if (idx == -1) continue;
-    book = books[spoken];
-    rest = text.substring(idx + needle.length);
-    break;
+    var from = 0;
+    while (true) {
+      final idx = text.indexOf(needle, from);
+      if (idx == -1) break;
+      hits.add((book: books[spoken]!, idx: idx, len: needle.length));
+      from = idx + 1;
+    }
   }
-  if (book == null) return null;
+  if (hits.isEmpty) return null;
 
-  final tokens = rest.trim().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+  // Drop nested hits ("john" inside "first john").
+  hits.sort((a, b) {
+    final byIdx = a.idx.compareTo(b.idx);
+    if (byIdx != 0) return byIdx;
+    return b.len.compareTo(a.len);
+  });
+  final kept = <({String book, int idx, int len})>[];
+  for (final h in hits) {
+    final nested = kept.any(
+      (k) => h.idx >= k.idx && h.idx < k.idx + k.len,
+    );
+    if (!nested) kept.add(h);
+  }
+
+  String? best;
+  var bestIdx = -1;
+  for (final h in kept) {
+    final ref = _chapterVerseFromRest(
+      text.substring(h.idx + h.len),
+      h.book,
+      words,
+    );
+    if (ref == null) continue;
+    if (h.idx >= bestIdx) {
+      best = ref;
+      bestIdx = h.idx;
+    }
+  }
+  return best;
+}
+
+String? _chapterVerseFromRest(
+  String rest,
+  String book,
+  Map<String, int> words,
+) {
+  final tokens =
+      rest.trim().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
   if (tokens.isEmpty) return null;
 
   int? parseNum(List<String> parts) {
@@ -194,7 +242,6 @@ String? parseSpokenReference(String transcript) {
     return total > 0 ? total : null;
   }
 
-  // Flatten mixed digit/word tokens into chapter + verse(+end).
   final nums = <int>[];
   var i = 0;
   while (i < tokens.length && nums.length < 3) {
@@ -204,7 +251,6 @@ String? parseSpokenReference(String transcript) {
       i += 1;
       continue;
     }
-    // Take up to two word-number tokens for compound verses ("twenty three").
     final one = parseNum([tokens[i]]);
     if (one == null) {
       i += 1;
@@ -226,7 +272,9 @@ String? parseSpokenReference(String transcript) {
   if (nums.length < 2) return null;
   final chapter = nums[0];
   final verse = nums[1];
-  if (nums.length >= 3 && nums[2] != verse) {
+  // Only a real verse range (16-17). Restated chapter digits ("…1:7 … chapter 1")
+  // must not become "1:7-1".
+  if (nums.length >= 3 && nums[2] > verse) {
     return '$book $chapter:$verse-${nums[2]}';
   }
   return '$book $chapter:$verse';

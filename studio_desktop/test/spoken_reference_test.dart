@@ -35,5 +35,31 @@ void main() {
       expect(parseSpokenReference('hello church'), isNull);
       expect(parseSpokenReference('John'), isNull);
     });
+
+    test('does not invent 1:7-1 from restated chapter after Ecclesiastes 1:7', () {
+      const transcript =
+          'give me a crest one or seven Ecclesiastes one by seven '
+          'ecclesiastics chapter 1 verse seven OK now';
+      expect(parseSpokenReference(transcript), 'Ecclesiastes 1:7');
+    });
+
+    test('one by seven is chapter:verse not a range', () {
+      expect(parseSpokenReference('Ecclesiastes one by seven'), 'Ecclesiastes 1:7');
+    });
+
+    test('prefers the last complete reference in a long transcript', () {
+      const transcript =
+          'give me John chapter 2 verse nine right and again '
+          'Ecclesiastes one by seven ecclesiastics chapter 1 verse seven '
+          'OK now let us go in the book of John chapter 2 verse nine';
+      expect(parseSpokenReference(transcript), 'John 2:9');
+    });
+
+    test('restated chapter digit does not become a descending range', () {
+      expect(
+        parseSpokenReference('John three sixteen chapter three verse sixteen'),
+        'John 3:16',
+      );
+    });
   });
 }

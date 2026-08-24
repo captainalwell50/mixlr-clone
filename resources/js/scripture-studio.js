@@ -45,6 +45,7 @@ const BOOK_SPOKEN = [
     ['psalm', 'Psalms'],
     ['proverbs', 'Proverbs'],
     ['ecclesiastes', 'Ecclesiastes'],
+    ['ecclesiastics', 'Ecclesiastes'],
     ['isaiah', 'Isaiah'],
     ['jeremiah', 'Jeremiah'],
     ['lamentations', 'Lamentations'],
@@ -290,49 +291,7 @@ function parseSpokenNumber(tokens) {
  * @param {string} transcript
  * @returns {string|null} e.g. "John 3:16"
  */
-export function parseSpokenReference(transcript) {
-    let text = ` ${String(transcript).toLowerCase()} `;
-    // STT often returns "John 3:16" — split chapter:verse before tokenization.
-    text = text.replace(/[.:;,\-–—/\\!?…]/g, ' ');
-    text = text
-        .replace(/\bturn with me to\b/g, ' ')
-        .replace(/\bplease open\b/g, ' ')
-        .replace(/\bopen your bibles? to\b/g, ' ')
-        .replace(/\bin the book of\b/g, ' ')
-        .replace(/\bchapters?\b/g, ' ')
-        .replace(/\bverses?\b/g, ' ')
-        .replace(/\band\b/g, ' ')
-        .replace(/\bthrough\b/g, ' ')
-        .replace(/\bto\b/g, ' ');
-
-    text = text.replace(
-        /\b(1|2|3|i|ii|iii|one|two|three|first|second|third)\s+(john|peter|corinthians|thessalonians|timothy|samuel|kings|chronicles)\b/g,
-        (_, ordRaw, book) => {
-            const map = {
-                1: 'first', i: 'first', one: 'first', first: 'first',
-                2: 'second', ii: 'second', two: 'second', second: 'second',
-                3: 'third', iii: 'third', three: 'third', third: 'third',
-            };
-            return ` ${map[ordRaw] || ordRaw} ${book} `;
-        },
-    );
-    text = text.replace(/\s+/g, ' ');
-
-    let book = null;
-    let rest = text;
-    for (const [spoken, canonical] of BOOK_SPOKEN) {
-        const idx = text.indexOf(` ${spoken} `);
-        if (idx === -1) {
-            continue;
-        }
-        book = canonical;
-        rest = text.slice(idx + spoken.length + 2);
-        break;
-    }
-    if (!book) {
-        return null;
-    }
-
+function chapterVerseFromRest(rest, book) {
     const tokens = rest.trim().split(/\s+/).filter(Boolean);
     if (!tokens.length) {
         return null;
@@ -371,10 +330,87 @@ export function parseSpokenReference(transcript) {
     }
     const chapter = nums[0];
     const verse = nums[1];
-    if (nums.length >= 3 && nums[2] !== verse) {
+    // Only real ascending verse ranges — restated "chapter 1" must not yield 1:7-1.
+    if (nums.length >= 3 && nums[2] > verse) {
         return `${book} ${chapter}:${verse}-${nums[2]}`;
     }
     return `${book} ${chapter}:${verse}`;
+}
+
+/**
+ * @param {string} transcript
+ * @returns {string|null} e.g. "John 3:16"
+ */
+export function parseSpokenReference(transcript) {
+    let text = ` ${String(transcript).toLowerCase()} `;
+    // STT often returns "John 3:16" — split chapter:verse before tokenization.
+    text = text.replace(/[.:;,\-–—/\\!?…]/g, ' ');
+    text = text
+        .replace(/\bturn with me to\b/g, ' ')
+        .replace(/\bplease open\b/g, ' ')
+        .replace(/\bopen your bibles? to\b/g, ' ')
+        .replace(/\bin the book of\b/g, ' ')
+        .replace(/\bchapters?\b/g, ' ')
+        .replace(/\bverses?\b/g, ' ')
+        .replace(/\band\b/g, ' ')
+        .replace(/\bthrough\b/g, ' ')
+        .replace(/\bto\b/g, ' ')
+        .replace(/\bby\b/g, ' ');
+
+    text = text.replace(
+        /\b(1|2|3|i|ii|iii|one|two|three|first|second|third)\s+(john|peter|corinthians|thessalonians|timothy|samuel|kings|chronicles)\b/g,
+        (_, ordRaw, book) => {
+            const map = {
+                1: 'first', i: 'first', one: 'first', first: 'first',
+                2: 'second', ii: 'second', two: 'second', second: 'second',
+                3: 'third', iii: 'third', three: 'third', third: 'third',
+            };
+            return ` ${map[ordRaw] || ordRaw} ${book} `;
+        },
+    );
+    text = text.replace(/\s+/g, ' ');
+
+    /** @type {{ book: string, idx: number, len: number }[]} */
+    const hits = [];
+    for (const [spoken, canonical] of BOOK_SPOKEN) {
+        const needle = ` ${spoken} `;
+        let from = 0;
+        while (true) {
+            const idx = text.indexOf(needle, from);
+            if (idx === -1) {
+                break;
+            }
+            hits.push({ book: canonical, idx, len: needle.length });
+            from = idx + 1;
+        }
+    }
+    if (!hits.length) {
+        return null;
+    }
+
+    hits.sort((a, b) => (a.idx - b.idx) || (b.len - a.len));
+    /** @type {{ book: string, idx: number, len: number }[]} */
+    const kept = [];
+    for (const h of hits) {
+        const nested = kept.some((k) => h.idx >= k.idx && h.idx < k.idx + k.len);
+        if (!nested) {
+            kept.push(h);
+        }
+    }
+
+    let best = null;
+    let bestIdx = -1;
+    for (const h of kept) {
+        const ref = chapterVerseFromRest(text.slice(h.idx + h.len), h.book);
+        if (!ref) {
+            continue;
+        }
+        if (h.idx >= bestIdx) {
+            best = ref;
+            bestIdx = h.idx;
+        }
+    }
+    return best;
 }
 
 export function bindScriptureStudio(root) {
@@ -412,6 +448,8 @@ export function bindScriptureStudio(root) {
     let listening = false;
     let confirmTimer = null;
     let pendingRef = '';
+    /** @type {string} dismissed listen suggestion — suppress until a distinct new ref */
+    let dismissedListenRef = '';
     /** Finalized phrases kept across Chrome's silent restart cycle. */
     let sessionFinals = '';
     /** Last non-empty display line (interim or final) — survive no-speech restarts. */
@@ -537,16 +575,38 @@ export function bindScriptureStudio(root) {
         }, 12000);
     }
 
-    function hideConfirm() {
+    function sameRef(a, b) {
+        return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    }
+
+    function hideConfirm({ dismiss = false } = {}) {
         if (confirmTimer) {
             window.clearTimeout(confirmTimer);
             confirmTimer = null;
+        }
+        if (dismiss && pendingRef) {
+            dismissedListenRef = pendingRef;
+            const lower = String(statusEl?.textContent || '').toLowerCase();
+            if (
+                lower.includes('could not find') ||
+                lower.includes('could not show') ||
+                lower.startsWith('heard:') ||
+                lower.startsWith('showing ')
+            ) {
+                setStatus('Listening for scripture references…');
+            }
         }
         pendingRef = '';
         confirmEl?.setAttribute('hidden', '');
     }
 
     function showConfirm(ref) {
+        if (sameRef(ref, dismissedListenRef)) {
+            return;
+        }
+        if (sameRef(ref, selectedRef)) {
+            return;
+        }
         // Same ref already pending — do not reset the auto-cue timer (STT often re-emits).
         if (ref === pendingRef && confirmTimer) {
             if (confirmRefEl) {
@@ -565,12 +625,12 @@ export function bindScriptureStudio(root) {
         }
         // Brief dismiss window; keep short so listen clients see the cue quickly.
         confirmTimer = window.setTimeout(() => {
-            void cue(ref);
+            void cue(ref, { fromListen: true });
             hideConfirm();
         }, 1200);
     }
 
-    async function cue(ref) {
+    async function cue(ref, { fromListen = false } = {}) {
         if (!storeUrl || !ref) {
             return;
         }
@@ -588,10 +648,16 @@ export function bindScriptureStudio(root) {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setStatus(data.message || 'Could not show that verse.');
+                if (fromListen) {
+                    dismissedListenRef = ref;
+                    setStatus('Listening for scripture references…');
+                } else {
+                    setStatus(data.message || 'Could not show that verse.');
+                }
                 return;
             }
             selectedRef = data.scripture?.ref || ref;
+            dismissedListenRef = '';
             writeInputValue(selectedRef);
             inlineHint = null;
             renderGhost('');
@@ -600,7 +666,12 @@ export function bindScriptureStudio(root) {
                 detail: { mode: 'scripture', scripture: data.scripture || null },
             }));
         } catch {
-            setStatus('Could not show that verse.');
+            if (fromListen) {
+                dismissedListenRef = ref;
+                setStatus('Listening for scripture references…');
+            } else {
+                setStatus('Could not show that verse.');
+            }
         } finally {
             if (btnShow) {
                 btnShow.disabled = false;
@@ -908,7 +979,7 @@ export function bindScriptureStudio(root) {
             void cue(ref);
         }
     });
-    btnConfirmNo?.addEventListener('click', () => hideConfirm());
+    btnConfirmNo?.addEventListener('click', () => hideConfirm({ dismiss: true }));
 
     let restartTimer = null;
 
