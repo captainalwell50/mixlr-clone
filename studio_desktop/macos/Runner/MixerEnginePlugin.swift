@@ -691,7 +691,7 @@ final class ScriptureSpeechController {
   static func resolveRecognizer(localeId: String) -> SFSpeechRecognizer? {
     let normalized = localeId.replacingOccurrences(of: "-", with: "_")
     var seen = Set<String>()
-    var candidates: [Locale] = [
+    let candidates: [Locale] = [
       Locale(identifier: normalized),
       Locale.current,
       Locale(identifier: "en_US"),
