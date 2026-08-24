@@ -373,6 +373,7 @@ final class ScriptureSpeechController {
   private var localeId = "en_US"
   private var restartWork: DispatchWorkItem?
   private var healthWork: DispatchWorkItem?
+  private var wordsWork: DispatchWorkItem?
   private var generation = 0
   private var buffersAppended = 0
   private var peakRms: Float = 0
@@ -478,6 +479,8 @@ final class ScriptureSpeechController {
     restartWork = nil
     healthWork?.cancel()
     healthWork = nil
+    wordsWork?.cancel()
+    wordsWork = nil
     generation += 1
     audio?.onMicBuffer = nil
     audio?.setSpeechListening(false)
@@ -538,12 +541,21 @@ final class ScriptureSpeechController {
         peak
       )
     }
+    // Soft-gain quiet speech so SFSpeech hears words when meters barely move
+    // (health threshold is ~0.0015 — recognition often needs more energy).
+    let forSpeech: AVAudioPCMBuffer
+    if peak > 0.0008, peak < 0.06, let boosted = Self.amplify(converted, gain: min(0.12 / peak, 10)) {
+      forSpeech = boosted
+    } else {
+      forSpeech = converted
+    }
+    let speechPeak = Self.peakAbs(forSpeech)
     requestLock.lock()
     let hasRequest = request != nil
-    request?.append(converted)
+    request?.append(forSpeech)
     requestLock.unlock()
     buffersAppended += 1
-    if peak > peakRms { peakRms = peak }
+    if speechPeak > peakRms { peakRms = speechPeak }
     // Periodic energy proof for flutter run logs (every ~50 buffers ≈ 1s @ 1024/48k).
     if buffersAppended == 1 || buffersAppended % 50 == 0 {
       NSLog(
@@ -554,6 +566,22 @@ final class ScriptureSpeechController {
         listening ? 1 : 0
       )
     }
+  }
+
+  /// Boost quiet mono float PCM in-place copy for SFSpeech.
+  static func amplify(_ buffer: AVAudioPCMBuffer, gain: Float) -> AVAudioPCMBuffer? {
+    guard gain > 1.01, let src = buffer.floatChannelData?[0] else { return nil }
+    guard let out = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameCapacity) else {
+      return nil
+    }
+    out.frameLength = buffer.frameLength
+    guard let dst = out.floatChannelData?[0] else { return nil }
+    let frames = Int(buffer.frameLength)
+    for i in 0..<frames {
+      let s = src[i] * gain
+      dst[i] = max(-1, min(1, s))
+    }
+    return out
   }
 
   /// SFSpeech needs mono linear PCM at 8–48 kHz. Mixer taps are often 96 kHz / 8ch.
@@ -805,6 +833,8 @@ final class ScriptureSpeechController {
     peakRms = 0
     gotPartial = false
     taskStartedAt = Date().timeIntervalSince1970
+    wordsWork?.cancel()
+    wordsWork = nil
     NSLog("[scripture-speech] recognition task started gen=%d", gen)
     armHealthCheck()
     task = recognizer?.recognitionTask(with: next) { [weak self] result, error in
@@ -813,6 +843,8 @@ final class ScriptureSpeechController {
         let words = result.bestTranscription.formattedString
         if !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           self.gotPartial = true
+          self.wordsWork?.cancel()
+          self.wordsWork = nil
           NSLog(
             "[scripture-speech] partial final=%d words=%@",
             result.isFinal ? 1 : 0,
@@ -843,6 +875,7 @@ final class ScriptureSpeechController {
             self.listening = false
             self.restartWork?.cancel()
             self.healthWork?.cancel()
+            self.wordsWork?.cancel()
             self.audio?.onMicBuffer = nil
             self.audio?.setSpeechListening(false)
             self.onError?(self.humanSpeechError(ns))
@@ -904,6 +937,27 @@ final class ScriptureSpeechController {
     }
     // Audio is flowing with level — tell the UI we hear the mic, waiting for words.
     onStatus?("hearing")
+    // SFSpeech can stay "running" with good PCM and never emit text (locale /
+    // stuck task). Recycle after a few seconds of hearing-without-words.
+    armWordsWatchdog()
+  }
+
+  private func armWordsWatchdog() {
+    wordsWork?.cancel()
+    let gen = generation
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, self.listening, !self.gotPartial, self.generation == gen else { return }
+      NSLog(
+        "[scripture-speech] hearing but no words — recycling recognizer gen=%d peak=%.4f",
+        self.generation,
+        self.peakRms
+      )
+      self.prepareRecognizer()
+      self.startTask(force: true)
+      self.onStatus?("listening")
+    }
+    wordsWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4.5, execute: work)
   }
 
   private static let scriptureContextPhrases: [String] = [

@@ -177,12 +177,13 @@ class _ScripturePanelState extends State<ScripturePanel> {
     super.dispose();
   }
 
-  /// Native mixer-tap SFSpeech only while Go Live — otherwise pause mixer and
-  /// use speech_to_text (Aug 9 path) so two AVAudioEngines never fight.
+  /// Always use shared-engine SFSpeech on macOS when the mixer exists.
+  ///
+  /// speech_to_text opens a second AVAudioEngine — that either crashes Studio
+  /// (Lost connection) or leaves Listen stuck on “Listening…” with no words.
+  /// Mixer-tap SFSpeech converts PCM for Apple and owns the health diagnostics.
   bool get _useMixerSpeech {
-    final mixer = widget.mixer;
-    if (kIsWeb || !Platform.isMacOS || mixer == null) return false;
-    return mixer.publish == MixerPublishState.connected;
+    return !kIsWeb && Platform.isMacOS && widget.mixer != null;
   }
 
   Future<void> _releaseMixerAfterSpeech() async {
@@ -361,11 +362,20 @@ class _ScripturePanelState extends State<ScripturePanel> {
   Future<void> _beginListenSession() async {
     if (!_speechReady || !_wantListen) return;
     try {
+      // listen() does not throw when the native side refuses a restart
+      // (still cleaning up) — it just returns with isListening == false.
       await _speech.listen(
         onResult: _onSpeechResult,
         listenOptions: scriptureSpeechListenOptions(),
       );
       if (!mounted || !_wantListen) return;
+      if (!_speech.isListening) {
+        setState(() {
+          _status = 'Could not start speech recognition. Retrying…';
+        });
+        _scheduleListenRestart();
+        return;
+      }
       setState(() {
         _listening = true;
         // Keep rolling transcript across silent restarts — do not clear here.
@@ -792,6 +802,10 @@ class _ScripturePanelState extends State<ScripturePanel> {
       }
     }
     // Always (re)arm SOURCE so Listen never starts against a dead graph.
+    // If a prior speech_to_text path left the mixer suspended, resume first.
+    if (_mixerHeldForSpeech) {
+      await _releaseMixerAfterSpeech();
+    }
     try {
       await mixer.armMic();
     } catch (_) {
@@ -925,11 +939,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   Future<void> _toggleListen() async {
     if (Platform.isMacOS) {
-      if (_useMixerSpeech) {
-        await _toggleMixerListen();
-      } else {
-        await _toggleSuspendedSpeechListen();
-      }
+      // Never speech_to_text while the Studio mixer owns AVAudioEngine.
+      await _toggleMixerListen();
       return;
     }
     if (_wantListen || _listening) {
