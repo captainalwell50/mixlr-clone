@@ -198,7 +198,7 @@ final class NativeAudioEngine {
     armed = true
     onDevices?(listInputDevices(), selectedDeviceId)
     onOutputs?(listOutputDevices(), selectedOutputDeviceId)
-    onStatus?("Mic armed — native mixer ready")
+    onStatus?("Mic armed — speak to see levels (CUE optional for headphones)")
   }
 
   func listInputDevices() -> [InputDevice] {
@@ -1279,9 +1279,13 @@ final class NativeAudioEngine {
   }
 
   /// Volume 0 on the output edge stops the graph from pulling — taps go silent.
-  /// Cue-off: tiny program pull (inaudible). Cue-on: full HP level for the cue bus.
+  /// Cue-off + armed: keep mainMixer at full pull so mic/master taps fire for meters
+  /// and scripture Listen. programMonitor stays near-silent so HP doesn't hear program
+  /// until CUE. Near-zero mainMixer (e.g. 0.001) leaves meters dark on macOS.
+  /// Cue-on: full HP level for the cue bus.
   private var headphonesOutputVolume: Float {
     if micCue || playlistCue { return 1.0 }
+    if micWired || speechListening { return 1.0 }
     return 0.001
   }
 
@@ -1844,12 +1848,12 @@ final class NativeAudioEngine {
     micCueSend.outputVolume = micCue ? 1 : 0
     playlistCueSend.outputVolume = playlistCue ? 1 : 0
     cueMixer.outputVolume = 1
-    // Duck program in HP while cueing; keep a tiny pull so the master edge stays alive.
+    // Duck program in HP while cueing. When cue is off, keep a tiny programMonitor
+    // gain so the master→HP edge stays connected, but put the real pull on mainMixer
+    // (see headphonesOutputVolume) — otherwise meter/speech taps starve when armed.
     programMonitor.outputVolume = cueActive ? 0 : 0.001
     // Cue level is independent of the master fader (operator monitoring).
-    // Scripture Listen needs a real pull — near-zero HP volume can starve mic taps.
-    let hp = headphonesOutputVolume
-    engine.mainMixerNode.outputVolume = speechListening ? max(hp, 0.08) : hp
+    engine.mainMixerNode.outputVolume = headphonesOutputVolume
   }
 
   private func startMeters() {
