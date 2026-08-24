@@ -1282,11 +1282,6 @@ class _ScripturePanelState extends State<ScripturePanel> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              FilledButton(
-                onPressed: _busy ? null : () => _show(),
-                style: FilledButton.styleFrom(backgroundColor: StudioTheme.accent),
-                child: const Text('Show on listen'),
-              ),
               OutlinedButton(
                 onPressed: _busy || _prevVerseTarget == null
                     ? null
@@ -1298,6 +1293,18 @@ class _ScripturePanelState extends State<ScripturePanel> {
                     ? null
                     : () => _nudgeVerse(true),
                 child: const Text('Next'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton(
+                onPressed: _busy ? null : () => _show(),
+                style: FilledButton.styleFrom(backgroundColor: StudioTheme.accent),
+                child: const Text('Display'),
               ),
               OutlinedButton(
                 onPressed: _busy ? null : _clear,
