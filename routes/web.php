@@ -153,7 +153,7 @@ TXT;
         'shortDescription' => $shortDescription,
         'fullDescription' => trim($fullDescription),
         'assets' => $assets,
-        'appVersion' => '1.2.14',
+        'appVersion' => '1.2.17',
         'supportEmail' => config('app.support_email', 'support@soundmix.live'),
         'apkUrl' => ($apk['available'] ?? false) ? ($apk['url'] ?? null) : null,
     ]);
