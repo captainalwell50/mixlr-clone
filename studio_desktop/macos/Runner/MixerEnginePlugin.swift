@@ -1,3 +1,4 @@
+import AVFoundation
 import Cocoa
 import FlutterMacOS
 import Speech
@@ -352,6 +353,11 @@ final class ScriptureSpeechController {
   private var peakRms: Float = 0
   private var taskStartedAt: TimeInterval = 0
   private var gotPartial = false
+  private var didLogFormat = false
+  private var speechConverter: AVAudioConverter?
+  private var speechConverterFrom: AVAudioFormat?
+  private let speechQueue = DispatchQueue(label: "soundmix.scripture.speech")
+  private let requestLock = NSLock()
 
   var onPartial: ((String, Bool) -> Void)?
   var onStatus: ((String) -> Void)?
@@ -370,6 +376,7 @@ final class ScriptureSpeechController {
       }
       do {
         try self.audio?.ensureArmedForSpeech()
+        self.audio?.setSpeechListening(true)
         self.prepareRecognizer()
         guard let recognizer = self.recognizer else {
           completion(false, "Speech recognition is not available on this Mac. Type a reference instead.")
@@ -383,6 +390,9 @@ final class ScriptureSpeechController {
           return
         }
         self.listening = true
+        self.didLogFormat = false
+        self.speechConverter = nil
+        self.speechConverterFrom = nil
         self.ensureMicTap()
         let state = self.task?.state
         if state != .running && state != .starting {
@@ -391,6 +401,7 @@ final class ScriptureSpeechController {
         self.onStatus?("listening")
         completion(true, nil)
       } catch {
+        self.audio?.setSpeechListening(false)
         completion(
           false,
           "Could not enable the Studio microphone for speech. Pick a SOURCE on the mixer, allow Microphone in System Settings, then tap Listen."
@@ -433,10 +444,15 @@ final class ScriptureSpeechController {
     healthWork = nil
     generation += 1
     audio?.onMicBuffer = nil
+    audio?.setSpeechListening(false)
+    speechConverter = nil
+    speechConverterFrom = nil
+    requestLock.lock()
     let oldRequest = request
     let oldTask = task
     request = nil
     task = nil
+    requestLock.unlock()
     oldRequest?.endAudio()
     if oldTask?.state == .running || oldTask?.state == .starting {
       oldTask?.cancel()
@@ -451,17 +467,221 @@ final class ScriptureSpeechController {
   }
 
   private func appendMicBuffer(_ buffer: AVAudioPCMBuffer) {
-    request?.append(buffer)
+    // Tap buffers are reused — copy before leaving the realtime thread.
+    // Never append raw multi-channel / high-rate PCM (SFSpeech hears silence).
+    guard let copy = Self.copyPCM(buffer) else { return }
+    speechQueue.async { [weak self] in
+      self?.processCopiedBuffer(copy)
+    }
+  }
+
+  private func processCopiedBuffer(_ buffer: AVAudioPCMBuffer) {
+    guard listening, let converted = convertForSpeech(buffer) else { return }
+    if !didLogFormat {
+      didLogFormat = true
+      NSLog(
+        "[scripture-speech] mixer sr=%.0f ch=%u → speech sr=%.0f ch=%u frames=%u peak=%.4f",
+        buffer.format.sampleRate,
+        buffer.format.channelCount,
+        converted.format.sampleRate,
+        converted.format.channelCount,
+        converted.frameLength,
+        Self.peakAbs(converted)
+      )
+    }
+    requestLock.lock()
+    request?.append(converted)
+    requestLock.unlock()
     buffersAppended += 1
-    guard let ch = buffer.floatChannelData else { return }
+    let peak = Self.peakAbs(converted)
+    if peak > peakRms { peakRms = peak }
+  }
+
+  /// SFSpeech needs mono linear PCM at 8–48 kHz. Mixer taps are often 96 kHz / 8ch.
+  /// Do NOT force 48→16 kHz — a per-buffer converter can emit silence and kill recognition.
+  private func convertForSpeech(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    guard let mono = Self.downmixToMono(buffer) else { return nil }
+    let srcRate = mono.format.sampleRate
+    if srcRate >= 8_000, srcRate <= 48_000 {
+      return mono
+    }
+    return resampleToSpeechRate(mono)
+  }
+
+  private func resampleToSpeechRate(_ mono: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    guard let destFormat = AVAudioFormat(
+      commonFormat: .pcmFormatFloat32,
+      sampleRate: 16_000,
+      channels: 1,
+      interleaved: false
+    ) else { return nil }
+
+    if speechConverter == nil || speechConverterFrom != mono.format {
+      speechConverter = AVAudioConverter(from: mono.format, to: destFormat)
+      speechConverterFrom = mono.format
+    }
+    guard let converter = speechConverter else { return nil }
+
+    let ratio = destFormat.sampleRate / max(mono.format.sampleRate, 1)
+    let outFrames = AVAudioFrameCount(max((Double(mono.frameLength) * ratio).rounded(.up) + 32, 1))
+    guard let out = AVAudioPCMBuffer(pcmFormat: destFormat, frameCapacity: outFrames) else {
+      return nil
+    }
+    var error: NSError?
+    var consumed = false
+    let status = converter.convert(to: out, error: &error) { _, outStatus in
+      if consumed {
+        outStatus.pointee = .noDataNow
+        return nil
+      }
+      consumed = true
+      outStatus.pointee = .haveData
+      return mono
+    }
+    if status == .error || out.frameLength == 0 {
+      NSLog(
+        "[scripture-speech] resample failed status=%@ err=%@ — dropping buffer (sr=%.0f)",
+        String(describing: status),
+        error?.localizedDescription ?? "nil",
+        mono.format.sampleRate
+      )
+      return nil
+    }
+    return out
+  }
+
+  /// Stereo: average L+R. Multi-channel interfaces often put the mic on bus 2+; pick loudest.
+  static func downmixToMono(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
     let frames = Int(buffer.frameLength)
-    guard frames > 0 else { return }
+    let channels = Int(buffer.format.channelCount)
+    guard frames > 0, channels > 0 else { return nil }
+
+    guard let destFormat = AVAudioFormat(
+      commonFormat: .pcmFormatFloat32,
+      sampleRate: buffer.format.sampleRate > 0 ? buffer.format.sampleRate : 48_000,
+      channels: 1,
+      interleaved: false
+    ) else { return nil }
+    guard let out = AVAudioPCMBuffer(pcmFormat: destFormat, frameCapacity: buffer.frameCapacity) else {
+      return nil
+    }
+    out.frameLength = buffer.frameLength
+    guard let dst = out.floatChannelData?[0] else { return nil }
+
+    if let src = buffer.floatChannelData {
+      if channels == 1 {
+        dst.update(from: src[0], count: frames)
+      } else if channels == 2 {
+        let l = src[0]
+        let r = src[1]
+        for f in 0..<frames {
+          dst[f] = 0.5 * (l[f] + r[f])
+        }
+      } else {
+        let best = loudestChannel(src, channels: channels, frames: frames)
+        dst.update(from: src[best], count: frames)
+      }
+      return out
+    }
+    if let src = buffer.int16ChannelData {
+      if channels == 1 {
+        for f in 0..<frames {
+          dst[f] = Float(src[0][f]) / 32768.0
+        }
+      } else if channels == 2 {
+        for f in 0..<frames {
+          dst[f] = 0.5 * (Float(src[0][f]) + Float(src[1][f])) / 32768.0
+        }
+      } else {
+        let best = loudestChannelInt16(src, channels: channels, frames: frames)
+        for f in 0..<frames {
+          dst[f] = Float(src[best][f]) / 32768.0
+        }
+      }
+      return out
+    }
+    return nil
+  }
+
+  static func copyPCM(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameCapacity) else {
+      return nil
+    }
+    copy.frameLength = buffer.frameLength
+    let frames = Int(buffer.frameLength)
+    let channels = Int(buffer.format.channelCount)
+    guard frames > 0, channels > 0 else { return copy }
+    if let src = buffer.floatChannelData, let dst = copy.floatChannelData {
+      for c in 0..<channels {
+        dst[c].update(from: src[c], count: frames)
+      }
+      return copy
+    }
+    if let src = buffer.int16ChannelData, let dst = copy.int16ChannelData {
+      for c in 0..<channels {
+        dst[c].update(from: src[c], count: frames)
+      }
+      return copy
+    }
+    return nil
+  }
+
+  private static func loudestChannel(
+    _ src: UnsafePointer<UnsafeMutablePointer<Float>>,
+    channels: Int,
+    frames: Int
+  ) -> Int {
+    var best = 0
+    var bestAcc: Float = -1
+    let step = max(1, frames / 64)
+    for c in 0..<channels {
+      var acc: Float = 0
+      let ch = src[c]
+      for i in stride(from: 0, to: frames, by: step) {
+        let s = ch[i]
+        acc += s * s
+      }
+      if acc > bestAcc {
+        bestAcc = acc
+        best = c
+      }
+    }
+    return best
+  }
+
+  private static func loudestChannelInt16(
+    _ src: UnsafePointer<UnsafeMutablePointer<Int16>>,
+    channels: Int,
+    frames: Int
+  ) -> Int {
+    var best = 0
+    var bestAcc: Float = -1
+    let step = max(1, frames / 64)
+    for c in 0..<channels {
+      var acc: Float = 0
+      let ch = src[c]
+      for i in stride(from: 0, to: frames, by: step) {
+        let s = Float(ch[i])
+        acc += s * s
+      }
+      if acc > bestAcc {
+        bestAcc = acc
+        best = c
+      }
+    }
+    return best
+  }
+
+  static func peakAbs(_ buffer: AVAudioPCMBuffer) -> Float {
+    guard let ch = buffer.floatChannelData else { return 0 }
+    let frames = Int(buffer.frameLength)
+    guard frames > 0 else { return 0 }
     var peak: Float = 0
     let step = max(1, frames / 32)
     for i in stride(from: 0, to: frames, by: step) {
       peak = max(peak, abs(ch[0][i]))
     }
-    if peak > peakRms { peakRms = peak }
+    return peak
   }
 
   private func prepareRecognizer() {
@@ -496,10 +716,12 @@ final class ScriptureSpeechController {
     let state = task?.state
     if !force && (state == .running || state == .starting) { return }
 
+    requestLock.lock()
     let oldRequest = request
     let oldTask = task
     request = nil
     task = nil
+    requestLock.unlock()
     oldRequest?.endAudio()
     if oldTask?.state == .running || oldTask?.state == .starting {
       oldTask?.cancel()
@@ -508,10 +730,13 @@ final class ScriptureSpeechController {
     let next = SFSpeechAudioBufferRecognitionRequest()
     next.shouldReportPartialResults = true
     next.taskHint = .dictation
+    next.contextualStrings = Self.scriptureContextPhrases
     if #available(macOS 13, *) {
-      next.addsPunctuation = true
+      next.addsPunctuation = false
     }
+    requestLock.lock()
     request = next
+    requestLock.unlock()
     generation += 1
     let gen = generation
     buffersAppended = 0
@@ -545,6 +770,7 @@ final class ScriptureSpeechController {
             self.restartWork?.cancel()
             self.healthWork?.cancel()
             self.audio?.onMicBuffer = nil
+            self.audio?.setSpeechListening(false)
             self.onError?(self.humanSpeechError(ns))
             self.onStatus?("notListening")
           }
@@ -579,6 +805,7 @@ final class ScriptureSpeechController {
       )
       do {
         try audio?.ensureArmedForSpeech()
+        audio?.setSpeechListening(true)
         ensureMicTap()
       } catch {
         return
@@ -586,8 +813,27 @@ final class ScriptureSpeechController {
       scheduleRestart(afterUtterance: false)
       return
     }
-    // Audio is flowing. Wait for words — a brief quiet stretch is normal.
+    if peakRms < 0.0015 {
+      onError?(
+        "The Studio microphone is silent. Unmute SOURCE, pick the correct input, raise the fader, then speak a reference."
+      )
+      return
+    }
+    // Audio is flowing with level — wait for Apple to return words.
   }
+
+  private static let scriptureContextPhrases: [String] = [
+    "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy",
+    "Joshua", "Judges", "Ruth", "Samuel", "Kings", "Chronicles",
+    "Ezra", "Nehemiah", "Esther", "Job", "Psalm", "Psalms", "Proverbs",
+    "Ecclesiastes", "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel",
+    "Hosea", "Joel", "Amos", "Obadiah", "Jonah", "Micah", "Nahum",
+    "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi",
+    "Matthew", "Mark", "Luke", "John", "Acts", "Romans", "Corinthians",
+    "Galatians", "Ephesians", "Philippians", "Colossians", "Thessalonians",
+    "Timothy", "Titus", "Philemon", "Hebrews", "James", "Peter", "Jude",
+    "Revelation", "chapter", "verse", "John 3:16", "Psalm 23",
+  ]
 
   private func isPermanentSpeechError(_ ns: NSError) -> Bool {
     let msg = ns.localizedDescription.lowercased()

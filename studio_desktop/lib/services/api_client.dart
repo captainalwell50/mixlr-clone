@@ -78,8 +78,7 @@ class ApiClient {
     Map<String, dynamic>? body;
     if (response.body.isNotEmpty) {
       try {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) body = decoded;
+        body = asJsonMap(jsonDecode(response.body));
       } catch (_) {}
     }
 
@@ -127,7 +126,7 @@ class ApiClient {
     ));
     final data = await _json(response, fallback: 'Login failed');
     final token = data['token'] as String?;
-    final userJson = data['user'] as Map<String, dynamic>?;
+    final userJson = asJsonMap(data['user']);
     if (token == null || token.isEmpty || userJson == null) {
       throw ApiException('Login response was incomplete.');
     }
@@ -156,7 +155,7 @@ class ApiClient {
       headers: _headers(auth: true),
     ));
     final data = await _json(response, fallback: 'Session expired');
-    final userJson = data['user'] as Map<String, dynamic>?;
+    final userJson = asJsonMap(data['user']);
     if (userJson == null) throw ApiException('Session expired');
     return AppUser.fromJson(userJson);
   }
@@ -190,15 +189,14 @@ class ApiClient {
       }),
     ));
     final data = await _json(response, fallback: 'Could not go live');
-    final publish = data['publish'] as Map<String, dynamic>? ?? {};
-    final eventJson = data['event'] as Map<String, dynamic>?;
+    final publish = asJsonMap(data['publish']) ?? {};
+    final eventJson = asJsonMap(data['event']);
+    final streamJson = asJsonMap(data['stream']);
     return PublishInfo(
       whipUrl: publish['whip_url'] as String? ?? '',
       hlsUrl: publish['hls_url'] as String?,
       whepUrl: publish['whep_url'] as String?,
-      stream: data['stream'] == null
-          ? null
-          : StreamSummary.fromJson(data['stream'] as Map<String, dynamic>),
+      stream: streamJson == null ? null : StreamSummary.fromJson(streamJson),
       event: eventJson == null ? null : EventSummary.fromJson(eventJson),
     );
   }
@@ -211,9 +209,11 @@ class ApiClient {
       headers: _headers(auth: true),
     ));
     final data = await _json(response, fallback: 'Could not pause');
-    final eventJson = data['event'] as Map<String, dynamic>?;
+    final eventJson = asJsonMap(data['event']);
+    final streamJson = asJsonMap(data['stream']);
+    if (streamJson == null) throw ApiException('Could not pause');
     return (
-      stream: StreamSummary.fromJson(data['stream'] as Map<String, dynamic>),
+      stream: StreamSummary.fromJson(streamJson),
       event: eventJson == null ? null : EventSummary.fromJson(eventJson),
     );
   }
@@ -226,9 +226,11 @@ class ApiClient {
       headers: _headers(auth: true),
     ));
     final data = await _json(response, fallback: 'Could not end stream');
-    final eventJson = data['event'] as Map<String, dynamic>?;
+    final eventJson = asJsonMap(data['event']);
+    final streamJson = asJsonMap(data['stream']);
+    if (streamJson == null) throw ApiException('Could not end stream');
     return (
-      stream: StreamSummary.fromJson(data['stream'] as Map<String, dynamic>),
+      stream: StreamSummary.fromJson(streamJson),
       event: eventJson == null ? null : EventSummary.fromJson(eventJson),
     );
   }
@@ -273,7 +275,7 @@ class ApiClient {
     request.files.add(await http.MultipartFile.fromPath('audio', path));
     final streamed = await _client.send(request).timeout(_timeout);
     final data = await _parseMultipart(streamed, fallback: 'Upload failed');
-    final asset = data['asset'] as Map<String, dynamic>?;
+    final asset = asJsonMap(data['asset']);
     if (asset == null) throw ApiException('Upload failed — empty response.');
     return LibraryAsset.fromJson(asset);
   }
@@ -294,7 +296,9 @@ class ApiClient {
     final data = await _json(response, fallback: 'Could not load gallery');
     final images = data['images'] as List<dynamic>? ?? [];
     return images
-        .map((e) => GalleryItem.fromJson(e as Map<String, dynamic>))
+        .map(asJsonMap)
+        .whereType<Map<String, dynamic>>()
+        .map(GalleryItem.fromJson)
         .toList();
   }
 
@@ -318,8 +322,8 @@ class ApiClient {
     request.files.add(await http.MultipartFile.fromPath('image', path));
     final streamed = await _client.send(request).timeout(_timeout);
     final data = await _parseMultipart(streamed, fallback: 'Photo upload failed');
-    final raw = data['image'] ?? data['item'];
-    if (raw is! Map<String, dynamic>) {
+    final raw = asJsonMap(data['image'] ?? data['item']);
+    if (raw == null) {
       throw ApiException('Photo upload failed — unexpected response.');
     }
     return GalleryItem.fromJson(raw);
@@ -345,8 +349,8 @@ class ApiClient {
     request.files.add(await http.MultipartFile.fromPath('video', path));
     final streamed = await _client.send(request).timeout(_timeout);
     final data = await _parseMultipart(streamed, fallback: 'Reel upload failed');
-    final raw = data['image'] ?? data['item'];
-    if (raw is! Map<String, dynamic>) {
+    final raw = asJsonMap(data['image'] ?? data['item']);
+    if (raw == null) {
       throw ApiException('Reel upload failed — unexpected response.');
     }
     return GalleryItem.fromJson(raw);
@@ -384,9 +388,9 @@ class ApiClient {
       headers: _headers(auth: true),
     ));
     final data = await _json(response, fallback: 'Could not load scripture');
-    final cue = data['scripture'];
+    final cue = asJsonMap(data['scripture']);
     return (
-      cue: cue is Map<String, dynamic> ? ScriptureCue.fromJson(cue) : null,
+      cue: cue == null ? null : ScriptureCue.fromJson(cue),
       liveBoard: data['live_board'] is String ? data['live_board'] as String : null,
     );
   }
@@ -412,8 +416,8 @@ class ApiClient {
       body: jsonEncode({'ref': ref}),
     ));
     final data = await _json(response, fallback: 'Could not show scripture');
-    final cue = data['scripture'];
-    if (cue is! Map<String, dynamic>) {
+    final cue = asJsonMap(data['scripture']);
+    if (cue == null) {
       throw ApiException('Could not show scripture');
     }
     return ScriptureCue.fromJson(cue);
@@ -435,14 +439,15 @@ class ApiClient {
     ));
     final data = await _json(response, fallback: 'Could not load songs');
     final songs = (data['songs'] as List<dynamic>? ?? [])
-        .whereType<Map>()
-        .map((e) => DisplaySongItem.fromJson(Map<String, dynamic>.from(e)))
+        .map(asJsonMap)
+        .whereType<Map<String, dynamic>>()
+        .map(DisplaySongItem.fromJson)
         .toList();
-    final cueRaw = data['cue'] ?? data['song'];
-    final cue = cueRaw is Map<String, dynamic> ? SongCue.fromJson(cueRaw) : null;
+    final cue = asJsonMap(data['cue'] ?? data['song']);
+    final parsedCue = cue == null ? null : SongCue.fromJson(cue);
     return (
       songs: songs,
-      cue: cue,
+      cue: parsedCue,
       liveBoard: data['live_board'] is String ? data['live_board'] as String : null,
     );
   }
@@ -455,11 +460,11 @@ class ApiClient {
     final response = await _send(_client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs'),
       headers: _headers(auth: true, contentType: 'application/json'),
-      body: jsonEncode({'title': title, 'body': body}),
+      body: jsonEncode(songWritePayload(title: title, body: body)),
     ));
     final data = await _json(response, fallback: 'Could not save song');
-    final song = data['song'];
-    if (song is! Map<String, dynamic>) {
+    final song = asJsonMap(data['song']);
+    if (song == null) {
       throw ApiException('Could not save song');
     }
     return DisplaySongItem.fromJson(song);
@@ -474,11 +479,11 @@ class ApiClient {
     final response = await _send(_client.put(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/songs/$songId'),
       headers: _headers(auth: true, contentType: 'application/json'),
-      body: jsonEncode({'title': title, 'body': body}),
+      body: jsonEncode(songWritePayload(title: title, body: body)),
     ));
     final data = await _json(response, fallback: 'Could not update song');
-    final song = data['song'];
-    if (song is! Map<String, dynamic>) {
+    final song = asJsonMap(data['song']);
+    if (song == null) {
       throw ApiException('Could not update song');
     }
     return DisplaySongItem.fromJson(song);
@@ -499,8 +504,8 @@ class ApiClient {
       body: jsonEncode({'slide_index': slideIndex}),
     ));
     final data = await _json(response, fallback: 'Could not cue song');
-    final song = data['song'];
-    if (song is! Map<String, dynamic>) {
+    final song = asJsonMap(data['song']);
+    if (song == null) {
       throw ApiException('Could not cue song');
     }
     return SongCue.fromJson(song);
@@ -513,8 +518,8 @@ class ApiClient {
       body: '{}',
     ));
     final data = await _json(response, fallback: 'Could not advance slide');
-    final song = data['song'];
-    if (song is! Map<String, dynamic>) {
+    final song = asJsonMap(data['song']);
+    if (song == null) {
       throw ApiException('Could not advance slide');
     }
     return SongCue.fromJson(song);
@@ -527,8 +532,8 @@ class ApiClient {
       body: '{}',
     ));
     final data = await _json(response, fallback: 'Could not go to previous slide');
-    final song = data['song'];
-    if (song is! Map<String, dynamic>) {
+    final song = asJsonMap(data['song']);
+    if (song == null) {
       throw ApiException('Could not go to previous slide');
     }
     return SongCue.fromJson(song);
@@ -541,4 +546,29 @@ class ApiClient {
     ));
     await _json(response, fallback: 'Could not clear song');
   }
+}
+
+Map<String, dynamic>? asJsonMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    return value.map((key, nested) => MapEntry(key.toString(), nested));
+  }
+  return null;
+}
+
+/// POST/PUT body for church song slides — send both `body` and `slides`.
+Map<String, dynamic> songWritePayload({
+  required String title,
+  required String body,
+}) {
+  final slides = body
+      .split(RegExp(r'\n\s*\n'))
+      .map((part) => part.trim())
+      .where((part) => part.isNotEmpty)
+      .toList();
+  return {
+    'title': title,
+    'body': body,
+    'slides': slides,
+  };
 }

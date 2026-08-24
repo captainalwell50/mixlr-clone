@@ -44,9 +44,31 @@ const scriptureSpeechDeniedStatus =
     'Speech Recognition permission denied. Enable Speech Recognition in System Settings → Privacy & Security, then tap Listen again.';
 
 @visibleForTesting
+const scriptureNoAudioStatus =
+    'Microphone audio isn’t reaching speech recognition. Enable the Studio microphone (SOURCE), allow Microphone in System Settings, then tap Listen.';
+
+@visibleForTesting
+const scriptureSilentMicStatus =
+    'The Studio microphone is silent. Unmute SOURCE, pick the correct input, raise the fader, then speak a reference.';
+
+@visibleForTesting
+const scriptureNoWordsYetStatus =
+    'Hearing the mic but no words yet. Speak a reference like “John 3 16”, or type one.';
+
+@visibleForTesting
 String? scriptureListenPreflightError(String micStatus) {
   if (micStatus == 'denied') return scriptureMicDeniedStatus;
   return null;
+}
+
+@visibleForTesting
+bool scriptureStatusIsDiagnostic(String status) {
+  final lower = status.toLowerCase();
+  return lower.contains('permission denied') ||
+      lower.contains('isn’t reaching') ||
+      lower.contains("isn't reaching") ||
+      lower.contains('is silent') ||
+      lower.contains('could not enable');
 }
 
 /// Church-only EasyWorship cue panel — mirrors web Studio Scripture controls.
@@ -151,10 +173,9 @@ class _ScripturePanelState extends State<ScripturePanel> {
     _watchdogTimer?.cancel();
     _watchdogTimer = Timer(const Duration(seconds: 8), () {
       if (!mounted || !_wantListen || _gotResultOnce) return;
-      setState(() {
-        _status =
-            'Hearing no words yet. Allow Microphone and Speech Recognition in System Settings, unmute the Studio SOURCE, or type a reference.';
-      });
+      // Keep a precise native diagnostic (permission / no audio / silent mic).
+      if (scriptureStatusIsDiagnostic(_status)) return;
+      setState(() => _status = scriptureNoWordsYetStatus);
     });
   }
 
@@ -573,7 +594,12 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
     // Keep the diagnostic visible — a silent "Listening…" hid missing mic/audio.
     setState(() => _status = message);
-    _scheduleListenRestart();
+    final noAudio = msg.contains("isn't reaching") ||
+        msg.contains('isn’t reaching') ||
+        msg.contains('is silent');
+    if (!noAudio) {
+      _scheduleListenRestart();
+    }
   }
 
   Future<void> _toggleMixerListen() async {

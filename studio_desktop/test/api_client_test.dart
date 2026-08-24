@@ -136,6 +136,49 @@ void main() {
     expect(result.cue, isNull);
   });
 
+  test('songStore posts title body and slides then parses 201', () async {
+    Map<String, dynamic>? posted;
+    final client = ApiClient(
+      client: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, endsWith('/streams/abc/songs'));
+        posted = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({
+            'ok': true,
+            'song': {
+              'id': 12,
+              'title': 'Amazing Grace',
+              'slides': ['Amazing grace', 'That saved a wretch'],
+              'slide_count': 2,
+            },
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    client.setToken('test');
+    final song = await client.songStore(
+      'abc',
+      title: 'Amazing Grace',
+      body: 'Amazing grace\n\nThat saved a wretch',
+    );
+    expect(posted?['title'], 'Amazing Grace');
+    expect(posted?['body'], 'Amazing grace\n\nThat saved a wretch');
+    expect(posted?['slides'], ['Amazing grace', 'That saved a wretch']);
+    expect(song.id, 12);
+    expect(song.slideCount, 2);
+  });
+
+  test('songWritePayload splits blank-line slides', () {
+    final payload = songWritePayload(
+      title: 'Holy',
+      body: 'Line one\n\nLine two\n\n',
+    );
+    expect(payload['slides'], ['Line one', 'Line two']);
+  });
+
   test('deleteGalleryItem hits streams gallery id', () async {
     final client = ApiClient(
       client: MockClient((request) async {

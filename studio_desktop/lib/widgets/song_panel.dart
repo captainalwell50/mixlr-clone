@@ -26,6 +26,7 @@ class SongPanel extends StatefulWidget {
 class _SongPanelState extends State<SongPanel> {
   final _title = TextEditingController();
   final _body = TextEditingController();
+  final _formKey = GlobalKey();
   List<DisplaySongItem> _songs = const [];
   SongCue? _cue;
   String _status = 'No song on listen';
@@ -131,6 +132,16 @@ class _SongPanelState extends State<SongPanel> {
       _title.text = song?.title ?? '';
       _body.text = (song?.slides ?? const []).join('\n\n');
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _formKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 220),
+          alignment: 0.08,
+        );
+      }
+    });
   }
 
   void _closeForm() {
@@ -146,11 +157,13 @@ class _SongPanelState extends State<SongPanel> {
     final title = _title.text.trim();
     final body = _body.text.trim();
     if (title.isEmpty || body.isEmpty) {
-      setState(() => _status = 'Title and slides are required.');
+      setState(() =>
+          _status = 'Enter a title and at least one slide (blank line between slides).');
       return;
     }
     setState(() => _busy = true);
     try {
+      final saved = _editingId != null ? 'Song updated' : 'Song saved';
       if (_editingId != null) {
         await widget.api.songUpdate(
           widget.streamUuid,
@@ -158,17 +171,16 @@ class _SongPanelState extends State<SongPanel> {
           title: title,
           body: body,
         );
-        _status = 'Song updated';
       } else {
         await widget.api.songStore(
           widget.streamUuid,
           title: title,
           body: body,
         );
-        _status = 'Song saved';
       }
       _closeForm();
       await _refresh();
+      if (mounted) setState(() => _status = saved);
     } on ApiException catch (e) {
       if (mounted) setState(() => _status = e.message);
     } catch (_) {
@@ -314,7 +326,7 @@ class _SongPanelState extends State<SongPanel> {
               FilledButton(
                 onPressed: _busy ? null : () => _openForm(),
                 style: FilledButton.styleFrom(backgroundColor: StudioTheme.accent),
-                child: const Text('New'),
+                child: const Text('New song'),
               ),
               OutlinedButton(
                 onPressed: _busy || _cue == null ? null : () => _nudge(false),
@@ -336,8 +348,15 @@ class _SongPanelState extends State<SongPanel> {
           ],
           if (_formOpen) ...[
             const SizedBox(height: 12),
+            KeyedSubtree(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
             TextField(
               controller: _title,
+              autofocus: true,
+              textInputAction: TextInputAction.next,
               style: GoogleFonts.outfit(color: StudioTheme.cream, fontSize: 14),
               decoration: _fieldDecoration('Title'),
             ),
@@ -371,6 +390,9 @@ class _SongPanelState extends State<SongPanel> {
                   child: const Text('Cancel'),
                 ),
               ],
+            ),
+                ],
+              ),
             ),
           ],
           const SizedBox(height: 12),

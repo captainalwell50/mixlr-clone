@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
@@ -15,6 +16,7 @@ import '../services/live_board_sync.dart';
 import '../services/mixer_bridge.dart';
 import '../theme.dart';
 import '../widgets/console_chassis.dart';
+import '../widgets/gallery_lightbox.dart';
 import '../widgets/scripture_panel.dart';
 import '../widgets/song_panel.dart';
 
@@ -442,20 +444,18 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     final stream = _stream;
     if (stream == null) return;
     final api = context.read<AuthState>().api;
-    final result = await FilePicker.platform.pickFiles(
+    final picked = await _pickSandboxFile(
       type: FileType.custom,
       allowedExtensions: const ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'],
-      withData: false,
     );
-    final path = result?.files.single.path;
-    if (path == null) return;
+    if (picked == null) return;
     if (!mounted) return;
     setState(() => _busy = true);
     try {
       final asset = await api.uploadLibraryAsset(
             streamUuid: stream.uuid,
-            path: path,
-            title: result!.files.single.name,
+            path: picked.path,
+            title: picked.name,
           );
       await _refreshLibrary();
       await _mixer.queueTrack(asset);
@@ -526,19 +526,15 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       });
       return;
     }
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: false,
-    );
-    final path = result?.files.single.path;
-    if (path == null) return;
+    final picked = await _pickSandboxFile(type: FileType.image);
+    if (picked == null) return;
     if (!mounted) return;
     setState(() => _busy = true);
     final api = context.read<AuthState>().api;
     try {
       await api.uploadGalleryImage(
         streamUuid: stream.uuid,
-        path: path,
+        path: picked.path,
         eventId: _openEventId,
       );
       await _refreshGallery();
@@ -568,20 +564,15 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       });
       return;
     }
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['mp4', 'mov', 'webm'],
-      withData: false,
-    );
-    final path = result?.files.single.path;
-    if (path == null) return;
+    final picked = await _pickSandboxFile(type: FileType.video);
+    if (picked == null) return;
     if (!mounted) return;
     setState(() => _busy = true);
     final api = context.read<AuthState>().api;
     try {
       await api.uploadGalleryReel(
         streamUuid: stream.uuid,
-        path: path,
+        path: picked.path,
         eventId: _openEventId,
       );
       await _refreshGallery();
@@ -604,17 +595,13 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   Future<void> _uploadBackground() async {
     final stream = _stream;
     if (stream == null) return;
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: false,
-    );
-    final path = result?.files.single.path;
-    if (path == null) return;
+    final picked = await _pickSandboxFile(type: FileType.image);
+    if (picked == null) return;
     if (!mounted) return;
     setState(() => _busy = true);
     final api = context.read<AuthState>().api;
     try {
-      await api.uploadListenBackground(streamUuid: stream.uuid, path: path);
+      await api.uploadListenBackground(streamUuid: stream.uuid, path: picked.path);
       if (!mounted) return;
       setState(() {
         _error = null;
@@ -629,6 +616,27 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<({String path, String name})?> _pickSandboxFile({
+    required FileType type,
+    List<String>? allowedExtensions,
+  }) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: type,
+      allowedExtensions: allowedExtensions,
+      withData: true,
+    );
+    final file = result?.files.single;
+    if (file == null) return null;
+    final persisted = await persistPickedStudioFile(file);
+    if (persisted == null) return null;
+    return (path: persisted, name: file.name);
+  }
+
+  Future<void> _openGalleryItem(GalleryItem item) async {
+    if (!mounted) return;
+    await showGalleryLightbox(context, item);
   }
 
   Future<void> _deleteGalleryItem(GalleryItem item) async {
@@ -903,6 +911,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                               onUploadReel: _uploadReel,
                               onUploadBackground: _uploadBackground,
                               onDelete: _deleteGalleryItem,
+                              onOpen: _openGalleryItem,
                             ),
                     ),
                   ),
@@ -1477,6 +1486,7 @@ class _AdvancePanel extends StatelessWidget {
     required this.onUploadReel,
     required this.onUploadBackground,
     required this.onDelete,
+    required this.onOpen,
   });
 
   final List<GalleryItem> gallery;
@@ -1491,6 +1501,7 @@ class _AdvancePanel extends StatelessWidget {
   final VoidCallback onUploadReel;
   final VoidCallback onUploadBackground;
   final Future<void> Function(GalleryItem) onDelete;
+  final Future<void> Function(GalleryItem) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -1506,6 +1517,7 @@ class _AdvancePanel extends StatelessWidget {
       onUploadReel: onUploadReel,
       onUploadBackground: onUploadBackground,
       onDelete: onDelete,
+      onOpen: onOpen,
     );
 
     return LayoutBuilder(
@@ -1553,6 +1565,7 @@ class _GallerySection extends StatelessWidget {
     required this.onUploadReel,
     required this.onUploadBackground,
     required this.onDelete,
+    required this.onOpen,
   });
 
   final List<GalleryItem> gallery;
@@ -1563,6 +1576,7 @@ class _GallerySection extends StatelessWidget {
   final VoidCallback onUploadReel;
   final VoidCallback onUploadBackground;
   final Future<void> Function(GalleryItem) onDelete;
+  final Future<void> Function(GalleryItem) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -1594,6 +1608,7 @@ class _GallerySection extends StatelessWidget {
                     item: gallery[i],
                     busy: busy,
                     onDelete: onDelete,
+                    onOpen: onOpen,
                   );
                 },
               );
@@ -1658,11 +1673,13 @@ class _GalleryHoverTile extends StatefulWidget {
     required this.item,
     required this.busy,
     required this.onDelete,
+    required this.onOpen,
   });
 
   final GalleryItem item;
   final bool busy;
   final Future<void> Function(GalleryItem) onDelete;
+  final Future<void> Function(GalleryItem) onOpen;
 
   @override
   State<_GalleryHoverTile> createState() => _GalleryHoverTileState();
@@ -1694,26 +1711,19 @@ class _GalleryHoverTileState extends State<_GalleryHoverTile> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (item.isVideo)
-                    ColoredBox(
-                      color: StudioTheme.ink,
-                      child: Center(
-                        child: Icon(
-                          Icons.play_circle_fill_rounded,
-                          color: StudioTheme.accentBright.withOpacity(0.9),
-                          size: 42,
-                        ),
-                      ),
-                    )
-                  else
-                    Image.network(
-                      item.url,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const ColoredBox(
-                        color: StudioTheme.ink,
-                        child: Icon(Icons.broken_image_outlined, color: StudioTheme.mute),
-                      ),
-                    ),
+                  GestureDetector(
+                    onTap: widget.busy ? null : () => widget.onOpen(item),
+                    child: item.isVideo
+                        ? _reelPreview(item)
+                        : Image.network(
+                            item.url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const ColoredBox(
+                              color: StudioTheme.ink,
+                              child: Icon(Icons.broken_image_outlined, color: StudioTheme.mute),
+                            ),
+                          ),
+                  ),
                   if (item.isVideo)
                     Positioned(
                       left: 8,
@@ -1782,5 +1792,56 @@ class _GalleryHoverTileState extends State<_GalleryHoverTile> {
         ),
       ),
     );
+  }
+
+  Widget _reelPreview(GalleryItem item) {
+    final poster = item.posterUrl;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (poster != null && poster.isNotEmpty)
+          Image.network(
+            poster,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const ColoredBox(color: StudioTheme.ink),
+          )
+        else
+          const ColoredBox(color: StudioTheme.ink),
+        Center(
+          child: Icon(
+            Icons.play_circle_fill_rounded,
+            color: StudioTheme.accentBright.withOpacity(0.9),
+            size: 42,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Copy a macOS security-scoped picker result into the sandbox temp dir.
+Future<String?> persistPickedStudioFile(PlatformFile file) async {
+  final bytes = file.bytes;
+  final ext = (file.extension != null && file.extension!.isNotEmpty)
+      ? file.extension!
+      : 'bin';
+  if (bytes != null && bytes.isNotEmpty) {
+    final dest = File(
+      '${Directory.systemTemp.path}/sm-upload-${DateTime.now().microsecondsSinceEpoch}.$ext',
+    );
+    await dest.writeAsBytes(bytes, flush: true);
+    return dest.path;
+  }
+  final path = file.path;
+  if (path == null || path.isEmpty) return null;
+  try {
+    final data = await File(path).readAsBytes();
+    final dest = File(
+      '${Directory.systemTemp.path}/sm-upload-${DateTime.now().microsecondsSinceEpoch}.$ext',
+    );
+    await dest.writeAsBytes(data, flush: true);
+    return dest.path;
+  } catch (_) {
+    return path;
   }
 }

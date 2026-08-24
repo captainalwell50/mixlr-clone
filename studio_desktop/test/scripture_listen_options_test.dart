@@ -17,4 +17,12 @@ void main() {
     expect(scriptureListenPreflightError('notDetermined'), isNull);
     expect(scriptureSpeechDeniedStatus.toLowerCase(), contains('speech recognition'));
   });
+
+  test('watchdog keeps native mic diagnostics', () {
+    expect(scriptureStatusIsDiagnostic(scriptureNoAudioStatus), isTrue);
+    expect(scriptureStatusIsDiagnostic(scriptureSilentMicStatus), isTrue);
+    expect(scriptureStatusIsDiagnostic(scriptureSpeechDeniedStatus), isTrue);
+    expect(scriptureStatusIsDiagnostic(scriptureNoWordsYetStatus), isFalse);
+    expect(scriptureStatusIsDiagnostic('Listening for scripture references…'), isFalse);
+  });
 }

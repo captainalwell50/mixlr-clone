@@ -198,6 +198,72 @@ void main() {
     expect(find.text('Go live'), findsWidgets);
   });
 
+  testWidgets('New song form posts title and slides', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 800));
+    var stored = false;
+    final songs = <Map<String, Object?>>[];
+    final api = ApiClient(
+      client: MockClient((request) async {
+        if (request.url.path.contains('/scripture')) {
+          return http.Response(
+            jsonEncode({'enabled': true, 'live_board': null, 'scripture': null}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.method == 'POST' && request.url.path.endsWith('/songs')) {
+          stored = true;
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          songs.add({
+            'id': 21,
+            'title': body['title'],
+            'slides': body['slides'],
+            'slide_count': (body['slides'] as List).length,
+          });
+          return http.Response(
+            jsonEncode({'ok': true, 'song': songs.last}),
+            201,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path.contains('/songs')) {
+          return http.Response(
+            jsonEncode({'songs': songs, 'live_board': null, 'cue': null}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+    await tester.pumpWidget(
+      _advanceShell(
+        child: _portedWideAdvance(
+          board: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SongPanel(api: api, streamUuid: 'abc'),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('New song'));
+    await tester.pump();
+    expect(find.text('Save'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(0), 'Amazing Grace');
+    await tester.enterText(find.byType(TextField).at(1), 'Amazing grace\n\nHow sweet');
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(stored, isTrue);
+    expect(find.text('Amazing Grace'), findsWidgets);
+    expect(find.text('Song saved'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Listen for scripture does not throw without mixer', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 800));
     final api = _studioApi();

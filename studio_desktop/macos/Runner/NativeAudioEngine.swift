@@ -95,6 +95,8 @@ final class NativeAudioEngine {
   var onInputDeviceChanged: (() -> Void)?
   /// Live mic PCM for scripture speech — must not start a second AVAudioEngine.
   var onMicBuffer: ((AVAudioPCMBuffer) -> Void)?
+  /// While scripture Listen is active, keep a stronger output pull so mic taps stay live.
+  private var speechListening = false
 
   /// Label for the selected mic — used to bind WebRTC ADM on go-live.
   var selectedInputLabel: String? {
@@ -116,6 +118,11 @@ final class NativeAudioEngine {
   func ensureArmedForSpeech() throws {
     if armed && engine.isRunning && micWired { return }
     try armMic(deviceId: selectedDeviceId)
+  }
+
+  func setSpeechListening(_ active: Bool) {
+    speechListening = active
+    applyGains()
   }
 
   /// Prepare session + device list. Engine starts only after mic is armed
@@ -145,6 +152,7 @@ final class NativeAudioEngine {
     sessionReady = false
     armed = false
     micWired = false
+    speechListening = false
   }
 
   func stopPublishSide() {
@@ -1305,7 +1313,10 @@ final class NativeAudioEngine {
     let micOk = SMCatchException(&micErr) { [self] in
       self.micMixer.installTap(onBus: 0, bufferSize: 1024, format: nil) {
         [weak self] buffer, _ in
-        guard let self, let ch = buffer.floatChannelData else { return }
+        guard let self else { return }
+        // Forward PCM before meter math — speech must work even if floatChannelData is nil.
+        self.onMicBuffer?(buffer)
+        guard let ch = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
         guard frames > 0 else { return }
         if buffer.format.sampleRate > 0 {
@@ -1319,7 +1330,6 @@ final class NativeAudioEngine {
           acc += l * l + r * r
         }
         let rms = sqrt(acc / Float(max(frames * 2, 1)))
-        self.onMicBuffer?(buffer)
         if self.micMuted {
           self.micLevel = 0
           return
@@ -1340,7 +1350,9 @@ final class NativeAudioEngine {
         guard format.sampleRate > 0, format.channelCount > 0 else { return }
         self.engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) {
           [weak self] buffer, _ in
-          guard let self, let ch = buffer.floatChannelData else { return }
+          guard let self else { return }
+          self.onMicBuffer?(buffer)
+          guard let ch = buffer.floatChannelData else { return }
           let frames = Int(buffer.frameLength)
           guard frames > 0 else { return }
           let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
@@ -1351,7 +1363,6 @@ final class NativeAudioEngine {
             acc += l * l + r * r
           }
           let rms = sqrt(acc / Float(max(frames * 2, 1)))
-          self.onMicBuffer?(buffer)
           if self.micMuted {
             self.micLevel = 0
             return
@@ -1836,7 +1847,9 @@ final class NativeAudioEngine {
     // Duck program in HP while cueing; keep a tiny pull so the master edge stays alive.
     programMonitor.outputVolume = cueActive ? 0 : 0.001
     // Cue level is independent of the master fader (operator monitoring).
-    engine.mainMixerNode.outputVolume = headphonesOutputVolume
+    // Scripture Listen needs a real pull — near-zero HP volume can starve mic taps.
+    let hp = headphonesOutputVolume
+    engine.mainMixerNode.outputVolume = speechListening ? max(hp, 0.08) : hp
   }
 
   private func startMeters() {
