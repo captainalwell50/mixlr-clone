@@ -12,6 +12,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../models.dart';
 import '../scripture/book_completion.dart';
 import '../scripture/spoken_reference.dart';
+import '../scripture/verse_navigation.dart';
 import '../services/api_client.dart';
 import '../services/live_board_sync.dart';
 import '../services/mixer_bridge.dart';
@@ -571,6 +572,33 @@ class _ScripturePanelState extends State<ScripturePanel> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Live cue when present; otherwise a valid typed reference.
+  String? get _navBaseRef {
+    final live = _current?.ref.trim();
+    if (live != null && live.isNotEmpty && parseScriptureRef(live) != null) {
+      return live;
+    }
+    final typed = _controller.text.trim();
+    if (typed.isNotEmpty && parseScriptureRef(typed) != null) return typed;
+    return null;
+  }
+
+  String? get _prevVerseTarget {
+    final base = _navBaseRef;
+    return base == null ? null : previousVerseRef(base);
+  }
+
+  String? get _nextVerseTarget {
+    final base = _navBaseRef;
+    return base == null ? null : nextVerseRef(base);
+  }
+
+  Future<void> _nudgeVerse(bool next) async {
+    final target = next ? _nextVerseTarget : _prevVerseTarget;
+    if (target == null) return;
+    await _show(target);
   }
 
   bool _sameScriptureRef(String? a, String? b) {
@@ -1258,6 +1286,18 @@ class _ScripturePanelState extends State<ScripturePanel> {
                 onPressed: _busy ? null : () => _show(),
                 style: FilledButton.styleFrom(backgroundColor: StudioTheme.accent),
                 child: const Text('Show on listen'),
+              ),
+              OutlinedButton(
+                onPressed: _busy || _prevVerseTarget == null
+                    ? null
+                    : () => _nudgeVerse(false),
+                child: const Text('Prev'),
+              ),
+              OutlinedButton(
+                onPressed: _busy || _nextVerseTarget == null
+                    ? null
+                    : () => _nudgeVerse(true),
+                child: const Text('Next'),
               ),
               OutlinedButton(
                 onPressed: _busy ? null : _clear,

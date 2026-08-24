@@ -314,4 +314,65 @@ void main() {
     final err = tester.takeException();
     expect(err, isNull, reason: '$err');
   });
+
+  testWidgets('Scripture Prev/Next cue adjacent verses via store', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 800));
+    final posted = <String>[];
+    var liveRef = 'John 3:16';
+    var liveText = 'For God so loved the world';
+    final api = ApiClient(
+      client: MockClient((request) async {
+        if (request.method == 'GET' &&
+            request.url.path.endsWith('/scripture') &&
+            !request.url.path.contains('suggest')) {
+          return http.Response(
+            jsonEncode({
+              'enabled': true,
+              'live_board': 'scripture',
+              'scripture': {'ref': liveRef, 'text': liveText},
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.method == 'POST' && request.url.path.endsWith('/scripture')) {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          final ref = body['ref'] as String;
+          posted.add(ref);
+          liveRef = ref;
+          liveText = 'text for $ref';
+          return http.Response(
+            jsonEncode({
+              'ok': true,
+              'live_board': 'scripture',
+              'scripture': {'ref': liveRef, 'text': liveText},
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+    await tester.pumpWidget(
+      _advanceShell(child: ScripturePanel(api: api, streamUuid: 'abc')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('LIVE: John 3:16'), findsOneWidget);
+    expect(find.text('Prev'), findsOneWidget);
+    expect(find.text('Next'), findsOneWidget);
+
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(posted, ['John 3:17']);
+    expect(find.text('LIVE: John 3:17'), findsOneWidget);
+
+    await tester.tap(find.text('Prev'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(posted, ['John 3:17', 'John 3:16']);
+    expect(find.text('LIVE: John 3:16'), findsOneWidget);
+  });
 }
