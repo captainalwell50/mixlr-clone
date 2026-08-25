@@ -177,13 +177,16 @@ class _ScripturePanelState extends State<ScripturePanel> {
     super.dispose();
   }
 
-  /// Always use shared-engine SFSpeech on macOS when the mixer exists.
+  /// Mixer-tap SFSpeech only while Go Live (publish connected).
   ///
-  /// speech_to_text opens a second AVAudioEngine — that either crashes Studio
-  /// (Lost connection) or leaves Listen stuck on “Listening…” with no words.
-  /// Mixer-tap SFSpeech converts PCM for Apple and owns the health diagnostics.
+  /// Off-air the mixer graph often delivers zero PCM to SFSpeech (SOURCE not
+  /// pulling / engine idle) — that shows as “Microphone audio isn’t reaching…”.
+  /// Pause the mixer and use speech_to_text instead so one engine owns the mic.
+  /// Keep soft-boost / stuck-recognizer recycle on the Go Live mixer path.
   bool get _useMixerSpeech {
-    return !kIsWeb && Platform.isMacOS && widget.mixer != null;
+    final mixer = widget.mixer;
+    if (kIsWeb || !Platform.isMacOS || mixer == null) return false;
+    return mixer.publish == MixerPublishState.connected;
   }
 
   Future<void> _releaseMixerAfterSpeech() async {
@@ -939,8 +942,11 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   Future<void> _toggleListen() async {
     if (Platform.isMacOS) {
-      // Never speech_to_text while the Studio mixer owns AVAudioEngine.
-      await _toggleMixerListen();
+      if (_useMixerSpeech) {
+        await _toggleMixerListen();
+      } else {
+        await _toggleSuspendedSpeechListen();
+      }
       return;
     }
     if (_wantListen || _listening) {
