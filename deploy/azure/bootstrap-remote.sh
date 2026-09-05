@@ -116,6 +116,8 @@ replacements = {
     "MEDIAMTX_WEBHOOK_SECRET": os.environ["WEBHOOK_SECRET"],
     "MEDIAMTX_PUBLISH_SECRET": os.environ["PUBLISH_SECRET"],
     "MEDIAMTX_AUTH_URL": f"{app_url}/api/mediamtx/auth",
+    "SESSION_LIFETIME": "525600",
+    "SESSION_EXPIRE_ON_CLOSE": "false",
 }
 lines = Path(".env").read_text().splitlines()
 keys_seen = set()

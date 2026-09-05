@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\CreatorType;
 use App\Enums\EventStatus;
 use App\Models\Stream;
+use App\Support\StudioExpiry;
 use Illuminate\Support\Facades\URL;
 
 class StudioController extends Controller
@@ -38,127 +39,40 @@ class StudioController extends Controller
             'channelUrl' => $channelUrl,
             'broadcastAllowed' => $stream->organization?->allowsBroadcast() ?? true,
             'billingUrl' => route('billing.plans'),
-            'galleryUploadUrl' => URL::temporarySignedRoute(
-                'gallery.store',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'galleryDestroyUrl' => URL::temporarySignedRoute(
-                'studio.gallery.destroy',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
+            'galleryUploadUrl' => $this->signedStudioRoute('gallery.store', $stream),
+            'galleryDestroyUrl' => $this->signedStudioRoute('studio.gallery.destroy', $stream),
             'galleryListUrl' => $galleryListUrl,
-            'libraryListUrl' => URL::temporarySignedRoute(
-                'studio.library.index',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'libraryUploadUrl' => URL::temporarySignedRoute(
-                'studio.library.store',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'libraryImportDriveUrl' => URL::temporarySignedRoute(
-                'studio.library.import-drive',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'recordingUploadUrl' => URL::temporarySignedRoute(
-                'recordings.store',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'sessionShowUrl' => URL::temporarySignedRoute(
-                'studio.session.show',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'sessionCreateEventUrl' => URL::temporarySignedRoute(
-                'studio.session.create-event',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'sessionGoLiveUrl' => URL::temporarySignedRoute(
-                'studio.session.go-live',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'sessionPauseUrl' => URL::temporarySignedRoute(
-                'studio.session.pause',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'sessionResumeUrl' => URL::temporarySignedRoute(
-                'studio.session.resume',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'sessionEndUrl' => URL::temporarySignedRoute(
-                'studio.session.end',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'sessionRenameEventUrl' => URL::temporarySignedRoute(
-                'studio.session.rename-event',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
+            'libraryListUrl' => $this->signedStudioRoute('studio.library.index', $stream),
+            'libraryUploadUrl' => $this->signedStudioRoute('studio.library.store', $stream),
+            'libraryImportDriveUrl' => $this->signedStudioRoute('studio.library.import-drive', $stream),
+            'recordingUploadUrl' => $this->signedStudioRoute('recordings.store', $stream),
+            'sessionShowUrl' => $this->signedStudioRoute('studio.session.show', $stream),
+            'sessionCreateEventUrl' => $this->signedStudioRoute('studio.session.create-event', $stream),
+            'sessionGoLiveUrl' => $this->signedStudioRoute('studio.session.go-live', $stream),
+            'sessionPauseUrl' => $this->signedStudioRoute('studio.session.pause', $stream),
+            'sessionResumeUrl' => $this->signedStudioRoute('studio.session.resume', $stream),
+            'sessionEndUrl' => $this->signedStudioRoute('studio.session.end', $stream),
+            'sessionRenameEventUrl' => $this->signedStudioRoute('studio.session.rename-event', $stream),
             'scriptureEnabled' => $stream->organization?->creator_type === CreatorType::Church,
-            'scriptureShowUrl' => URL::temporarySignedRoute(
-                'studio.scripture.show',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'scriptureStoreUrl' => URL::temporarySignedRoute(
-                'studio.scripture.store',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'scriptureDestroyUrl' => URL::temporarySignedRoute(
-                'studio.scripture.destroy',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'scriptureSuggestUrl' => URL::temporarySignedRoute(
-                'studio.scripture.suggest',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'songsIndexUrl' => URL::temporarySignedRoute(
-                'studio.songs.index',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'songsStoreUrl' => URL::temporarySignedRoute(
-                'studio.songs.store',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'songsCueClearUrl' => URL::temporarySignedRoute(
-                'studio.songs.clear',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'songsCueNextUrl' => URL::temporarySignedRoute(
-                'studio.songs.next',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'songsCuePreviousUrl' => URL::temporarySignedRoute(
-                'studio.songs.previous',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
-            'songsShowUrl' => URL::temporarySignedRoute(
-                'studio.songs.show',
-                now()->addHours(12),
-                ['stream' => $stream],
-            ),
+            'scriptureShowUrl' => $this->signedStudioRoute('studio.scripture.show', $stream),
+            'scriptureStoreUrl' => $this->signedStudioRoute('studio.scripture.store', $stream),
+            'scriptureDestroyUrl' => $this->signedStudioRoute('studio.scripture.destroy', $stream),
+            'scriptureSuggestUrl' => $this->signedStudioRoute('studio.scripture.suggest', $stream),
+            'songsIndexUrl' => $this->signedStudioRoute('studio.songs.index', $stream),
+            'songsStoreUrl' => $this->signedStudioRoute('studio.songs.store', $stream),
+            'songsCueClearUrl' => $this->signedStudioRoute('studio.songs.clear', $stream),
+            'songsCueNextUrl' => $this->signedStudioRoute('studio.songs.next', $stream),
+            'songsCuePreviousUrl' => $this->signedStudioRoute('studio.songs.previous', $stream),
+            'songsShowUrl' => $this->signedStudioRoute('studio.songs.show', $stream),
             'openEvent' => $openEvent,
             'galleryImages' => $openEvent
                 ? $stream->serviceGalleryImages($openEvent->id)->limit(20)->get()
                 : collect(),
         ]);
+    }
+
+    private function signedStudioRoute(string $name, Stream $stream): string
+    {
+        return URL::temporarySignedRoute($name, StudioExpiry::at(), ['stream' => $stream]);
     }
 }

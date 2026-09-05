@@ -9,7 +9,9 @@ use App\Models\Event;
 use App\Models\Organization;
 use App\Models\Stream;
 use App\Models\User;
+use App\Support\StudioExpiry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
@@ -157,6 +159,68 @@ class StudioSessionTest extends TestCase
         ])->assertNoContent();
 
         $this->assertSame(EventStatus::Paused, $event->fresh()->status);
+    }
+
+    public function test_session_cookie_is_permanent_for_long_broadcasts(): void
+    {
+        $this->assertSame(StudioExpiry::LIFETIME_MINUTES, (int) config('session.lifetime'));
+        $this->assertFalse((bool) config('session.expire_on_close'));
+
+        $cookie = collect($this->get('/how-it-works')->headers->getCookies())
+            ->first(fn ($item) => $item->getName() === config('session.cookie'));
+
+        $this->assertNotNull($cookie);
+        $this->assertGreaterThanOrEqual((StudioExpiry::LIFETIME_MINUTES * 60) - 60, $cookie->getMaxAge());
+    }
+
+    public function test_login_session_survives_hours_of_idle_broadcast(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->get('/how-it-works')->assertOk();
+        $this->assertAuthenticatedAs($user);
+
+        $this->travel(3)->hours();
+
+        $this->get('/how-it-works')->assertOk();
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_session_show_returns_csrf_for_studio_keepalive(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        $url = URL::temporarySignedRoute('studio.session.show', StudioExpiry::at(), ['stream' => $stream]);
+
+        $csrf = $this->actingAs($user)
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('stream_id', $stream->id)
+            ->json('csrf');
+
+        $this->assertIsString($csrf);
+        $this->assertNotSame('', $csrf);
+    }
+
+    public function test_studio_end_url_from_page_still_works_after_overnight_live(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        $studioUrl = URL::temporarySignedRoute('studio.stream', StudioExpiry::at(), ['stream' => $stream]);
+
+        $html = $this->actingAs($user)->get($studioUrl)->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/data-session-end-url="[^"]+"/', $html);
+        preg_match('/data-session-end-url="([^"]+)"/', $html, $matches);
+        $endUrl = html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5);
+
+        $this->assertTrue(URL::hasValidSignature(Request::create($endUrl)));
+
+        $goLive = URL::temporarySignedRoute('studio.session.go-live', StudioExpiry::at(), ['stream' => $stream]);
+        $this->actingAs($user)->postJson($goLive, ['title' => 'Overnight'])->assertOk();
+
+        $this->travel(13)->hours();
+
+        $this->assertTrue(URL::hasValidSignature(Request::create($endUrl)));
+        $this->actingAs($user)->postJson($endUrl)->assertOk();
+        $this->assertSame(EventStatus::Ended, Event::query()->where('stream_id', $stream->id)->first()?->status);
     }
 
     /**

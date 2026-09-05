@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\OrgRole;
+use App\Support\StudioExpiry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
@@ -33,7 +34,7 @@ class CreatorHomeController extends Controller
             ? route('admin.streams.studio', $stream)
             : null;
         $signedStudioUrl = $stream
-            ? URL::temporarySignedRoute('studio.stream', now()->addHours(24), ['stream' => $stream])
+            ? URL::temporarySignedRoute('studio.stream', StudioExpiry::at(), ['stream' => $stream])
             : null;
 
         $isOwner = $user->orgRole($organization) === OrgRole::Owner;

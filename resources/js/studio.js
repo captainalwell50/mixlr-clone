@@ -17,6 +17,7 @@ const btnCreateEvent = document.getElementById('btn-create-event');
 const btnAddFile = document.getElementById('btn-add-file');
 const eventTitleEl = document.getElementById('studio-event-title');
 const eventUrlEl = document.getElementById('event-url');
+const sessionShowUrl = root?.dataset.sessionShowUrl;
 const sessionGoLiveUrl = root?.dataset.sessionGoLiveUrl;
 const sessionPauseUrl = root?.dataset.sessionPauseUrl;
 const sessionResumeUrl = root?.dataset.sessionResumeUrl;
@@ -512,16 +513,60 @@ function applyEventToUi(event) {
     }
 }
 
+function currentCsrf() {
+    return root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+function applyCsrf(token) {
+    if (!token || typeof token !== 'string') {
+        return;
+    }
+    if (root) {
+        root.dataset.csrf = token;
+    }
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) {
+        meta.setAttribute('content', token);
+    }
+}
+
+async function refreshStudioCsrf() {
+    if (!sessionShowUrl) {
+        return;
+    }
+    try {
+        const res = await fetch(sessionShowUrl, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.csrf) {
+            applyCsrf(data.csrf);
+        }
+    } catch {
+        // Keep the page token; End may still succeed if the session is valid.
+    }
+}
+
+if (sessionShowUrl) {
+    void refreshStudioCsrf();
+    window.setInterval(refreshStudioCsrf, 10 * 60 * 1000);
+}
+
 async function sessionPatch(url, body = {}) {
     if (!url) {
         throw new Error('Session link missing — reopen Studio from your dashboard.');
     }
+    await refreshStudioCsrf();
     const res = await fetch(url, {
         method: 'PATCH',
         headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content || '',
+            'X-CSRF-TOKEN': currentCsrf(),
             'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify(body),
@@ -615,12 +660,13 @@ async function sessionPost(url, body = {}) {
     if (!url) {
         throw new Error('Session link missing — reopen Studio from your dashboard.');
     }
+    await refreshStudioCsrf();
     const res = await fetch(url, {
         method: 'POST',
         headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content || '',
+            'X-CSRF-TOKEN': currentCsrf(),
             'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify(body),
@@ -2036,7 +2082,6 @@ const studioGalleryList = document.getElementById('studio-gallery-list');
 const galleryUploadUrl = root?.dataset.galleryUploadUrl;
 const galleryDestroyUrl = root?.dataset.galleryDestroyUrl;
 const galleryListUrl = root?.dataset.galleryListUrl;
-const galleryCsrf = root?.dataset.csrf || document.querySelector('meta[name="csrf-token"]')?.content;
 
 /** Open service event only — ended events must not keep prior photos in Studio. */
 function galleryScopedEventId() {
@@ -2159,7 +2204,7 @@ function renderLibraryList(assets = filteredLibraryAssets()) {
                     method: 'DELETE',
                     headers: {
                         Accept: 'application/json',
-                        'X-CSRF-TOKEN': galleryCsrf || '',
+                        'X-CSRF-TOKEN': currentCsrf(),
                         'X-Requested-With': 'XMLHttpRequest',
                     },
                 });
@@ -2242,7 +2287,7 @@ async function importDriveFilePrompt() {
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-CSRF-TOKEN': currentCsrf(),
                 'X-Requested-With': 'XMLHttpRequest',
             },
             body: JSON.stringify({ file_id: fileId.trim() }),
@@ -2297,7 +2342,7 @@ async function uploadFilesToLibrary(files, queueAfterUpload) {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
-                    'X-CSRF-TOKEN': galleryCsrf || '',
+                    'X-CSRF-TOKEN': currentCsrf(),
                     'X-Requested-With': 'XMLHttpRequest',
                 },
                 body,
@@ -2432,7 +2477,7 @@ async function deleteStudioGalleryItem(figure) {
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-CSRF-TOKEN': currentCsrf(),
                 'X-Requested-With': 'XMLHttpRequest',
             },
             credentials: 'same-origin',
@@ -2493,7 +2538,7 @@ galleryInput?.addEventListener('change', async () => {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
-                    'X-CSRF-TOKEN': galleryCsrf || '',
+                    'X-CSRF-TOKEN': currentCsrf(),
                     'X-Requested-With': 'XMLHttpRequest',
                 },
                 body,
@@ -2545,7 +2590,7 @@ reelInput?.addEventListener('change', async () => {
             method: 'POST',
             headers: {
                 Accept: 'application/json',
-                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-CSRF-TOKEN': currentCsrf(),
                 'X-Requested-With': 'XMLHttpRequest',
             },
             body,
@@ -2740,7 +2785,7 @@ async function uploadLocalRecording() {
             method: 'POST',
             headers: {
                 Accept: 'application/json',
-                'X-CSRF-TOKEN': galleryCsrf || '',
+                'X-CSRF-TOKEN': currentCsrf(),
                 'X-Requested-With': 'XMLHttpRequest',
             },
             body,

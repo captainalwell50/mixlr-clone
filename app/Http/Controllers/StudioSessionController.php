@@ -22,6 +22,7 @@ class StudioSessionController extends Controller
         return response()->json([
             'stream_id' => $stream->id,
             'event' => $open ? $this->broadcast->eventPayload($open) : null,
+            'csrf' => csrf_token(),
         ]);
     }
 
