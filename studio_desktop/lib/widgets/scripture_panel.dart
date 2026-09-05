@@ -61,6 +61,22 @@ const scriptureHearingStatus =
     'Hearing the mic — speak a scripture reference…';
 
 @visibleForTesting
+const scriptureOffAirWaitingStatus =
+    'Listening — speak a reference like “John 3 16”, or type one.';
+
+/// Mixer-tap SFSpeech only while Go Live. Off-air the mixer often delivers
+/// zero PCM, so Listen uses speech_to_text after suspending the mixer.
+@visibleForTesting
+bool scriptureListenUsesMixerSpeech({
+  required bool isMacOS,
+  required bool hasMixer,
+  required MixerPublishState publish,
+}) {
+  if (!isMacOS || !hasMixer) return false;
+  return publish == MixerPublishState.connected;
+}
+
+@visibleForTesting
 String? scriptureListenPreflightError(String micStatus) {
   if (micStatus == 'denied') return scriptureMicDeniedStatus;
   return null;
@@ -139,15 +155,27 @@ class _ScripturePanelState extends State<ScripturePanel> {
   String _ghostSuffix = '';
 
   bool _mixerHeldForSpeech = false;
+  /// Locked when Listen starts so Go Live / End mid-session cannot flip engines.
+  bool? _sessionUsesMixer;
 
   @override
   void initState() {
     super.initState();
     widget.liveBoard?.addListener(_onLiveBoard);
+    widget.mixer?.addListener(_onMixerChanged);
     _hydrate();
     // Do not touch Speech APIs until the operator taps Listen. Opening
     // Advanced used to call initialize() immediately, which can kill a
     // sandboxed macOS build that lacks the speech-recognition entitlement.
+  }
+
+  @override
+  void didUpdateWidget(covariant ScripturePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mixer != widget.mixer) {
+      oldWidget.mixer?.removeListener(_onMixerChanged);
+      widget.mixer?.addListener(_onMixerChanged);
+    }
   }
 
   void _onLiveBoard() {
@@ -160,9 +188,25 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
   }
 
+  void _onMixerChanged() {
+    if (!mounted || !_wantListen) return;
+    if (_sessionUsesMixer != false) return;
+    final publish = widget.mixer?.publish;
+    if (publish != MixerPublishState.connecting &&
+        publish != MixerPublishState.connected) {
+      return;
+    }
+    // Off-air Listen holds the mixer down; Go Live needs it back.
+    unawaited(_stopListenSession(
+      reason:
+          'Speech Listen paused so Go Live can use the mixer. Tap Listen again after you are on air.',
+    ));
+  }
+
   @override
   void dispose() {
     widget.liveBoard?.removeListener(_onLiveBoard);
+    widget.mixer?.removeListener(_onMixerChanged);
     _wantListen = false;
     _suggestTimer?.cancel();
     _confirmTimer?.cancel();
@@ -177,17 +221,14 @@ class _ScripturePanelState extends State<ScripturePanel> {
     super.dispose();
   }
 
-  /// Mixer-tap SFSpeech only while Go Live (publish connected).
-  ///
-  /// Off-air the mixer graph often delivers zero PCM to SFSpeech (SOURCE not
-  /// pulling / engine idle) — that shows as “Microphone audio isn’t reaching…”.
-  /// Pause the mixer and use speech_to_text instead so one engine owns the mic.
-  /// Keep soft-boost / stuck-recognizer recycle on the Go Live mixer path.
-  bool get _useMixerSpeech {
-    final mixer = widget.mixer;
-    if (kIsWeb || !Platform.isMacOS || mixer == null) return false;
-    return mixer.publish == MixerPublishState.connected;
-  }
+  bool get _useMixerSpeech => scriptureListenUsesMixerSpeech(
+        isMacOS: !kIsWeb && Platform.isMacOS,
+        hasMixer: widget.mixer != null,
+        publish: widget.mixer?.publish ?? MixerPublishState.idle,
+      );
+
+  bool get _activeSessionUsesMixer =>
+      _sessionUsesMixer ?? _useMixerSpeech;
 
   Future<void> _releaseMixerAfterSpeech() async {
     if (!_mixerHeldForSpeech) return;
@@ -218,7 +259,11 @@ class _ScripturePanelState extends State<ScripturePanel> {
       if (!mounted || !_wantListen || _gotResultOnce) return;
       // Keep a precise native diagnostic (permission / no audio / silent mic).
       if (scriptureStatusIsDiagnostic(_status)) return;
-      setState(() => _status = scriptureNoWordsYetStatus);
+      setState(() {
+        _status = _sessionUsesMixer == true
+            ? scriptureNoWordsYetStatus
+            : scriptureOffAirWaitingStatus;
+      });
     });
   }
 
@@ -259,6 +304,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
     if (permanent) {
       _wantListen = false;
+      _sessionUsesMixer = null;
       _restartTimer?.cancel();
       _watchdogTimer?.cancel();
       _watchdogTimer = null;
@@ -328,7 +374,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
     _restartTimer = Timer(const Duration(milliseconds: 350), () async {
       _restartScheduled = false;
       if (!mounted || !_wantListen) return;
-      if (_useMixerSpeech) {
+      if (_activeSessionUsesMixer) {
         await _restartMixerSession();
         return;
       }
@@ -737,6 +783,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
         msg.contains('restricted');
     if (permanent) {
       _wantListen = false;
+      _sessionUsesMixer = null;
       _restartTimer?.cancel();
       _restartScheduled = false;
       _watchdogTimer?.cancel();
@@ -754,6 +801,31 @@ class _ScripturePanelState extends State<ScripturePanel> {
     // cancels the live SFSpeech task (that was dropping transcripts).
   }
 
+  Future<void> _stopListenSession({String? reason}) async {
+    _wantListen = false;
+    _sessionUsesMixer = null;
+    _restartTimer?.cancel();
+    _restartScheduled = false;
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
+    _gotResultOnce = false;
+    try {
+      await _speech.stop();
+    } catch (_) {}
+    _unbindMixerSpeech();
+    await _releaseMixerAfterSpeech();
+    if (!mounted) return;
+    setState(() {
+      _listening = false;
+      _liveTranscript = '';
+      _liveTranscriptFinal = false;
+      _status = reason ??
+          (_current != null
+              ? 'Showing ${_current!.ref} on listen'
+              : 'Speech recognition off');
+    });
+  }
+
   Future<void> _toggleMixerListen() async {
     final mixer = widget.mixer;
     if (mixer == null) {
@@ -764,24 +836,10 @@ class _ScripturePanelState extends State<ScripturePanel> {
       return;
     }
     if (_wantListen || _listening) {
-      _wantListen = false;
-      _restartTimer?.cancel();
-      _restartScheduled = false;
-      _watchdogTimer?.cancel();
-      _watchdogTimer = null;
-      _gotResultOnce = false;
-      _unbindMixerSpeech();
-      if (!mounted) return;
-      setState(() {
-        _listening = false;
-        _liveTranscript = '';
-        _liveTranscriptFinal = false;
-        _status = _current != null
-            ? 'Showing ${_current!.ref} on listen'
-            : 'Speech recognition off';
-      });
+      await _stopListenSession();
       return;
     }
+    _sessionUsesMixer = true;
 
     final micStatus = await mixer.refreshMicPermissionStatus();
     if (!mounted) return;
@@ -840,6 +898,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
     final ok = await mixer.startScriptureListen();
     if (!mounted) return;
     if (!ok) {
+      _sessionUsesMixer = null;
       _wantListen = false;
       _restartTimer?.cancel();
       _restartScheduled = false;
@@ -853,29 +912,12 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   /// Default macOS path: pause Studio mixer, use speech_to_text (works like Aug 9).
   Future<void> _toggleSuspendedSpeechListen() async {
-    final mixer = widget.mixer;
     if (_wantListen || _listening) {
-      _wantListen = false;
-      _restartTimer?.cancel();
-      _restartScheduled = false;
-      _watchdogTimer?.cancel();
-      _watchdogTimer = null;
-      _gotResultOnce = false;
-      try {
-        await _speech.stop();
-      } catch (_) {}
-      await _releaseMixerAfterSpeech();
-      if (!mounted) return;
-      setState(() {
-        _listening = false;
-        _liveTranscript = '';
-        _liveTranscriptFinal = false;
-        _status = _current != null
-            ? 'Showing ${_current!.ref} on listen'
-            : 'Speech recognition off';
-      });
+      await _stopListenSession();
       return;
     }
+    _sessionUsesMixer = false;
+    final mixer = widget.mixer;
 
     if (mixer != null) {
       final micStatus = await mixer.refreshMicPermissionStatus();
@@ -919,6 +961,7 @@ class _ScripturePanelState extends State<ScripturePanel> {
     }
     if (!mounted) return;
     if (!_speechReady) {
+      _sessionUsesMixer = null;
       await _releaseMixerAfterSpeech();
       setState(() {
         _listening = false;
@@ -941,31 +984,16 @@ class _ScripturePanelState extends State<ScripturePanel> {
   }
 
   Future<void> _toggleListen() async {
+    if (_wantListen || _listening) {
+      await _stopListenSession();
+      return;
+    }
     if (Platform.isMacOS) {
       if (_useMixerSpeech) {
         await _toggleMixerListen();
       } else {
         await _toggleSuspendedSpeechListen();
       }
-      return;
-    }
-    if (_wantListen || _listening) {
-      _wantListen = false;
-      _restartTimer?.cancel();
-      _restartScheduled = false;
-      _watchdogTimer?.cancel();
-      _watchdogTimer = null;
-      _gotResultOnce = false;
-      await _speech.stop();
-      if (!mounted) return;
-      setState(() {
-        _listening = false;
-        _liveTranscript = '';
-        _liveTranscriptFinal = false;
-        _status = _current != null
-            ? 'Showing ${_current!.ref} on listen'
-            : 'Speech recognition off';
-      });
       return;
     }
 

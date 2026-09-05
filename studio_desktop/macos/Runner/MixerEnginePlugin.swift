@@ -267,6 +267,17 @@ final class MixerEnginePlugin: NSObject {
         result(FlutterError(code: "bad_args", message: "whipUrl required", details: nil))
         return
       }
+      // Off-air Listen suspends the mixer so speech_to_text can own the mic.
+      // Bring the graph back before WHIP or Go Live publishes silence.
+      if audio.isSuspendedForSpeech {
+        scriptureSpeech.stop()
+        do {
+          try audio.resumeAfterSpeechListen()
+        } catch {
+          result(FlutterError(code: "goLive", message: error.localizedDescription, details: nil))
+          return
+        }
+      }
       whip.goLive(whipUrl: whipUrl) { error in
         // Result must be on main (Flutter embedding).
         DispatchQueue.main.async {

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soundmix_studio/services/mixer_bridge.dart';
 import 'package:soundmix_studio/widgets/scripture_panel.dart';
 
 void main() {
@@ -24,6 +25,41 @@ void main() {
     expect(scriptureStatusIsDiagnostic(scriptureSpeechDeniedStatus), isTrue);
     expect(scriptureStatusIsDiagnostic(scriptureNoWordsYetStatus), isFalse);
     expect(scriptureStatusIsDiagnostic('Listening for scripture references…'), isFalse);
+  });
+
+  test('mixer speech is only used while Go Live on macOS', () {
+    expect(
+      scriptureListenUsesMixerSpeech(
+        isMacOS: true,
+        hasMixer: true,
+        publish: MixerPublishState.idle,
+      ),
+      isFalse,
+    );
+    expect(
+      scriptureListenUsesMixerSpeech(
+        isMacOS: true,
+        hasMixer: true,
+        publish: MixerPublishState.connecting,
+      ),
+      isFalse,
+    );
+    expect(
+      scriptureListenUsesMixerSpeech(
+        isMacOS: true,
+        hasMixer: true,
+        publish: MixerPublishState.connected,
+      ),
+      isTrue,
+    );
+    expect(
+      scriptureListenUsesMixerSpeech(
+        isMacOS: false,
+        hasMixer: true,
+        publish: MixerPublishState.connected,
+      ),
+      isFalse,
+    );
   });
 
   test('native hearing status is distinct from permission and silence', () {
