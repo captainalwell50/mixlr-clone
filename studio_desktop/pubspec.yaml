@@ -1,7 +1,7 @@
 name: soundmix_studio
 description: Sound Mix Live Studio — premium desktop broadcast console.
 publish_to: 'none'
-version: 2.0.0+2
+version: 2.0.1+3
 
 environment:
   sdk: ^3.5.3
