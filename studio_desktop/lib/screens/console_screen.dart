@@ -8,12 +8,15 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
 import '../services/live_board_sync.dart';
 import '../services/mixer_bridge.dart';
+import '../services/mixer_errors.dart';
+import '../services/playlist_queue_store.dart';
 import '../theme.dart';
 import '../widgets/console_chassis.dart';
 import '../widgets/gallery_lightbox.dart';
@@ -54,6 +57,8 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   DateTime? _liveStartedAt;
   Timer? _tick;
   Duration _elapsed = Duration.zero;
+  final _queueStore = PlaylistQueueStore();
+  bool _restoringQueue = false;
 
   int? get _openEventId {
     final event = _event;
@@ -70,10 +75,23 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     _bootstrap();
   }
 
+  bool _isMixerOperatorAlert(String message) {
+    final lower = message.toLowerCase();
+    return lower.contains('fail') ||
+        lower.contains('could not') ||
+        lower.contains('not found') ||
+        lower.contains('permission') ||
+        lower.contains('denied') ||
+        lower.contains('unavailable');
+  }
+
   void _onMixer() {
     if (!mounted) return;
     setState(() {
-      if (_mixer.status != null) _status = _mixer.status!;
+      final next = _mixer.status;
+      if (next != null && _isMixerOperatorAlert(next)) {
+        _status = next;
+      }
       // Ignore one-shot eval plumbing noise; real failures still surface via catch.
       final err = _mixer.error;
       if (err != null && !err.contains('unsupported type')) {
@@ -167,8 +185,49 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
 
       await _refreshLibrary();
       await _refreshGallery();
+      await _restoreSavedQueue(stream.uuid);
     } on ApiException catch (e) {
       if (!mounted) return;
+      final uuid = auth.preferredStreamUuid;
+      if (uuid != null && uuid.isNotEmpty) {
+        setState(() {
+          _stream = StreamSummary(
+            uuid: uuid,
+            title: 'Offline',
+            status: 'offline',
+          );
+          _loading = false;
+          _error = e.message;
+          _status = 'Offline — restoring saved playlist…';
+        });
+        try {
+          await _mixer.startEngine();
+          await _mixer.listDevices();
+          await _mixer.listOutputs();
+          final micStatus = await _mixer.refreshMicPermissionStatus();
+          if (micStatus == 'authorized') {
+            final saved = await _mixer.savedMicDeviceId();
+            if (saved != null && saved.isNotEmpty && saved != 'none') {
+              await _mixer.setInputDevice(saved);
+            } else {
+              await _mixer.armMic();
+            }
+            await _mixer.setGains(
+              mic: _micGain,
+              playlist: _playlistGain,
+              master: _masterGain,
+            );
+          }
+          await _restoreSavedQueue(uuid);
+          if (!mounted) return;
+          setState(() {
+            _status = _mixer.tracks.isEmpty
+                ? 'Offline — saved playlist is empty on this channel.'
+                : 'Offline — ${_mixer.tracks.length} saved track${_mixer.tracks.length == 1 ? '' : 's'} ready.';
+          });
+        } catch (_) {}
+        return;
+      }
       setState(() {
         _loading = false;
         _error = e.message;
@@ -212,8 +271,10 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       _error = null;
       _status = 'Switched to ${selected.title}.';
     });
+    await _mixer.clearTracks(deleteCache: false);
     await _refreshLibrary();
     await _refreshGallery();
+    await _restoreSavedQueue(selected.uuid);
   }
 
   Future<void> _enableMic() async {
@@ -437,6 +498,14 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     }
   }
 
+  Future<void> _openBilling() async {
+    final url = _home?.billingUrl;
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   String? get _listenUrl =>
       _event?.url ?? _stream?.listenUrl ?? _home?.organization?.publicChannelUrl;
 
@@ -458,7 +527,16 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
             title: picked.name,
           );
       await _refreshLibrary();
-      await _mixer.queueTrack(asset);
+      final localPath = await _mixer.queueTrack(asset);
+      await _rememberQueued(
+        PlaylistQueueEntry(
+          id: 'asset-${asset.id}',
+          title: asset.title,
+          url: asset.url,
+          assetId: asset.id,
+          localPath: localPath,
+        ),
+      );
       if (!mounted) return;
       setState(() {
         _error = null;
@@ -476,14 +554,111 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   }
 
   Future<void> _queueAsset(LibraryAsset asset) async {
+    setState(() {
+      _error = null;
+      _status = 'Queueing “${asset.title}”…';
+    });
     try {
-      await _mixer.queueTrack(asset);
+      final localPath = await _mixer.queueTrack(asset);
+      await _rememberQueued(
+        PlaylistQueueEntry(
+          id: 'asset-${asset.id}',
+          title: asset.title,
+          url: asset.url,
+          assetId: asset.id,
+          localPath: localPath,
+        ),
+      );
+      if (!mounted) return;
       setState(() {
         _error = null;
         _status = 'Queued “${asset.title}”.';
       });
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (!mounted) return;
+      setState(() => _error = mixerOperatorError(e));
+    }
+  }
+
+  Future<void> _playQueued(String id) async {
+    try {
+      await _mixer.play(id);
+      if (!mounted) return;
+      setState(() => _error = null);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = mixerOperatorError(e));
+    }
+  }
+
+  Future<void> _restartQueued(String id) async {
+    try {
+      await _mixer.restart(id);
+      if (!mounted) return;
+      setState(() => _error = null);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = mixerOperatorError(e));
+    }
+  }
+
+  Future<void> _removeQueued(String id) async {
+    await _mixer.remove(id, deleteCache: true);
+    final uuid = _stream?.uuid;
+    if (uuid == null) return;
+    final current = await _queueStore.load(uuid);
+    await _queueStore.save(
+      uuid,
+      current.where((e) => e.id != id).toList(),
+    );
+  }
+
+  Future<void> _rememberQueued(PlaylistQueueEntry entry) async {
+    final uuid = _stream?.uuid;
+    if (uuid == null || _restoringQueue) return;
+    final current = await _queueStore.load(uuid);
+    await _queueStore.save(uuid, [
+      ...current.where((e) => e.id != entry.id),
+      entry,
+    ]);
+  }
+
+  Future<void> _restoreSavedQueue(String streamUuid) async {
+    if (_restoringQueue || streamUuid.isEmpty) return;
+    final saved = _queueStore.usable(await _queueStore.load(streamUuid));
+    if (saved.isEmpty) return;
+    _restoringQueue = true;
+    if (mounted) {
+      setState(() {
+        _status =
+            'Restoring ${saved.length} saved track${saved.length == 1 ? '' : 's'}…';
+      });
+    }
+    final restored = <PlaylistQueueEntry>[];
+    try {
+      for (final entry in saved) {
+        final useLocal = _queueStore.localFileReady(entry);
+        try {
+          final path = await _mixer.queueRaw(
+            id: entry.id,
+            title: entry.title,
+            url: entry.url,
+            assetId: entry.assetId,
+            localPath: useLocal ? entry.localPath : null,
+          );
+          restored.add(entry.copyWith(localPath: path ?? entry.localPath));
+        } catch (_) {}
+      }
+      final failed = saved.where((e) => !restored.any((r) => r.id == e.id));
+      await _queueStore.save(streamUuid, [...restored, ...failed]);
+      if (mounted && restored.isNotEmpty) {
+        setState(() {
+          _status =
+              'Restored ${restored.length} saved track${restored.length == 1 ? '' : 's'}.';
+        });
+      }
+    } finally {
+      _restoringQueue = false;
     }
   }
 
@@ -710,6 +885,8 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                     clock: _clock,
                     tab: _tab,
                     onTab: (t) => setState(() => _tab = t),
+                    needsUpgrade: _home?.needsUpgrade == true,
+                    onUpgrade: _openBilling,
                     onLogout: () async {
                       await _mixer.stopPublish();
                       await auth.logout();
@@ -751,26 +928,6 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                   onPause: _pause,
                                   onEnd: _end,
                                 ),
-                                if (_home?.organization?.isChurch == true)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 6),
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: TextButton(
-                                        onPressed: () => setState(
-                                          () => _tab = _StudioTab.advance,
-                                        ),
-                                        child: Text(
-                                          'Advance',
-                                          style: GoogleFonts.outfit(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: StudioTheme.accentBright,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                                 const SizedBox(height: 12),
                                 // Console + Library share one height.
                                 Expanded(
@@ -886,10 +1043,10 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                           onRefreshLibrary: _refreshLibrary,
                                           onUpload: _upload,
                                           onQueue: _queueAsset,
-                                          onPlay: _mixer.play,
+                                          onPlay: _playQueued,
                                           onPause: _mixer.pause,
-                                          onRestart: _mixer.restart,
-                                          onRemove: _mixer.remove,
+                                          onRestart: _restartQueued,
+                                          onRemove: _removeQueued,
                                         ),
                                       ),
                                     ],
@@ -935,6 +1092,8 @@ class _TopBar extends StatelessWidget {
     required this.tab,
     required this.onTab,
     required this.onLogout,
+    this.needsUpgrade = false,
+    this.onUpgrade,
   });
 
   final String userName;
@@ -948,6 +1107,8 @@ class _TopBar extends StatelessWidget {
   final _StudioTab tab;
   final ValueChanged<_StudioTab> onTab;
   final VoidCallback onLogout;
+  final bool needsUpgrade;
+  final VoidCallback? onUpgrade;
 
   @override
   Widget build(BuildContext context) {
@@ -1026,6 +1187,21 @@ class _TopBar extends StatelessWidget {
             ),
           ],
           const Spacer(),
+          if (needsUpgrade) ...[
+            TextButton(
+              onPressed: onUpgrade,
+              style: TextButton.styleFrom(
+                foregroundColor: StudioTheme.accentBright,
+                backgroundColor: StudioTheme.accent.withOpacity(0.16),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              ),
+              child: Text(
+                'Upgrade',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
           if (onAir || paused)
             Container(
               margin: const EdgeInsets.only(right: 16),

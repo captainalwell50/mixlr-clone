@@ -1,3 +1,4 @@
+import AVFoundation
 import Cocoa
 import FlutterMacOS
 import XCTest
@@ -45,5 +46,35 @@ class RunnerTests: XCTestCase {
     dest.withUnsafeMutableBufferPointer { buf in
       XCTAssertFalse(hold.fill(frames: 2, channels: 2, into: buf.baseAddress!))
     }
+  }
+
+  func testEnsurePublishingGraphIsSafeBeforeArm() {
+    let engine = NativeAudioEngine()
+    engine.ensurePublishingGraph()
+    XCTAssertFalse(engine.isSuspendedForSpeech)
+  }
+
+  func testPlaylistPlaybackFormatIsCanonicalStereo48k() {
+    let format = NativeAudioEngine.playlistPlaybackFormat
+    XCTAssertEqual(format.sampleRate, 48_000, accuracy: 0.1)
+    XCTAssertEqual(format.channelCount, 2)
+    XCTAssertFalse(format.isInterleaved)
+    XCTAssertTrue(NativeAudioEngine.formatsMatch(format, format))
+  }
+
+  func testPlaybackCacheNameIncludesLayout() {
+    let format = NativeAudioEngine.playlistPlaybackFormat
+    let name = NativeAudioEngine.playbackCacheFileName(id: "asset-9", format: format)
+    XCTAssertTrue(name.contains("asset-9"))
+    XCTAssertTrue(name.contains("48000"))
+    XCTAssertTrue(name.contains("-2-"))
+    XCTAssertTrue(name.hasSuffix(".caf"))
+    XCTAssertNotEqual(
+      name,
+      NativeAudioEngine.playbackCacheFileName(
+        id: "asset-9",
+        format: AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
+      )
+    )
   }
 }

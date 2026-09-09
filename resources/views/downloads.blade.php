@@ -37,7 +37,7 @@
         <section class="dl-group" aria-labelledby="dl-desktop-heading">
             <h2 id="dl-desktop-heading" class="dl-group-title">Desktop</h2>
             <p class="dl-group-lede">
-                Sound Mix Live Studio for Mac — universal (Apple Silicon + Intel). Windows builds publish when available.
+                Sound Mix Live Studio for Mac (Apple Silicon + Intel) and Windows.
                 You can also use
                 <a href="{{ route('login') }}">Studio in your browser</a>.
             </p>

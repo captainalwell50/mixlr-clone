@@ -45,7 +45,18 @@ final class NativeAudioEngine {
   private var playerNodes: [String: AVAudioPlayerNode] = [:]
   private var playerFiles: [String: AVAudioFile] = [:]
   private var trackMeta: [String: TrackState] = [:]
-  private var tempFiles: [String: URL] = [:]
+  /// Cached playlist files we downloaded (Application Support). Unload keeps them.
+  private var cacheFiles: [String: URL] = [:]
+  private let convertQueue = DispatchQueue(label: "soundmix.playlist.convert")
+  /// Pre-wired players so Queue/Play never attach nodes while On air.
+  private var playlistSlots: [AVAudioPlayerNode] = []
+  private var slotTrackIds: [String?] = []
+  private let playlistSlotCount = 8
+  /// Players stay at this format for the session. Mic HW rate lives on a different mixer bus.
+  static let playlistPlaybackFormat = AVAudioFormat(
+    standardFormatWithSampleRate: 48_000,
+    channels: 2
+  )!
 
   private let bufferLock = NSLock()
   private var ring: [Float]
@@ -225,6 +236,34 @@ final class NativeAudioEngine {
 
   var isSuspendedForSpeech: Bool { suspendedForSpeech }
 
+  /// Re-attach master taps after WHIP/ADM starts. WebRTC capture on the same
+  /// hardware can stop the graph; Listen then gets an empty mix while Studio
+  /// meters still move from a stale UI state.
+  func ensurePublishingGraph() {
+    if suspendedForSpeech {
+      try? resumeAfterSpeechListen()
+    }
+    guard (armed || micWired), !suspendedForSpeech else { return }
+    if !engine.isRunning {
+      engine.prepare()
+      do {
+        try engine.start()
+      } catch {
+        NSLog("[publish] engine start failed: %@", error.localizedDescription)
+        return
+      }
+    }
+    installMeterAndCaptureTaps()
+    reconnectPlaylistSlotsIfNeeded()
+    applyGains()
+    NSLog(
+      "[publish] graph ready running=%d wired=%d mixFrames=%d",
+      engine.isRunning ? 1 : 0,
+      micWired ? 1 : 0,
+      availableMixFrames()
+    )
+  }
+
   /// Prepare session + device list. Engine starts only after mic is armed
   /// (avoids avfaudio -10875 from starting with a mismatched IO graph).
   func start() throws {
@@ -242,7 +281,7 @@ final class NativeAudioEngine {
     meterTimer = nil
     endInputHotSwap()
     stopPublishSide()
-    for id in Array(playerNodes.keys) {
+    for id in Array(trackMeta.keys) {
       removeTrack(id)
     }
     if engine.isRunning {
@@ -395,10 +434,8 @@ final class NativeAudioEngine {
       }
       armed = true
       let devices = listInputDevices()
-      let label = devices.first(where: { $0.deviceId == deviceId })?.label ?? deviceId
       onDevices?(devices, selectedDeviceId)
       onOutputs?(listOutputDevices(), selectedOutputDeviceId)
-      onStatus?("Input: \(label)")
       onInputDeviceChanged?()
     } catch {
       endInputHotSwap()
@@ -656,76 +693,377 @@ final class NativeAudioEngine {
 
   // MARK: - Playlist
 
-  func queueTrack(id: String, title: String, url: String, assetId: Int?) throws {
-    if !sessionReady { try start() }
-    attachNodesIfNeeded()
-    if playerNodes[id] != nil {
-      removeTrack(id)
-    }
-
-    let localURL = try resolveAudioURL(url, trackId: id)
-    let file = try AVAudioFile(forReading: localURL)
-    let player = AVAudioPlayerNode()
-    var attachErr: NSError?
-    let attached = SMCatchException(&attachErr) { [self] in
-      self.engine.attach(player)
-    }
-    guard attached else {
-      throw attachErr ?? NSError(
-        domain: "NativeAudio",
-        code: 18,
-        userInfo: [NSLocalizedDescriptionKey: "Could not attach playlist player."]
-      )
-    }
-    // Only wire into playlist bus once the mix graph exists (after arm).
-    // Never connect while the engine is running — stop → connect → start.
-    if micWired {
-      let wasRunning = engine.isRunning
-      if wasRunning { engine.stop() }
-      var connectErr: NSError?
-      let connected = SMCatchException(&connectErr) { [self] in
-        self.engine.connect(player, to: self.playlistMixer, format: file.processingFormat)
-      }
-      if wasRunning {
-        try engine.start()
-      }
-      if !connected {
-        throw connectErr ?? NSError(
-          domain: "NativeAudio",
-          code: 19,
-          userInfo: [NSLocalizedDescriptionKey: "Could not wire playlist into mixer."]
-        )
-      }
-    }
-    playerNodes[id] = player
-    playerFiles[id] = file
+  func queueTrack(
+    id: String,
+    title: String,
+    url: String,
+    assetId: Int?,
+    completion: @escaping (Error?, String?) -> Void
+  ) {
     trackMeta[id] = TrackState(
       id: id,
       title: title,
       assetId: assetId,
-      ready: true,
+      ready: false,
       playing: false,
       currentTime: 0,
-      duration: Double(file.length) / file.processingFormat.sampleRate
+      duration: 0
     )
+    emitTracks()
+
+    downloadTrackFile(url: url, trackId: id) { [weak self] result in
+      DispatchQueue.main.async {
+        guard let self else {
+          completion(
+            NSError(
+              domain: "NativeAudio",
+              code: 2,
+              userInfo: [NSLocalizedDescriptionKey: "Mixer was closed while loading the track."]
+            ),
+            nil
+          )
+          return
+        }
+        switch result {
+        case .failure(let error):
+          self.trackMeta.removeValue(forKey: id)
+          self.emitTracks()
+          completion(error, nil)
+        case .success(let localURL):
+          do {
+            try self.attachQueuedFile(
+              id: id,
+              title: title,
+              localURL: localURL,
+              assetId: assetId
+            )
+            self.debugPlaylist("queue ok id=\(id) path=\(localURL.path)")
+            completion(nil, localURL.path)
+          } catch {
+            self.debugPlaylist("queue FAIL id=\(id) \(error)")
+            self.removeTrack(id, deleteCache: false)
+            completion(self.humanizeQueueError(error), nil)
+          }
+        }
+      }
+    }
+  }
+
+  func play(_ id: String, completion: @escaping (Error?) -> Void) {
+    guard let file = playerFiles[id] else {
+      completion(
+        NSError(domain: "NativeAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Track not found"])
+      )
+      return
+    }
+
+    do {
+      try ensureEngineRunningForPlaylist()
+    } catch {
+      completion(error)
+      return
+    }
+
+    let destFormat = Self.playlistPlaybackFormat
+    convertQueue.async { [weak self] in
+      guard let self else { return }
+      do {
+        let playFile = try self.playbackFile(for: id, source: file, destFormat: destFormat)
+        DispatchQueue.main.async {
+          do {
+            guard let slot = self.assignPlaylistSlot(for: id) else {
+              throw NSError(
+                domain: "NativeAudio",
+                code: 27,
+                userInfo: [
+                  NSLocalizedDescriptionKey:
+                    "Too many tracks playing. Pause one, then Play.",
+                ]
+              )
+            }
+            self.debugPlaylist(
+              "play slot id=\(id) engineRunning=\(self.engine.isRunning) micWired=\(self.micWired) fileSR=\(playFile.processingFormat.sampleRate) fileCh=\(playFile.processingFormat.channelCount)"
+            )
+            try self.startPlayer(slot, file: playFile, id: id)
+            self.debugPlaylist("play ok id=\(id)")
+            completion(nil)
+          } catch {
+            self.debugPlaylist("play FAIL id=\(id) \(error)")
+            completion(self.humanizePlayError(error as NSError))
+          }
+        }
+      } catch {
+        DispatchQueue.main.async {
+          completion(self.humanizePlayError(error as NSError))
+        }
+      }
+    }
+  }
+
+  func restart(_ id: String, completion: @escaping (Error?) -> Void) {
+    play(id, completion: completion)
+  }
+
+  private func ensureEngineRunningForPlaylist() throws {
+    if engine.isRunning { return }
+    if !micWired {
+      try wirePlaylistPreviewGraph()
+    }
+    engine.prepare()
+    try engine.start()
+    if micWired {
+      installMeterAndCaptureTaps()
+    }
+  }
+
+  /// Standby preview: playlist strip → speakers without rebuilding the mic graph.
+  private func wirePlaylistPreviewGraph() throws {
+    attachNodesIfNeeded()
+    let bus = playlistBusFormat()
+    var err: NSError?
+    let ok = SMCatchException(&err) { [self] in
+      self.engine.connect(self.playlistProgramSend, to: self.masterMixer, format: bus)
+      self.engine.connect(self.masterMixer, to: self.programMonitor, format: bus)
+      self.engine.connect(self.programMonitor, to: self.engine.mainMixerNode, format: nil)
+      self.engine.connect(self.playlistMixer, to: self.playlistProgramSend, format: bus)
+      self.connectPlaylistSlots(format: bus)
+    }
+    guard ok else {
+      throw err ?? NSError(
+        domain: "NativeAudio",
+        code: 24,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "Arm a microphone in SOURCE before playing a queued track.",
+        ]
+      )
+    }
+    applyGains()
+  }
+
+  private func slotOutputValid(_ player: AVAudioPlayerNode) -> Bool {
+    guard player.engine === engine else { return false }
+    let format = player.outputFormat(forBus: 0)
+    return format.sampleRate >= 8_000 && format.channelCount > 0
+  }
+
+  /// Pause (do not stop) so we can attach/connect without dropping the WHIP device.
+  private func mutateGraphWhilePaused(_ work: () throws -> Void) throws {
+    let running = engine.isRunning
+    let preserve = micWired
+    if running && preserve {
+      beginInputHotSwap()
+    }
+    defer {
+      if running && preserve {
+        scheduleEndInputHotSwap()
+      }
+    }
+    if running {
+      engine.pause()
+    }
+    var workError: Error?
+    do {
+      try work()
+    } catch {
+      workError = error
+    }
+    if running {
+      engine.prepare()
+      do {
+        try engine.start()
+      } catch {
+        if micWired {
+          try rebuildAndStart(deviceId: selectedDeviceId)
+        } else if workError == nil {
+          throw error
+        }
+      }
+      if micWired {
+        installMeterAndCaptureTaps()
+      }
+    }
+    if let workError {
+      throw workError
+    }
+  }
+
+  private func ensureSlotReadyForPlay(_ player: AVAudioPlayerNode) throws {
+    if slotOutputValid(player),
+       Self.formatsMatch(player.outputFormat(forBus: 0), Self.playlistPlaybackFormat) {
+      return
+    }
+    try mutateGraphWhilePaused {
+      self.ensurePlaylistSlotsCreated()
+      if player.engine != nil && player.engine !== self.engine {
+        var detachErr: NSError?
+        _ = SMCatchException(&detachErr) {
+          player.engine?.detach(player)
+        }
+      }
+      if player.engine == nil {
+        var attachErr: NSError?
+        let attached = SMCatchException(&attachErr) { [self] in
+          self.engine.attach(player)
+        }
+        guard attached else {
+          throw attachErr ?? NSError(
+            domain: "NativeAudio",
+            code: 18,
+            userInfo: [NSLocalizedDescriptionKey: "Could not attach playlist player."]
+          )
+        }
+      }
+      var connectErr: NSError?
+      let ok = SMCatchException(&connectErr) { [self] in
+        self.engine.connect(
+          player,
+          to: self.playlistMixer,
+          format: Self.playlistPlaybackFormat
+        )
+      }
+      guard ok else {
+        throw connectErr ?? NSError(
+          domain: "NativeAudio",
+          code: 19,
+          userInfo: [
+            NSLocalizedDescriptionKey:
+              "Could not connect that track to the playlist mix.",
+          ]
+        )
+      }
+    }
+  }
+
+  private func reconnectPlaylistSlotsIfNeeded() {
+    ensurePlaylistSlotsCreated()
+    let needsWork = playlistSlots.contains { !slotOutputValid($0) }
+    guard needsWork else { return }
+    debugPlaylist("reconnect playlist slots engineRunning=\(engine.isRunning)")
+    try? mutateGraphWhilePaused {
+      self.connectPlaylistSlots(format: Self.playlistPlaybackFormat)
+    }
+  }
+
+  private func startPlayer(_ player: AVAudioPlayerNode, file: AVAudioFile, id: String) throws {
+    if !engine.isRunning {
+      try ensureEngineRunningForPlaylist()
+    }
+    try ensureSlotReadyForPlay(player)
+
+    let slotFormat = player.outputFormat(forBus: 0)
+    debugPlaylist(
+      "startPlayer id=\(id) slotSR=\(slotFormat.sampleRate) slotCh=\(slotFormat.channelCount) fileSR=\(file.processingFormat.sampleRate) fileCh=\(file.processingFormat.channelCount) fileInterleaved=\(file.processingFormat.isInterleaved) slotInterleaved=\(slotFormat.isInterleaved)"
+    )
+
+    let runSchedule: () -> NSError? = {
+      var playErr: NSError?
+      let ok = SMCatchException(&playErr) {
+        if player.isPlaying {
+          player.pause()
+        }
+        player.stop()
+        file.framePosition = 0
+        player.scheduleFile(file, at: nil) { [weak self] in
+          DispatchQueue.main.async {
+            self?.trackMeta[id]?.playing = false
+            self?.emitTracks()
+          }
+        }
+        player.play()
+      }
+      return ok ? nil : playErr
+    }
+
+    if let firstErr = runSchedule() {
+      debugPlaylist("startPlayer retry after reconnect id=\(id) \(firstErr)")
+      try mutateGraphWhilePaused {
+        var connectErr: NSError?
+        _ = SMCatchException(&connectErr) { [self] in
+          self.engine.connect(
+            player,
+            to: self.playlistMixer,
+            format: Self.playlistPlaybackFormat
+          )
+        }
+      }
+      if let retryErr = runSchedule() {
+        throw humanizePlayError(retryErr)
+      }
+    }
+    trackMeta[id]?.playing = true
     emitTracks()
   }
 
-  func play(_ id: String) throws {
-    guard let player = playerNodes[id], let file = playerFiles[id] else {
-      throw NSError(domain: "NativeAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Track not found"])
-    }
-    player.stop()
-    file.framePosition = 0
-    player.scheduleFile(file, at: nil) { [weak self] in
-      DispatchQueue.main.async {
-        self?.trackMeta[id]?.playing = false
-        self?.emitTracks()
+  private func ensurePlaylistSlotsCreated() {
+    if playlistSlots.count == playlistSlotCount { return }
+    playlistSlots = (0..<playlistSlotCount).map { _ in AVAudioPlayerNode() }
+    slotTrackIds = Array(repeating: nil, count: playlistSlotCount)
+  }
+
+  private func ensurePlaylistSlotsAttached() {
+    ensurePlaylistSlotsCreated()
+    // Attaching while the engine renders throws -10875 (CannotDoInCurrentContext).
+    if engine.isRunning { return }
+    var err: NSError?
+    for slot in playlistSlots where slot.engine == nil {
+      _ = SMCatchException(&err) { [self] in
+        self.engine.attach(slot)
       }
     }
-    player.play()
-    trackMeta[id]?.playing = true
-    emitTracks()
+  }
+
+  private func connectPlaylistSlots(format _: AVAudioFormat) {
+    ensurePlaylistSlotsAttached()
+    let slotFormat = Self.playlistPlaybackFormat
+    var err: NSError?
+    for (index, slot) in playlistSlots.enumerated() {
+      let ok = SMCatchException(&err) { [self] in
+        self.engine.connect(slot, to: self.playlistMixer, format: slotFormat)
+      }
+      if !ok {
+        debugPlaylist(
+          "slot \(index) connect failed format=\(slotFormat.sampleRate): \(err?.localizedDescription ?? "?")"
+        )
+      }
+    }
+  }
+
+  private func assignPlaylistSlot(for id: String) -> AVAudioPlayerNode? {
+    ensurePlaylistSlotsCreated()
+    if !engine.isRunning {
+      ensurePlaylistSlotsAttached()
+    }
+    if let index = slotTrackIds.firstIndex(of: id) {
+      playerNodes[id] = playlistSlots[index]
+      return playlistSlots[index]
+    }
+    if let index = slotTrackIds.firstIndex(where: { $0 == nil }) {
+      slotTrackIds[index] = id
+      playerNodes[id] = playlistSlots[index]
+      return playlistSlots[index]
+    }
+    if let index = slotTrackIds.indices.first(where: { idx in
+      guard let other = slotTrackIds[idx] else { return true }
+      return trackMeta[other]?.playing != true
+    }) {
+      if let other = slotTrackIds[index] {
+        playlistSlots[index].stop()
+        playerNodes.removeValue(forKey: other)
+      }
+      slotTrackIds[index] = id
+      playerNodes[id] = playlistSlots[index]
+      return playlistSlots[index]
+    }
+    return nil
+  }
+
+  private func releasePlaylistSlot(for id: String) {
+    if let index = slotTrackIds.firstIndex(of: id) {
+      playlistSlots[index].stop()
+      slotTrackIds[index] = nil
+    }
+    playerNodes.removeValue(forKey: id)
   }
 
   func pause(_ id: String) {
@@ -734,21 +1072,24 @@ final class NativeAudioEngine {
     emitTracks()
   }
 
-  func restart(_ id: String) throws {
-    try play(id)
-  }
-
-  func removeTrack(_ id: String) {
-    if let player = playerNodes.removeValue(forKey: id) {
-      player.stop()
-      engine.detach(player)
-    }
+  func removeTrack(_ id: String, deleteCache: Bool = false) {
+    releasePlaylistSlot(for: id)
     playerFiles.removeValue(forKey: id)
     trackMeta.removeValue(forKey: id)
-    if let temp = tempFiles.removeValue(forKey: id) {
-      try? FileManager.default.removeItem(at: temp)
+    if let cached = cacheFiles.removeValue(forKey: id), deleteCache, isManagedCache(cached) {
+      try? FileManager.default.removeItem(at: cached)
+    }
+    if deleteCache {
+      removeConvertedPlayback(for: id)
     }
     emitTracks()
+  }
+
+  /// Drop players from the live graph without deleting cached files.
+  func clearTracks(deleteCache: Bool = false) {
+    for id in Array(trackMeta.keys) {
+      removeTrack(id, deleteCache: deleteCache)
+    }
   }
 
   func listTracks() -> [TrackState] {
@@ -890,7 +1231,10 @@ final class NativeAudioEngine {
   // MARK: - Private
 
   private func attachNodesIfNeeded() {
-    guard !nodesAttached else { return }
+    if nodesAttached {
+      ensurePlaylistSlotsAttached()
+      return
+    }
     var err: NSError?
     let ok = SMCatchException(&err) { [self] in
       self.engine.attach(self.micMixer)
@@ -905,6 +1249,7 @@ final class NativeAudioEngine {
       self.engine.attach(self.micTapPull)
     }
     nodesAttached = ok
+    ensurePlaylistSlotsAttached()
     if !ok {
       onStatus?(err?.localizedDescription ?? "Mixer attach failed")
     }
@@ -927,8 +1272,8 @@ final class NativeAudioEngine {
         self.engine.detach(self.programMonitor)
         self.engine.detach(self.micTapPull)
       }
-      for player in self.playerNodes.values {
-        self.engine.detach(player)
+      for slot in self.playlistSlots {
+        self.engine.detach(slot)
       }
     }
     nodesAttached = false
@@ -949,8 +1294,8 @@ final class NativeAudioEngine {
       self.engine.disconnectNodeOutput(self.cueMixer)
       self.engine.disconnectNodeOutput(self.programMonitor)
       self.engine.disconnectNodeOutput(self.micTapPull)
-      for player in self.playerNodes.values {
-        self.engine.disconnectNodeOutput(player)
+      for slot in self.playlistSlots {
+        self.engine.disconnectNodeOutput(slot)
       }
     }
   }
@@ -1009,11 +1354,7 @@ final class NativeAudioEngine {
       // nil format lets the engine match the input node's HW format.
       self.engine.connect(activeInput, to: self.micMixer, format: nil)
 
-      for (id, player) in self.playerNodes {
-        if let file = self.playerFiles[id] {
-          self.engine.connect(player, to: self.playlistMixer, format: file.processingFormat)
-        }
-      }
+      self.connectPlaylistSlots(format: busFormat)
     }
     if wired { return nil }
     return err ?? NSError(
@@ -1040,13 +1381,8 @@ final class NativeAudioEngine {
     engine = AVAudioEngine()
     nodesAttached = false
     attachNodesIfNeeded()
-    for player in playerNodes.values {
-      var err: NSError?
-      _ = SMCatchException(&err) { [self] in
-        self.engine.attach(player)
-      }
-    }
-    // Players are connected in wireMixGraph after the mix buses exist.
+    ensurePlaylistSlotsAttached()
+    // Playlist slots are connected in wireMixGraph after the mix buses exist.
   }
 
   /// Rebuild full mix graph (program + cue PFL) and start capture.
@@ -1076,14 +1412,12 @@ final class NativeAudioEngine {
   /// Brief gap is OK (injector holds last PCM); permanent silence is not.
   private func hotSwapInputDevice(deviceId: String) throws {
     beginInputHotSwap()
-    onStatus?("Switching input…")
 
     do {
       try hotSwapInputDeviceOnce(deviceId: deviceId, allowDeviceBind: true)
       scheduleEndInputHotSwap()
       return
     } catch {
-      onStatus?("Input switch retry…")
       resetEngineInstance()
     }
 
@@ -2053,19 +2387,379 @@ final class NativeAudioEngine {
     onTracks?(Array(trackMeta.values))
   }
 
-  private func resolveAudioURL(_ urlString: String, trackId: String) throws -> URL {
-    if urlString.hasPrefix("http://") || urlString.hasPrefix("https://") {
-      guard let remote = URL(string: urlString) else {
-        throw NSError(domain: "NativeAudio", code: 2, userInfo: [NSLocalizedDescriptionKey: "Bad track URL"])
-      }
-      let data = try Data(contentsOf: remote)
-      let ext = remote.pathExtension.isEmpty ? "m4a" : remote.pathExtension
-      let dest = FileManager.default.temporaryDirectory
-        .appendingPathComponent("sm-track-\(trackId).\(ext)")
-      try data.write(to: dest, options: .atomic)
-      tempFiles[trackId] = dest
-      return dest
+  private func attachQueuedFile(
+    id: String,
+    title: String,
+    localURL: URL,
+    assetId: Int?
+  ) throws {
+    if !sessionReady { try start() }
+    attachNodesIfNeeded()
+    releasePlaylistSlot(for: id)
+
+    let file = try AVAudioFile(forReading: localURL)
+    playerFiles[id] = file
+    if isManagedCache(localURL) {
+      cacheFiles[id] = localURL
     }
-    return URL(fileURLWithPath: urlString)
+
+    // Do not attach/connect a new player here — that fails while On air
+    // (-10875). Play uses a pre-wired playlist slot.
+    prefetchConvertedPlayback(id: id, source: file)
+    trackMeta[id] = TrackState(
+      id: id,
+      title: title,
+      assetId: assetId,
+      ready: true,
+      playing: false,
+      currentTime: 0,
+      duration: Double(file.length) / file.processingFormat.sampleRate
+    )
+    emitTracks()
+  }
+
+  /// Prefer connecting on a live graph at the current bus format. Stopping the
+  /// engine is a last resort — it drops On air briefly.
+  private func connectPlayerToPlaylist(_ player: AVAudioPlayerNode, format: AVAudioFormat?) throws {
+    var disconnectErr: NSError?
+    _ = SMCatchException(&disconnectErr) { [self] in
+      self.engine.disconnectNodeOutput(player)
+    }
+    var connectErr: NSError?
+    let liveOk = SMCatchException(&connectErr) { [self] in
+      self.engine.connect(player, to: self.playlistMixer, format: format)
+    }
+    if liveOk { return }
+
+    let bus = playlistBusFormat()
+    if !Self.formatsMatch(format, bus) {
+      connectErr = nil
+      let busOk = SMCatchException(&connectErr) { [self] in
+        self.engine.connect(player, to: self.playlistMixer, format: bus)
+      }
+      if busOk { return }
+    }
+
+    let wasRunning = engine.isRunning
+    removeAllTapsSafely()
+    if wasRunning {
+      engine.stop()
+    }
+    engine.prepare()
+    connectErr = nil
+    let stoppedOk = SMCatchException(&connectErr) { [self] in
+      self.engine.connect(player, to: self.playlistMixer, format: format ?? bus)
+    }
+    if wasRunning || micWired {
+      do {
+        try engine.start()
+      } catch {
+        try rebuildAndStart(deviceId: selectedDeviceId)
+      }
+      installMeterAndCaptureTaps()
+    }
+    guard stoppedOk else {
+      throw connectErr ?? NSError(
+        domain: "NativeAudio",
+        code: 19,
+        userInfo: [NSLocalizedDescriptionKey: "Could not add that track to the playlist. Try Queue again."]
+      )
+    }
+  }
+
+  private func playlistBusFormat() -> AVAudioFormat {
+    let mixer = playlistMixer.outputFormat(forBus: 0)
+    if mixer.sampleRate >= 8000, mixer.channelCount > 0 {
+      return mixer
+    }
+    let input = engine.inputNode.outputFormat(forBus: 0)
+    if input.sampleRate >= 8000, input.channelCount > 0 {
+      return input
+    }
+    return AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
+  }
+
+  static func formatsMatch(_ a: AVAudioFormat?, _ b: AVAudioFormat) -> Bool {
+    guard let a else { return false }
+    return abs(a.sampleRate - b.sampleRate) < 0.5
+      && a.channelCount == b.channelCount
+      && a.commonFormat == b.commonFormat
+      && a.isInterleaved == b.isInterleaved
+  }
+
+  private func prefetchConvertedPlayback(id: String, source: AVAudioFile) {
+    let destFormat = Self.playlistPlaybackFormat
+    convertQueue.async { [weak self] in
+      _ = try? self?.playbackFile(for: id, source: source, destFormat: destFormat)
+    }
+  }
+
+  static func playbackCacheFileName(id: String, format: AVAudioFormat) -> String {
+    let safeId = id.replacingOccurrences(of: "/", with: "_")
+    let interleaved = format.isInterleaved ? "i" : "n"
+    return "sm-play-\(safeId)-\(Int(format.sampleRate))-\(format.channelCount)-\(format.commonFormat.rawValue)-\(interleaved).caf"
+  }
+
+  private func playbackFile(
+    for id: String,
+    source: AVAudioFile,
+    destFormat: AVAudioFormat
+  ) throws -> AVAudioFile {
+    if Self.formatsMatch(source.processingFormat, destFormat) {
+      return source
+    }
+    let destURL = playlistCacheDir().appendingPathComponent(
+      Self.playbackCacheFileName(id: id, format: destFormat)
+    )
+    if cachedFileReady(destURL) {
+      let cached = try AVAudioFile(forReading: destURL)
+      if Self.formatsMatch(cached.processingFormat, destFormat) {
+        return cached
+      }
+    }
+    let reader = try AVAudioFile(forReading: source.url)
+    try convertAudioFile(reader, to: destFormat, destURL: destURL)
+    return try AVAudioFile(forReading: destURL)
+  }
+
+  private func pcmWriteSettings(_ format: AVAudioFormat) -> [String: Any] {
+    [
+      AVFormatIDKey: kAudioFormatLinearPCM,
+      AVSampleRateKey: format.sampleRate,
+      AVNumberOfChannelsKey: format.channelCount,
+      AVLinearPCMBitDepthKey: 32,
+      AVLinearPCMIsFloatKey: true,
+      AVLinearPCMIsNonInterleaved: true,
+    ]
+  }
+
+  private func convertAudioFile(
+    _ source: AVAudioFile,
+    to destFormat: AVAudioFormat,
+    destURL: URL
+  ) throws {
+    if FileManager.default.fileExists(atPath: destURL.path) {
+      try FileManager.default.removeItem(at: destURL)
+    }
+    guard let converter = AVAudioConverter(from: source.processingFormat, to: destFormat) else {
+      throw NSError(
+        domain: "NativeAudio",
+        code: 26,
+        userInfo: [NSLocalizedDescriptionKey: "Could not convert that track to the mixer format."]
+      )
+    }
+    let destFile = try AVAudioFile(forWriting: destURL, settings: pcmWriteSettings(destFormat))
+    source.framePosition = 0
+    let srcChunk: AVAudioFrameCount = 8192
+    while source.framePosition < source.length {
+      let remaining = AVAudioFrameCount(source.length - source.framePosition)
+      let frames = min(srcChunk, remaining)
+      guard let inBuf = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: frames) else {
+        break
+      }
+      try source.read(into: inBuf, frameCount: frames)
+      if inBuf.frameLength == 0 { break }
+
+      let ratio = destFormat.sampleRate / source.processingFormat.sampleRate
+      let outCap = AVAudioFrameCount(ceil(Double(inBuf.frameLength) * ratio) + 64)
+      guard let outBuf = AVAudioPCMBuffer(pcmFormat: destFormat, frameCapacity: outCap) else {
+        break
+      }
+
+      var consumed = false
+      var convErr: NSError?
+      let status = converter.convert(to: outBuf, error: &convErr) { _, outStatus in
+        if consumed {
+          outStatus.pointee = .noDataNow
+          return nil
+        }
+        consumed = true
+        outStatus.pointee = .haveData
+        return inBuf
+      }
+      if status == .error {
+        throw convErr ?? NSError(
+          domain: "NativeAudio",
+          code: 26,
+          userInfo: [NSLocalizedDescriptionKey: "Could not convert that track to the mixer format."]
+        )
+      }
+      if outBuf.frameLength > 0 {
+        try destFile.write(from: outBuf)
+      }
+    }
+  }
+
+  private func removeConvertedPlayback(for id: String) {
+    let safeId = id.replacingOccurrences(of: "/", with: "_")
+    let prefix = "sm-play-\(safeId)-"
+    let dir = playlistCacheDir()
+    guard let items = try? FileManager.default.contentsOfDirectory(
+      at: dir,
+      includingPropertiesForKeys: nil
+    ) else { return }
+    for url in items where url.lastPathComponent.hasPrefix(prefix) {
+      try? FileManager.default.removeItem(at: url)
+    }
+  }
+
+  private func debugPlaylist(_ message: String) {
+    NSLog("[playlist] %@", message)
+    let url = playlistCacheDir().appendingPathComponent("playlist-debug.log")
+    let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+    guard let data = line.data(using: .utf8) else { return }
+    if FileManager.default.fileExists(atPath: url.path),
+       let handle = try? FileHandle(forWritingTo: url) {
+      handle.seekToEndOfFile()
+      handle.write(data)
+      try? handle.close()
+    } else {
+      try? data.write(to: url)
+    }
+  }
+
+  private func playlistCacheDir() -> URL {
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? FileManager.default.temporaryDirectory
+    let dir = base.appendingPathComponent("SoundMixStudio/playlist", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+  }
+
+  private func cachedFileReady(_ url: URL) -> Bool {
+    guard FileManager.default.fileExists(atPath: url.path),
+          let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+          let size = attrs[.size] as? NSNumber else { return false }
+    return size.intValue > 0
+  }
+
+  private func isManagedCache(_ url: URL) -> Bool {
+    url.path.contains("/SoundMixStudio/playlist/")
+  }
+
+  private func downloadTrackFile(
+    url urlString: String,
+    trackId: String,
+    completion: @escaping (Result<URL, Error>) -> Void
+  ) {
+    if !urlString.hasPrefix("http://"), !urlString.hasPrefix("https://") {
+      let local = URL(fileURLWithPath: urlString)
+      if FileManager.default.fileExists(atPath: local.path) {
+        completion(.success(local))
+      } else {
+        completion(
+          .failure(
+            NSError(
+              domain: "NativeAudio",
+              code: 23,
+              userInfo: [NSLocalizedDescriptionKey: "Saved track file is missing."]
+            )
+          )
+        )
+      }
+      return
+    }
+    guard let remote = URL(string: urlString) else {
+      completion(
+        .failure(
+          NSError(
+            domain: "NativeAudio",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Bad track URL"]
+          )
+        )
+      )
+      return
+    }
+    let ext = remote.pathExtension.isEmpty ? "mp3" : remote.pathExtension
+    let safeId = trackId.replacingOccurrences(of: "/", with: "_")
+    let dest = playlistCacheDir().appendingPathComponent("sm-track-\(safeId).\(ext)")
+    if cachedFileReady(dest) {
+      completion(.success(dest))
+      return
+    }
+    let task = URLSession.shared.downloadTask(with: remote) { tmp, response, error in
+      if let error {
+        completion(.failure(error))
+        return
+      }
+      if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        completion(
+          .failure(
+            NSError(
+              domain: "NativeAudio",
+              code: 21,
+              userInfo: [
+                NSLocalizedDescriptionKey:
+                  "Could not download that track (HTTP \(http.statusCode)).",
+              ]
+            )
+          )
+        )
+        return
+      }
+      guard let tmp else {
+        completion(
+          .failure(
+            NSError(
+              domain: "NativeAudio",
+              code: 22,
+              userInfo: [NSLocalizedDescriptionKey: "Download finished with no file."]
+            )
+          )
+        )
+        return
+      }
+      do {
+        if FileManager.default.fileExists(atPath: dest.path) {
+          try FileManager.default.removeItem(at: dest)
+        }
+        try FileManager.default.moveItem(at: tmp, to: dest)
+        completion(.success(dest))
+      } catch {
+        completion(.failure(error))
+      }
+    }
+    task.resume()
+  }
+
+  private func humanizePlayError(_ error: NSError?) -> NSError {
+    let ns = error ?? NSError(
+      domain: "NativeAudio",
+      code: 25,
+      userInfo: [NSLocalizedDescriptionKey: "Could not play that track."]
+    )
+    let text = ns.localizedDescription.lowercased()
+    if ns.code == -10875
+      || text.contains("10875")
+      || text.contains("cannot do in current context")
+      || text.contains("avfaudio")
+      || text.contains("disconnected") {
+      return NSError(
+        domain: "NativeAudio",
+        code: 25,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "Could not play that track while live. Pause, Queue again, then Play.",
+        ]
+      )
+    }
+    return ns
+  }
+
+  private func humanizeQueueError(_ error: Error) -> NSError {
+    let ns = error as NSError
+    let text = ns.localizedDescription.lowercased()
+    if ns.code == -10875 || text.contains("10875") || text.contains("avfaudio") {
+      return NSError(
+        domain: "NativeAudio",
+        code: 20,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "Could not add that track to the playlist. Try Queue again.",
+        ]
+      )
+    }
+    return ns
   }
 }

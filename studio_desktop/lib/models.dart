@@ -253,6 +253,8 @@ class CreatorHome {
     this.stream,
     this.streams = const [],
     this.openEvent,
+    this.needsUpgrade = false,
+    this.billingUrl,
   });
 
   final bool onboarded;
@@ -261,6 +263,8 @@ class CreatorHome {
   final StreamSummary? stream;
   final List<StreamSummary> streams;
   final EventSummary? openEvent;
+  final bool needsUpgrade;
+  final String? billingUrl;
 
   factory CreatorHome.fromJson(Map<String, dynamic> json) {
     final orgJson = json['organization'] as Map<String, dynamic>?;
@@ -276,6 +280,8 @@ class CreatorHome {
       stream: streamJson == null ? null : StreamSummary.fromJson(streamJson),
       streams: streams,
       openEvent: eventJson == null ? null : EventSummary.fromJson(eventJson),
+      needsUpgrade: json['needs_upgrade'] as bool? ?? false,
+      billingUrl: json['billing_url'] as String?,
     );
   }
 }

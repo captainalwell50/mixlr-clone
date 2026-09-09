@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models.dart';
+import 'windows_studio_mixer.dart';
 
 enum MixerPublishState { idle, connecting, connected, failed }
 
@@ -34,6 +36,15 @@ class MixerBridge extends ChangeNotifier {
   String? _selectedOutputDeviceId;
   String _micPermission = 'notDetermined';
   bool _listening = false;
+  WindowsStudioMixer? _windows;
+
+  bool get _isWindows => !kIsWeb && Platform.isWindows;
+
+  void _bindWindows() {
+    _windows ??= WindowsStudioMixer(
+      onMessage: (data) => _onHostMessage(jsonEncode(data)),
+    );
+  }
 
   bool get isReady => _ready;
   bool get isArmed => _armed;
@@ -67,6 +78,12 @@ class MixerBridge extends ChangeNotifier {
 
   Future<String> refreshMicPermissionStatus() async {
     _ensureListen();
+    if (_isWindows) {
+      _bindWindows();
+      _micPermission = await _windows!.refreshMicPermission();
+      notifyListeners();
+      return _micPermission;
+    }
     try {
       final raw = await _channel.invokeMethod<dynamic>('micPermissionStatus');
       if (raw is Map && raw['status'] is String) {
@@ -81,6 +98,14 @@ class MixerBridge extends ChangeNotifier {
   /// OS dialog only when status is still `notDetermined` (first run).
   Future<bool> requestMicAccess() async {
     _ensureListen();
+    if (_isWindows) {
+      _bindWindows();
+      final granted = await _windows!.requestMicAccess();
+      _micPermission = _windows!.micPermission;
+      _armed = granted;
+      notifyListeners();
+      return granted;
+    }
     final status = await refreshMicPermissionStatus();
     if (status == 'authorized') return true;
     if (status == 'denied') return false;
@@ -127,6 +152,14 @@ class MixerBridge extends ChangeNotifier {
     _ready = false;
     _status = 'Starting native mixer…';
     notifyListeners();
+    if (_isWindows) {
+      _bindWindows();
+      await _windows!.start();
+      _ready = true;
+      _status = 'Native mixer ready';
+      notifyListeners();
+      return;
+    }
     await _channel.invokeMethod<void>('startEngine');
     _ready = true;
     _status = 'Native mixer ready';
@@ -137,6 +170,18 @@ class MixerBridge extends ChangeNotifier {
   Future<void> load(String embedUrl) => startEngine();
 
   Future<void> armMic({String? deviceId}) async {
+    if (_isWindows) {
+      _bindWindows();
+      await _windows!.armMic(deviceId: deviceId);
+      _armed = true;
+      _error = null;
+      if (deviceId != null) {
+        _selectedDeviceId = deviceId;
+        await _persistMicDevice(deviceId);
+      }
+      notifyListeners();
+      return;
+    }
     final raw = await _channel.invokeMethod<dynamic>('armMic', {
       if (deviceId != null) 'deviceId': deviceId,
     });
@@ -153,6 +198,11 @@ class MixerBridge extends ChangeNotifier {
   }
 
   Future<void> listDevices() async {
+    if (_isWindows) {
+      _bindWindows();
+      await _windows!.listDevices();
+      return;
+    }
     await _channel.invokeMethod<dynamic>('listDevices');
   }
 
@@ -166,6 +216,12 @@ class MixerBridge extends ChangeNotifier {
       _armed = true;
     }
     notifyListeners();
+    if (_isWindows) {
+      _bindWindows();
+      await _windows!.setInputDevice(deviceId);
+      await _persistMicDevice(deviceId);
+      return;
+    }
     await _channel.invokeMethod<void>('setInputDevice', deviceId);
     await _persistMicDevice(deviceId);
   }
@@ -173,14 +229,29 @@ class MixerBridge extends ChangeNotifier {
   Future<void> setOutputDevice(String deviceId) async {
     _selectedOutputDeviceId = deviceId;
     notifyListeners();
+    if (_isWindows) {
+      _bindWindows();
+      await _windows!.setOutputDevice(deviceId);
+      return;
+    }
     await _channel.invokeMethod<void>('setOutputDevice', deviceId);
   }
 
   Future<void> listOutputs() async {
+    if (_isWindows) {
+      _bindWindows();
+      await _windows!.listOutputs();
+      return;
+    }
     await _channel.invokeMethod<dynamic>('listOutputs');
   }
 
   Future<void> reloadDevices() async {
+    if (_isWindows) {
+      _bindWindows();
+      await _windows!.reloadDevices();
+      return;
+    }
     await _channel.invokeMethod<void>('reloadDevices');
   }
 
@@ -190,6 +261,11 @@ class MixerBridge extends ChangeNotifier {
   }
 
   Future<void> setGains({double? mic, double? playlist, double? master}) {
+    if (_isWindows) {
+      _bindWindows();
+      _windows!.setGains(mic: mic, playlist: playlist, master: master);
+      return Future.value();
+    }
     return _channel.invokeMethod<void>('setGains', {
       if (mic != null) 'mic': mic,
       if (playlist != null) 'playlist': playlist,
@@ -198,6 +274,11 @@ class MixerBridge extends ChangeNotifier {
   }
 
   Future<void> setMutes({bool? mic, bool? playlist}) {
+    if (_isWindows) {
+      _bindWindows();
+      _windows!.setMutes(mic: mic, playlist: playlist);
+      return Future.value();
+    }
     return _channel.invokeMethod<void>('setMutes', {
       if (mic != null) 'mic': mic,
       if (playlist != null) 'playlist': playlist,
@@ -205,31 +286,119 @@ class MixerBridge extends ChangeNotifier {
   }
 
   Future<void> setCues({bool? mic, bool? playlist}) {
+    if (_isWindows) {
+      _bindWindows();
+      _windows!.setCues(mic: mic, playlist: playlist);
+      return Future.value();
+    }
     return _channel.invokeMethod<void>('setCues', {
       if (mic != null) 'mic': mic,
       if (playlist != null) 'playlist': playlist,
     });
   }
 
-  Future<void> queueTrack(LibraryAsset asset) {
-    return _channel.invokeMethod<void>('queueTrack', {
-      'id': 'asset-${asset.id}',
-      'title': asset.title,
-      'url': asset.url,
-      'assetId': asset.id,
+  Future<String?> queueTrack(LibraryAsset asset, {String? localPath}) {
+    return queueRaw(
+      id: 'asset-${asset.id}',
+      title: asset.title,
+      url: asset.url,
+      assetId: asset.id,
+      localPath: localPath,
+    );
+  }
+
+  Future<String?> queueRaw({
+    required String id,
+    required String title,
+    required String url,
+    int? assetId,
+    String? localPath,
+  }) async {
+    final source = (localPath != null && localPath.isNotEmpty) ? localPath : url;
+    if (_isWindows) {
+      _bindWindows();
+      return _windows!.queueTrack(
+        id: id,
+        title: title,
+        url: source,
+        assetId: assetId,
+      );
+    }
+    final raw = await _channel.invokeMethod<dynamic>('queueTrack', {
+      'id': id,
+      'title': title,
+      'url': source,
+      'assetId': assetId,
+    });
+    if (raw is Map && raw['localPath'] is String) {
+      final path = raw['localPath'] as String;
+      return path.isEmpty ? null : path;
+    }
+    return localPath;
+  }
+
+  Future<void> play(String id) {
+    if (_isWindows) {
+      _bindWindows();
+      return _windows!.play(id);
+    }
+    return _channel.invokeMethod<void>('play', id);
+  }
+
+  Future<void> pause(String id) {
+    if (_isWindows) {
+      _bindWindows();
+      return _windows!.pause(id);
+    }
+    return _channel.invokeMethod<void>('pause', id);
+  }
+
+  Future<void> restart(String id) {
+    if (_isWindows) {
+      _bindWindows();
+      return _windows!.restart(id);
+    }
+    return _channel.invokeMethod<void>('restart', id);
+  }
+
+  Future<void> remove(String id, {bool deleteCache = true}) {
+    if (_isWindows) {
+      _bindWindows();
+      return _windows!.remove(id);
+    }
+    return _channel.invokeMethod<void>('remove', {
+      'id': id,
+      'deleteCache': deleteCache,
     });
   }
 
-  Future<void> play(String id) => _channel.invokeMethod<void>('play', id);
-  Future<void> pause(String id) => _channel.invokeMethod<void>('pause', id);
-  Future<void> restart(String id) => _channel.invokeMethod<void>('restart', id);
-  Future<void> remove(String id) => _channel.invokeMethod<void>('remove', id);
+  Future<void> clearTracks({bool deleteCache = false}) {
+    if (_isWindows) {
+      _bindWindows();
+      return _windows!.clearTracks();
+    }
+    return _channel.invokeMethod<void>('clearTracks', {
+      'deleteCache': deleteCache,
+    });
+  }
 
   Future<void> goLive(String whipUrl) async {
     _publish = MixerPublishState.connecting;
     _error = null;
     notifyListeners();
     try {
+      if (_isWindows) {
+        _bindWindows();
+        await _windows!.goLive(whipUrl).timeout(
+          const Duration(seconds: 25),
+          onTimeout: () => throw Exception(
+            'Go live timed out — WHIP publish did not finish. Try again.',
+          ),
+        );
+        _publish = MixerPublishState.connected;
+        _error = null;
+        return;
+      }
       await _channel
           .invokeMethod<void>('goLive', whipUrl)
           .timeout(
@@ -310,6 +479,13 @@ class MixerBridge extends ChangeNotifier {
   }
 
   Future<void> stopPublish() async {
+    if (_isWindows) {
+      _bindWindows();
+      await _windows!.stopPublish();
+      _publish = MixerPublishState.idle;
+      notifyListeners();
+      return;
+    }
     try {
       await _channel.invokeMethod<void>('stopPublish');
     } catch (_) {}
@@ -407,8 +583,12 @@ class MixerBridge extends ChangeNotifier {
   @override
   void dispose() {
     stopPublish();
-    _channel.invokeMethod<void>('dispose').catchError((_) {});
-    _channel.setMethodCallHandler(null);
+    if (_isWindows) {
+      _windows?.dispose();
+    } else {
+      _channel.invokeMethod<void>('dispose').catchError((_) {});
+      _channel.setMethodCallHandler(null);
+    }
     _listening = false;
     super.dispose();
   }

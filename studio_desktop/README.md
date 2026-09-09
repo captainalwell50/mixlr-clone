@@ -32,10 +32,14 @@ App:
 
 ## Windows
 
+Windows Studio publishes the selected microphone over WHIP and plays queued tracks in the app (cue / speakers).
+
 ```bash
 flutter run -d windows --dart-define=API_BASE=https://soundmix.live
 flutter build windows --release --dart-define=API_BASE=https://soundmix.live
 ```
+
+CI: `.github/workflows/build-windows-studio.yml` (workflow_dispatch or push). Zip the `build/windows/x64/runner/Release` folder as `Sound-Mix-Live-Studio-Windows.zip`.
 
 ## Mic hot-swap while live (regression)
 
