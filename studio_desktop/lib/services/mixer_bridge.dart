@@ -546,6 +546,13 @@ class MixerBridge extends ChangeNotifier {
             _error = (msg != null && msg.isNotEmpty)
                 ? msg
                 : 'WHIP publish failed. Check network and try Go live again.';
+          } else if (_publish == MixerPublishState.connected ||
+              _publish == MixerPublishState.connecting) {
+            _error = null;
+            final msg = data['message'] as String?;
+            if (msg != null && msg.isNotEmpty) {
+              _status = msg;
+            }
           }
           break;
         case 'ice':

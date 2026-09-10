@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config.dart';
 import '../models.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
@@ -18,10 +19,13 @@ import '../services/mixer_bridge.dart';
 import '../services/mixer_errors.dart';
 import '../services/playlist_queue_store.dart';
 import '../theme.dart';
+import '../services/studio_tutorial_store.dart';
 import '../widgets/console_chassis.dart';
 import '../widgets/gallery_lightbox.dart';
 import '../widgets/scripture_panel.dart';
 import '../widgets/song_panel.dart';
+import '../widgets/studio_mode_cards.dart';
+import '../widgets/studio_tutorial.dart';
 
 class ConsoleScreen extends StatefulWidget {
   const ConsoleScreen({super.key});
@@ -30,16 +34,17 @@ class ConsoleScreen extends StatefulWidget {
   State<ConsoleScreen> createState() => _ConsoleScreenState();
 }
 
-enum _StudioTab { live, advance }
-
 class _ConsoleScreenState extends State<ConsoleScreen> {
   final _mixer = MixerBridge();
+  final _tutorialStore = StudioTutorialStore();
   CreatorHome? _home;
   StreamSummary? _stream;
   EventSummary? _event;
   List<LibraryAsset> _library = const [];
   List<GalleryItem> _gallery = const [];
-  _StudioTab _tab = _StudioTab.live;
+  StudioWorkspace _tab = StudioWorkspace.live;
+  bool _showTour = false;
+  bool _tourPrompted = false;
   bool _loading = true;
   bool _busy = false;
   bool _onAir = false;
@@ -51,7 +56,8 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   double _micGain = 1.0;
   double _playlistGain = 1.0;
   double _masterGain = 1.0;
-  bool _layoutMono = true;
+  // Stereo by default so Listen is not a folded-down mix.
+  bool _layoutMono = false;
   String? _error;
   String _status = 'Loading mixer…';
   DateTime? _liveStartedAt;
@@ -96,6 +102,8 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       final err = _mixer.error;
       if (err != null && !err.contains('unsupported type')) {
         _error = err;
+      } else if (_error != null && _error!.toLowerCase().contains('whip')) {
+        _error = null;
       }
     });
   }
@@ -241,6 +249,26 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
         _status = 'Console ready — mixer engine unavailable.';
       });
     }
+    if (mounted) {
+      await _maybeShowTour();
+    }
+  }
+
+  Future<void> _maybeShowTour() async {
+    if (_tourPrompted) return;
+    _tourPrompted = true;
+    final done = await _tutorialStore.isCompleted();
+    if (!mounted || done) return;
+    setState(() => _showTour = true);
+  }
+
+  Future<void> _finishTour() async {
+    await _tutorialStore.markCompleted();
+    if (!mounted) return;
+    setState(() {
+      _showTour = false;
+      _tab = StudioWorkspace.live;
+    });
   }
 
   Future<void> _selectStream(String? uuid) async {
@@ -862,7 +890,10 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     final stream = _stream;
 
     return Scaffold(
-      body: DecoratedBox(
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -885,6 +916,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                     clock: _clock,
                     tab: _tab,
                     onTab: (t) => setState(() => _tab = t),
+                    onTour: () => setState(() => _showTour = true),
                     needsUpgrade: _home?.needsUpgrade == true,
                     onUpgrade: _openBilling,
                     onLogout: () async {
@@ -895,7 +927,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                      child: _tab == _StudioTab.live
+                      child: _tab == StudioWorkspace.live
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
@@ -914,7 +946,9 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                       ),
                                     ),
                                   ),
-                                _BroadcastBar(
+                                KeyedSubtree(
+                                  key: StudioTourTargets.broadcast,
+                                  child: _BroadcastBar(
                                   listenUrl: _listenUrl,
                                   onShare: _share,
                                   busy: _busy,
@@ -927,6 +961,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                   onGoLive: _goLive,
                                   onPause: _pause,
                                   onEnd: _end,
+                                  ),
                                 ),
                                 const SizedBox(height: 12),
                                 // Console + Library share one height.
@@ -1036,7 +1071,9 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                       const SizedBox(width: 16),
                                       SizedBox(
                                         width: 300,
-                                        child: _MixerPanel(
+                                        child: KeyedSubtree(
+                                          key: StudioTourTargets.library,
+                                          child: _MixerPanel(
                                           library: _library,
                                           tracks: _mixer.tracks,
                                           busy: _busy,
@@ -1047,6 +1084,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                           onPause: _mixer.pause,
                                           onRestart: _restartQueued,
                                           onRemove: _removeQueued,
+                                        ),
                                         ),
                                       ),
                                     ],
@@ -1074,6 +1112,17 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                   ),
                 ],
               ),
+          ),
+          ),
+          if (_showTour)
+            Positioned.fill(
+              child: StudioTutorialOverlay(
+                workspace: _tab,
+                onWorkspace: (w) => setState(() => _tab = w),
+                onFinished: _finishTour,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1091,6 +1140,7 @@ class _TopBar extends StatelessWidget {
     required this.clock,
     required this.tab,
     required this.onTab,
+    required this.onTour,
     required this.onLogout,
     this.needsUpgrade = false,
     this.onUpgrade,
@@ -1104,8 +1154,9 @@ class _TopBar extends StatelessWidget {
   final bool onAir;
   final bool paused;
   final String clock;
-  final _StudioTab tab;
-  final ValueChanged<_StudioTab> onTab;
+  final StudioWorkspace tab;
+  final ValueChanged<StudioWorkspace> onTab;
+  final VoidCallback onTour;
   final VoidCallback onLogout;
   final bool needsUpgrade;
   final VoidCallback? onUpgrade;
@@ -1113,25 +1164,19 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      height: 88,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: const BoxDecoration(
+        color: Color(0xFF0A100E),
         border: Border(bottom: BorderSide(color: StudioTheme.line)),
       ),
       child: Row(
         children: [
           Image.asset('assets/brand/soundmix-logo.png', height: 28),
-          const SizedBox(width: 22),
-          _NavTab(
-            label: 'Live',
-            active: tab == _StudioTab.live,
-            onTap: () => onTab(_StudioTab.live),
-          ),
-          const SizedBox(width: 8),
-          _NavTab(
-            label: 'Advance',
-            active: tab == _StudioTab.advance,
-            onTap: () => onTab(_StudioTab.advance),
+          const SizedBox(width: 20),
+          KeyedSubtree(
+            key: StudioTourTargets.liveAdvance,
+            child: StudioModeSwitcher(workspace: tab, onChanged: onTab),
           ),
           if (streams.length > 1) ...[
             const SizedBox(width: 16),
@@ -1250,6 +1295,26 @@ class _TopBar extends StatelessWidget {
                 ],
               ),
             ),
+          KeyedSubtree(
+            key: StudioTourTargets.tourButton,
+            child: TextButton.icon(
+              key: const Key('studio-tour-open'),
+              onPressed: onTour,
+              icon: const Icon(Icons.help_outline_rounded, size: 18),
+              label: const Text('Studio tour'),
+              style: TextButton.styleFrom(
+                foregroundColor: StudioTheme.cream,
+                backgroundColor: StudioTheme.panelHi,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'v${AppConfig.studioVersion}',
+            style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 11),
+          ),
+          const SizedBox(width: 10),
           Text(
             userName,
             style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 13),
@@ -1261,44 +1326,6 @@ class _TopBar extends StatelessWidget {
             child: const Text('Sign out'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _NavTab extends StatelessWidget {
-  const _NavTab({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? StudioTheme.accent.withOpacity(0.16) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: active ? StudioTheme.accent.withOpacity(0.55) : StudioTheme.line,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.outfit(
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-            color: active ? StudioTheme.accentBright : StudioTheme.mute,
-          ),
-        ),
       ),
     );
   }
@@ -1631,17 +1658,23 @@ class _ChurchLiveBoardState extends State<_ChurchLiveBoard> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ScripturePanel(
-          api: widget.api,
-          streamUuid: widget.streamUuid,
-          liveBoard: _liveBoard,
-          mixer: widget.mixer,
+        KeyedSubtree(
+          key: StudioTourTargets.scripture,
+          child: ScripturePanel(
+            api: widget.api,
+            streamUuid: widget.streamUuid,
+            liveBoard: _liveBoard,
+            mixer: widget.mixer,
+          ),
         ),
         const SizedBox(height: 16),
-        SongPanel(
-          api: widget.api,
-          streamUuid: widget.streamUuid,
-          liveBoard: _liveBoard,
+        KeyedSubtree(
+          key: StudioTourTargets.songs,
+          child: SongPanel(
+            api: widget.api,
+            streamUuid: widget.streamUuid,
+            liveBoard: _liveBoard,
+          ),
         ),
       ],
     );
@@ -1684,7 +1717,9 @@ class _AdvancePanel extends StatelessWidget {
     final board = scriptureEnabled && streamUuid != null
         ? _ChurchLiveBoard(api: api, streamUuid: streamUuid!, mixer: mixer)
         : null;
-    final gallerySection = _GallerySection(
+    final gallerySection = KeyedSubtree(
+      key: StudioTourTargets.gallery,
+      child: _GallerySection(
       gallery: gallery,
       busy: busy,
       galleryReady: galleryReady,
@@ -1694,6 +1729,7 @@ class _AdvancePanel extends StatelessWidget {
       onUploadBackground: onUploadBackground,
       onDelete: onDelete,
       onOpen: onOpen,
+      ),
     );
 
     return LayoutBuilder(

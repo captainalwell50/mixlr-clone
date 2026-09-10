@@ -32,6 +32,44 @@ jobs:
       - name: Build Windows release
         run: flutter build windows --release --dart-define=API_BASE=https://soundmix.live
 
+      - name: Bundle VC++ runtime and README
+        shell: pwsh
+        run: |
+          $release = "build\windows\x64\runner\Release"
+          $sys = Join-Path $env:SystemRoot "System32"
+          $dlls = @(
+            "vcruntime140.dll",
+            "vcruntime140_1.dll",
+            "vcruntime140_threads.dll",
+            "msvcp140.dll",
+            "msvcp140_1.dll",
+            "msvcp140_2.dll",
+            "msvcp140_atomic_wait.dll",
+            "msvcp140_codecvt_ids.dll",
+            "concrt140.dll",
+            "vccorlib140.dll"
+          )
+          foreach ($name in $dlls) {
+            $src = Join-Path $sys $name
+            if (Test-Path $src) {
+              Copy-Item $src $release -Force
+            }
+          }
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
+            -OutFile (Join-Path $release "VC_redist.x64.exe")
+          @(
+            "Sound Mix Live Studio for Windows (64-bit)",
+            "",
+            "1. Unzip this entire folder onto this PC (Documents is fine).",
+            "2. Double-click soundmix_studio.exe",
+            "3. Sign in with your soundmix.live account",
+            "",
+            "If Windows reports a missing DLL (VCRUNTIME140.dll), run VC_redist.x64.exe",
+            "from this folder, then open soundmix_studio.exe again.",
+            "",
+            "Copy the folder to the local disk first. Do not run it from a network share."
+          ) | Set-Content -Path (Join-Path $release "README.txt") -Encoding utf8
+
       - name: Zip Release folder
         shell: pwsh
         run: |

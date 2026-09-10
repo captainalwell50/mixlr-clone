@@ -44,7 +44,7 @@ class WindowsStudioMixer {
   Future<bool> requestMicAccess() async {
     try {
       final stream = await navigator.mediaDevices.getUserMedia({
-        'audio': true,
+        'audio': studioCleanAudioConstraints(),
         'video': false,
       });
       await _replaceMicStream(stream);
@@ -298,10 +298,11 @@ class WindowsStudioMixer {
   }
 
   dynamic _audioConstraints(String? deviceId) {
-    if (deviceId == null || deviceId.isEmpty || deviceId == 'default') {
-      return true;
+    final audio = Map<String, dynamic>.from(studioCleanAudioConstraints());
+    if (deviceId != null && deviceId.isNotEmpty && deviceId != 'default') {
+      audio['deviceId'] = deviceId;
     }
-    return {'deviceId': deviceId};
+    return audio;
   }
 
   Future<void> _replaceMicStream(MediaStream? next) async {
@@ -399,7 +400,21 @@ class _WinTrack {
   double duration = 0;
 }
 
-/// Same Opus fmtp as web / macOS Studio.
+/// Same as web Studio CLEAN_AUDIO — NS/AGC/EC crush music on Listen.
+Map<String, dynamic> studioCleanAudioConstraints() {
+  return {
+    'echoCancellation': false,
+    'noiseSuppression': false,
+    'autoGainControl': false,
+    'channelCount': {'ideal': 2},
+    'sampleRate': {'ideal': 48000},
+    'googEchoCancellation': false,
+    'googNoiseSuppression': false,
+    'googAutoGainControl': false,
+    'googHighpassFilter': false,
+  };
+}
+
 String preferHighQualityOpus(String sdp) {
   const bitrate = 510000;
   const fmtp =

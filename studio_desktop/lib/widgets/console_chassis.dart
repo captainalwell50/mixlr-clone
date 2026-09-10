@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models.dart';
 import '../theme.dart';
 import 'level_meter.dart';
+import 'studio_tour_targets.dart';
 
 /// Map linear amplitude ↔ fader position (−60 dB … +6 dB).
 double _faderToGain(double fader) {
@@ -140,6 +141,7 @@ class ConsoleChassis extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _Strip(
+                      key: StudioTourTargets.mic,
                       label: 'Mic',
                       level: micMute ? 0 : micLevel,
                       gain: micGain,
@@ -163,6 +165,7 @@ class ConsoleChassis extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: _Strip(
+                      key: StudioTourTargets.playlist,
                       label: 'Playlist',
                       level: playlistMute ? 0 : playlistLevel,
                       gain: playlistGain,
@@ -182,6 +185,7 @@ class ConsoleChassis extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: _Strip(
+                      key: StudioTourTargets.master,
                       label: 'Master',
                       level: masterLevel,
                       gain: masterGain,
@@ -215,6 +219,7 @@ class ConsoleChassis extends StatelessWidget {
 
 class _Strip extends StatelessWidget {
   const _Strip({
+    super.key,
     required this.label,
     required this.level,
     required this.gain,

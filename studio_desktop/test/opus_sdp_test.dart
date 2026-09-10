@@ -2,6 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soundmix_studio/services/windows_studio_mixer.dart';
 
 void main() {
+  test('studioCleanAudioConstraints disables voice processing', () {
+    final c = studioCleanAudioConstraints();
+    expect(c['echoCancellation'], isFalse);
+    expect(c['noiseSuppression'], isFalse);
+    expect(c['autoGainControl'], isFalse);
+    expect(c['sampleRate'], {'ideal': 48000});
+  });
+
   test('preferHighQualityOpus rewrites opus fmtp', () {
     final sdp = [
       'v=0',

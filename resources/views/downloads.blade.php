@@ -49,6 +49,12 @@
                 Sound Mix Live Studio, and click <strong>Open Anyway</strong>.
                 Or right-click the app → <strong>Open</strong> → <strong>Open</strong>.
             </p>
+            <p class="dl-note" style="margin-top:0.75rem">
+                <strong>Windows:</strong>
+                Download the zip, unzip it to this PC (Documents is fine), then double-click
+                <strong>soundmix_studio.exe</strong>.
+                If Windows reports a missing DLL, run <strong>VC_redist.x64.exe</strong> from the unzipped folder first.
+            </p>
         </section>
 
         <p class="dl-note">
