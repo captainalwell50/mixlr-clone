@@ -6,5 +6,5 @@ class AppConfig {
 
   static String get apiV1 => '$apiBase/api/v1';
 
-  static const String studioVersion = '2.0.25';
+  static const String studioVersion = '2.0.26';
 }

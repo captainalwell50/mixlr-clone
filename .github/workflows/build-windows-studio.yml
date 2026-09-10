@@ -55,14 +55,20 @@ jobs:
               Copy-Item $src $release -Force
             }
           }
+          $d3d = Join-Path $sys "d3dcompiler_47.dll"
+          if (Test-Path $d3d) {
+            Copy-Item $d3d $release -Force
+          }
+          Copy-Item "windows\Run Studio.cmd" $release -Force
           Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
             -OutFile (Join-Path $release "VC_redist.x64.exe")
           @(
             "Sound Mix Live Studio for Windows (64-bit)",
             "",
             "1. Unzip this entire folder onto this PC (Documents is fine).",
-            "2. Double-click soundmix_studio.exe",
-            "3. Sign in with your soundmix.live account",
+            "2. Right-click the zip first if needed: Properties → Unblock → Apply.",
+            "3. Double-click ""Run Studio.cmd"" (not only soundmix_studio.exe).",
+            "4. Sign in with your soundmix.live account",
             "",
             "If Windows reports a missing DLL (VCRUNTIME140.dll), run VC_redist.x64.exe",
             "from this folder, then open soundmix_studio.exe again.",

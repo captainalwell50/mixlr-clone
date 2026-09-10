@@ -51,9 +51,10 @@
             </p>
             <p class="dl-note" style="margin-top:0.75rem">
                 <strong>Windows:</strong>
-                Download the zip, unzip it to this PC (Documents is fine), then double-click
-                <strong>soundmix_studio.exe</strong>.
-                If Windows reports a missing DLL, run <strong>VC_redist.x64.exe</strong> from the unzipped folder first.
+                Download the zip. Right-click it → <strong>Properties</strong> → tick <strong>Unblock</strong> → Apply,
+                then unzip to this PC. Double-click <strong>Run Studio.cmd</strong>
+                (not only soundmix_studio.exe).
+                If a missing-DLL message appears, run <strong>VC_redist.x64.exe</strong> from the unzipped folder.
             </p>
         </section>
 

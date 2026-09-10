@@ -2,9 +2,11 @@
 
 #include <flutter_windows.h>
 #include <io.h>
+#include <shlobj.h>
 #include <stdio.h>
 #include <windows.h>
 
+#include <fstream>
 #include <iostream>
 
 void CreateAndAttachConsole() {
@@ -62,4 +64,78 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string) {
     return std::string();
   }
   return utf8_string;
+}
+
+std::wstring GetExecutableDirectory() {
+  wchar_t module_path[MAX_PATH];
+  DWORD length = ::GetModuleFileNameW(nullptr, module_path, MAX_PATH);
+  if (length == 0 || length >= MAX_PATH) {
+    return std::wstring();
+  }
+  wchar_t* slash = wcsrchr(module_path, L'\\');
+  if (slash == nullptr) {
+    return std::wstring();
+  }
+  *slash = L'\0';
+  return std::wstring(module_path);
+}
+
+bool SetWorkingDirectoryToExe() {
+  const std::wstring dir = GetExecutableDirectory();
+  if (dir.empty()) {
+    return false;
+  }
+  return ::SetCurrentDirectoryW(dir.c_str()) != 0;
+}
+
+bool DataFolderLooksValid() {
+  const std::wstring dir = GetExecutableDirectory();
+  if (dir.empty()) {
+    return false;
+  }
+  const std::wstring icu = dir + L"\\data\\icudtl.dat";
+  const std::wstring assets = dir + L"\\data\\flutter_assets";
+  const DWORD icu_attr = ::GetFileAttributesW(icu.c_str());
+  const DWORD assets_attr = ::GetFileAttributesW(assets.c_str());
+  return icu_attr != INVALID_FILE_ATTRIBUTES &&
+         assets_attr != INVALID_FILE_ATTRIBUTES;
+}
+
+static std::wstring StartupLogPath() {
+  wchar_t appdata[MAX_PATH];
+  if (FAILED(::SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0,
+                                appdata))) {
+    return std::wstring();
+  }
+  std::wstring folder = std::wstring(appdata) + L"\\SoundMixStudio";
+  ::CreateDirectoryW(folder.c_str(), nullptr);
+  return folder + L"\\startup.log";
+}
+
+void WriteStartupLog(const wchar_t* message) {
+  const std::wstring path = StartupLogPath();
+  if (path.empty() || message == nullptr) {
+    return;
+  }
+  FILE* file = nullptr;
+  if (_wfopen_s(&file, path.c_str(), L"a") != 0 || file == nullptr) {
+    return;
+  }
+  SYSTEMTIME now;
+  ::GetLocalTime(&now);
+  fwprintf(file, L"%04u-%02u-%02u %02u:%02u:%02u  %s\n", now.wYear, now.wMonth,
+           now.wDay, now.wHour, now.wMinute, now.wSecond, message);
+  fclose(file);
+}
+
+void ShowStartupError(const wchar_t* message) {
+  WriteStartupLog(message);
+  const std::wstring path = StartupLogPath();
+  std::wstring body = message;
+  if (!path.empty()) {
+    body += L"\n\nLog: ";
+    body += path;
+  }
+  ::MessageBoxW(nullptr, body.c_str(), L"Sound Mix Live Studio",
+                MB_OK | MB_ICONERROR);
 }

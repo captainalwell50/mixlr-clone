@@ -16,4 +16,16 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string);
 // encoded in UTF-8. Returns an empty std::vector<std::string> on failure.
 std::vector<std::string> GetCommandLineArguments();
 
+// Directory containing soundmix_studio.exe (no trailing slash).
+std::wstring GetExecutableDirectory();
+
+// Flutter loads data/ relative to the process working directory.
+bool SetWorkingDirectoryToExe();
+
+bool DataFolderLooksValid();
+
+void WriteStartupLog(const wchar_t* message);
+
+void ShowStartupError(const wchar_t* message);
+
 #endif  // RUNNER_UTILS_H_

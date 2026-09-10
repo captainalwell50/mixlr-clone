@@ -27,6 +27,10 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  // Show before the first Flutter frame. Waiting on SetNextFrameCallback can
+  // leave a process running with no window if Dart/plugins stall.
+  this->Show();
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
