@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-enum LiveBoardMode { scripture, song }
+enum LiveBoardMode { scripture, song, ndi }
 
 LiveBoardMode? liveBoardModeFrom(String? raw) {
   switch (raw) {
@@ -8,6 +8,8 @@ LiveBoardMode? liveBoardModeFrom(String? raw) {
       return LiveBoardMode.scripture;
     case 'song':
       return LiveBoardMode.song;
+    case 'ndi':
+      return LiveBoardMode.ndi;
     default:
       return null;
   }
@@ -24,6 +26,11 @@ class LiveBoardSync extends ChangeNotifier {
 
   void markSong() {
     mode = LiveBoardMode.song;
+    notifyListeners();
+  }
+
+  void markNdi() {
+    mode = LiveBoardMode.ndi;
     notifyListeners();
   }
 

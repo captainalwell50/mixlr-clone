@@ -304,6 +304,8 @@ class MixerBridge extends ChangeNotifier {
       url: asset.url,
       assetId: asset.id,
       localPath: localPath,
+      filename: asset.originalFilename,
+      mimeType: asset.mimeType,
     );
   }
 
@@ -313,6 +315,8 @@ class MixerBridge extends ChangeNotifier {
     required String url,
     int? assetId,
     String? localPath,
+    String? filename,
+    String? mimeType,
   }) async {
     final source = (localPath != null && localPath.isNotEmpty) ? localPath : url;
     if (_isWindows) {
@@ -322,6 +326,8 @@ class MixerBridge extends ChangeNotifier {
         title: title,
         url: source,
         assetId: assetId,
+        filename: filename,
+        mimeType: mimeType,
       );
     }
     final raw = await _channel.invokeMethod<dynamic>('queueTrack', {

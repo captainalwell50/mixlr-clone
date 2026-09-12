@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'audio_file_extension.dart';
+
 typedef MixerHostMessage = void Function(Map<String, dynamic> data);
 
 /// Windows Studio mixer: WebRTC mic + WHIP publish, Just Audio playlist preview.
@@ -153,13 +155,20 @@ class WindowsStudioMixer {
     required String title,
     required String url,
     int? assetId,
+    String? filename,
+    String? mimeType,
   }) async {
     _tracks[id]?.player.dispose();
     final track = _WinTrack(id: id, title: title, assetId: assetId);
     _tracks[id] = track;
     _emitTracks();
     try {
-      final path = await _ensureLocalFile(id, url);
+      final path = await _ensureLocalFile(
+        id,
+        url,
+        filename: filename,
+        mimeType: mimeType,
+      );
       track.localPath = path;
       await track.player.setFilePath(path);
       track.ready = true;
@@ -327,21 +336,31 @@ class WindowsStudioMixer {
     return payload;
   }
 
-  Future<String> _ensureLocalFile(String id, String url) async {
+  Future<String> _ensureLocalFile(
+    String id,
+    String url, {
+    String? filename,
+    String? mimeType,
+  }) async {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return url;
+      final local = File(url);
+      if (await local.exists()) return url;
+      throw Exception('That audio file is no longer on this computer.');
     }
     final dir = await getApplicationSupportDirectory();
     final cache = Directory('${dir.path}/SoundMixStudio/playlist');
     await cache.create(recursive: true);
-    final ext = url.contains('.') ? url.split('.').last.split('?').first : 'mp3';
-    final dest = File('${cache.path}/sm-track-${id.replaceAll('/', '_')}.$ext');
+    final ext = audioFileExtension(url: url, filename: filename, mimeType: mimeType);
+    final dest = File('${cache.path}/sm-track-${safeTrackCacheId(id)}.$ext');
     if (dest.existsSync() && dest.lengthSync() > 0) {
       return dest.path;
     }
     final res = await http.get(Uri.parse(url));
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw Exception('Could not download that track (HTTP ${res.statusCode}).');
+    }
+    if (res.bodyBytes.isEmpty) {
+      throw Exception('Downloaded track was empty.');
     }
     await dest.writeAsBytes(res.bodyBytes, flush: true);
     return dest.path;

@@ -44,7 +44,8 @@ class _SongPanelState extends State<SongPanel> {
 
   void _onLiveBoard() {
     if (!mounted) return;
-    if (widget.liveBoard?.mode == LiveBoardMode.scripture) {
+    if (widget.liveBoard?.mode == LiveBoardMode.scripture ||
+        widget.liveBoard?.mode == LiveBoardMode.ndi) {
       setState(() {
         _cue = null;
         _status = 'No song on listen';
@@ -109,7 +110,9 @@ class _SongPanelState extends State<SongPanel> {
       final mode = liveBoardModeFrom(result.liveBoard);
       setState(() {
         _songs = result.songs;
-        _cue = mode == LiveBoardMode.scripture ? null : result.cue;
+        _cue = (mode == LiveBoardMode.scripture || mode == LiveBoardMode.ndi)
+            ? null
+            : result.cue;
         if (_cue != null) {
           _status =
               'Showing “${_cue!.title}” · slide ${_cue!.slideIndex + 1}/${_cue!.slideCount}';

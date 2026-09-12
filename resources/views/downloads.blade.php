@@ -51,10 +51,9 @@
             </p>
             <p class="dl-note" style="margin-top:0.75rem">
                 <strong>Windows:</strong>
-                Download the zip. Right-click it → <strong>Properties</strong> → tick <strong>Unblock</strong> → Apply,
-                then unzip to this PC. Double-click <strong>Run Studio.cmd</strong>
-                (not only soundmix_studio.exe).
-                If a missing-DLL message appears, run <strong>VC_redist.x64.exe</strong> from the unzipped folder.
+                Download the installer (<code>.exe</code>) and run it.
+                If SmartScreen appears, click <strong>More info</strong> → <strong>Run anyway</strong>.
+                Studio installs for your user account and adds a Start Menu shortcut.
             </p>
         </section>
 

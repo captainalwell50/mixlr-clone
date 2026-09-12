@@ -180,7 +180,8 @@ class _ScripturePanelState extends State<ScripturePanel> {
 
   void _onLiveBoard() {
     if (!mounted) return;
-    if (widget.liveBoard?.mode == LiveBoardMode.song) {
+    if (widget.liveBoard?.mode == LiveBoardMode.song ||
+        widget.liveBoard?.mode == LiveBoardMode.ndi) {
       setState(() {
         _current = null;
         _status = 'No scripture on listen';
@@ -453,7 +454,9 @@ class _ScripturePanelState extends State<ScripturePanel> {
       final result = await widget.api.scriptureShow(widget.streamUuid);
       if (!mounted) return;
       final mode = liveBoardModeFrom(result.liveBoard);
-      final cue = mode == LiveBoardMode.song ? null : result.cue;
+      final cue = (mode == LiveBoardMode.song || mode == LiveBoardMode.ndi)
+          ? null
+          : result.cue;
       setState(() {
         _current = cue;
         if (cue != null) {

@@ -5,6 +5,7 @@ void main() {
   test('live_board strings map to last-cue-wins modes', () {
     expect(liveBoardModeFrom('scripture'), LiveBoardMode.scripture);
     expect(liveBoardModeFrom('song'), LiveBoardMode.song);
+    expect(liveBoardModeFrom('ndi'), LiveBoardMode.ndi);
     expect(liveBoardModeFrom(null), isNull);
     expect(liveBoardModeFrom(''), isNull);
   });

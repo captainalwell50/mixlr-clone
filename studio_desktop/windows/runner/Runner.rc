@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "live.soundmix" "\0"
-            VALUE "FileDescription", "soundmix_studio" "\0"
+            VALUE "CompanyName", "Sound Mix Live" "\0"
+            VALUE "FileDescription", "Sound Mix Live Studio" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "soundmix_studio" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 live.soundmix. All rights reserved." "\0"
+            VALUE "InternalName", "SoundMixStudio" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Sound Mix Live. All rights reserved." "\0"
             VALUE "OriginalFilename", "soundmix_studio.exe" "\0"
-            VALUE "ProductName", "soundmix_studio" "\0"
+            VALUE "ProductName", "Sound Mix Live Studio" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

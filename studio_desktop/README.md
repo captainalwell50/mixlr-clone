@@ -39,7 +39,7 @@ flutter run -d windows --dart-define=API_BASE=https://soundmix.live
 flutter build windows --release --dart-define=API_BASE=https://soundmix.live
 ```
 
-CI: `.github/workflows/build-windows-studio.yml` (workflow_dispatch or push). Zip the `build/windows/x64/runner/Release` folder as `Sound-Mix-Live-Studio-Windows.zip`.
+CI: `.github/workflows/build-windows-studio.yml` (workflow_dispatch or push). The job builds an Inno Setup installer `Sound-Mix-Live-Studio.exe` (single file) from `build/windows/x64/runner/Release`.
 
 ## Mic hot-swap while live (regression)
 
@@ -61,7 +61,7 @@ Package and upload to the VM (`public/downloads/`), then set env on production:
 ```env
 DOWNLOAD_MACOS_URL=https://soundmix.live/downloads/Sound-Mix-Live-Studio.dmg
 DOWNLOAD_ANDROID_APK_URL=https://soundmix.live/downloads/Sound-Mix-Live.apk
-DOWNLOAD_WINDOWS_URL=https://soundmix.live/downloads/Sound-Mix-Live-Studio-Windows.zip
+DOWNLOAD_WINDOWS_URL=https://soundmix.live/downloads/Sound-Mix-Live-Studio.exe
 ```
 
 Mac DMG (from a release `.app`):
@@ -71,4 +71,8 @@ Mac DMG (from a release `.app`):
 hdiutil create -volname "Sound Mix Live Studio" -srcfolder /path/to/stage -ov -format UDZO public/downloads/Sound-Mix-Live-Studio.dmg
 ```
 
-Windows: build on Windows or via `.github/workflows/build-windows-studio.yml`, then upload the zip.
+Windows: build on Windows or via `.github/workflows/build-windows-studio.yml`, then upload `Sound-Mix-Live-Studio.exe`. Local pack (after `flutter build windows --release`):
+
+```powershell
+.\scripts\package_windows_installer.ps1
+```

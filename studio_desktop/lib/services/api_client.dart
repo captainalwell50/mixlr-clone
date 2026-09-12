@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../config.dart';
 import '../models.dart';
@@ -21,12 +22,14 @@ class ApiException implements Exception {
 typedef UnauthorizedHandler = FutureOr<void> Function();
 
 class ApiClient {
-  ApiClient({http.Client? client, Duration? timeout})
+  ApiClient({http.Client? client, Duration? timeout, Duration? fileTimeout})
       : _client = client ?? http.Client(),
-        _timeout = timeout ?? const Duration(seconds: 30);
+        _timeout = timeout ?? const Duration(seconds: 30),
+        _fileTimeout = fileTimeout ?? const Duration(minutes: 10);
 
   final http.Client _client;
   final Duration _timeout;
+  final Duration _fileTimeout;
   String? _token;
   UnauthorizedHandler? onUnauthorized;
 
@@ -41,9 +44,9 @@ class ApiClient {
     };
   }
 
-  Future<http.Response> _send(Future<http.Response> future) async {
+  Future<http.Response> _send(Future<http.Response> future, {Duration? timeout}) async {
     try {
-      return await future.timeout(_timeout);
+      return await future.timeout(timeout ?? _timeout);
     } on TimeoutException {
       throw ApiException('Request timed out. Check your connection and try again.');
     } on SocketException {
@@ -107,7 +110,7 @@ class ApiClient {
     http.StreamedResponse streamed, {
     required String fallback,
   }) async {
-    final response = await http.Response.fromStream(streamed).timeout(_timeout);
+    final response = await http.Response.fromStream(streamed).timeout(_fileTimeout);
     return _json(response, fallback: fallback);
   }
 
@@ -272,8 +275,13 @@ class ApiClient {
     if (title != null && title.isNotEmpty) {
       request.fields['title'] = title;
     }
-    request.files.add(await http.MultipartFile.fromPath('audio', path));
-    final streamed = await _client.send(request).timeout(_timeout);
+    final filename = path.split(RegExp(r'[\\/]')).last;
+    request.files.add(await http.MultipartFile.fromPath(
+      'audio',
+      path,
+      filename: filename.isEmpty ? 'audio.mp3' : filename,
+    ));
+    final streamed = await _client.send(request).timeout(_fileTimeout);
     final data = await _parseMultipart(streamed, fallback: 'Upload failed');
     final asset = asJsonMap(data['asset']);
     if (asset == null) throw ApiException('Upload failed — empty response.');
@@ -286,6 +294,62 @@ class ApiClient {
       headers: _headers(auth: true),
     ));
     await _json(response, fallback: 'Could not delete asset');
+  }
+
+  /// Authenticated download for desktop queue (Windows cannot rely on cookie/signed web URLs).
+  Future<void> downloadLibraryAssetFile({
+    required String streamUuid,
+    required int assetId,
+    required File dest,
+  }) async {
+    final uri = Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/library/$assetId/file');
+    final request = http.Request('GET', uri);
+    request.headers.addAll({
+      'Accept': '*/*',
+      if (_token != null && _token!.isNotEmpty) 'Authorization': 'Bearer $_token',
+    });
+    http.StreamedResponse streamed;
+    try {
+      streamed = await _client.send(request).timeout(_fileTimeout);
+    } on TimeoutException {
+      throw ApiException('Request timed out. Check your connection and try again.');
+    } on SocketException {
+      throw ApiException('Network unavailable. Check your connection and try again.');
+    } on HttpException catch (e) {
+      throw ApiException('Network error: ${e.message}');
+    } on HandshakeException {
+      throw ApiException('Secure connection failed. Check your network or VPN.');
+    }
+
+    if (streamed.statusCode == 401) {
+      final handler = onUnauthorized;
+      if (handler != null) {
+        await handler();
+      }
+      throw ApiException('Session expired. Sign in again.', statusCode: 401);
+    }
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw ApiException(
+        'Could not download that track.',
+        statusCode: streamed.statusCode,
+      );
+    }
+
+    await dest.parent.create(recursive: true);
+    final sink = dest.openWrite();
+    try {
+      await streamed.stream.pipe(sink).timeout(_fileTimeout);
+    } on TimeoutException {
+      try {
+        await dest.delete();
+      } catch (_) {}
+      throw ApiException('Request timed out. Check your connection and try again.');
+    } catch (e) {
+      try {
+        await dest.delete();
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   Future<List<GalleryItem>> gallery(String streamUuid, {int? eventId}) async {
@@ -320,7 +384,7 @@ class ApiClient {
       request.fields['event_id'] = '$eventId';
     }
     request.files.add(await http.MultipartFile.fromPath('image', path));
-    final streamed = await _client.send(request).timeout(_timeout);
+    final streamed = await _client.send(request).timeout(_fileTimeout);
     final data = await _parseMultipart(streamed, fallback: 'Photo upload failed');
     final raw = asJsonMap(data['image'] ?? data['item']);
     if (raw == null) {
@@ -347,7 +411,7 @@ class ApiClient {
       request.fields['event_id'] = '$eventId';
     }
     request.files.add(await http.MultipartFile.fromPath('video', path));
-    final streamed = await _client.send(request).timeout(_timeout);
+    final streamed = await _client.send(request).timeout(_fileTimeout);
     final data = await _parseMultipart(streamed, fallback: 'Reel upload failed');
     final raw = asJsonMap(data['image'] ?? data['item']);
     if (raw == null) {
@@ -374,7 +438,7 @@ class ApiClient {
     );
     request.headers.addAll(_headers(auth: true));
     request.files.add(await http.MultipartFile.fromPath('image', path));
-    final streamed = await _client.send(request).timeout(_timeout);
+    final streamed = await _client.send(request).timeout(_fileTimeout);
     final data =
         await _parseMultipart(streamed, fallback: 'Background upload failed');
     return data['background_url'] as String?;
@@ -545,6 +609,40 @@ class ApiClient {
       headers: _headers(auth: true),
     ));
     await _json(response, fallback: 'Could not clear song');
+  }
+
+  Future<NdiCue> ndiCue(
+    String streamUuid, {
+    required List<int> jpegBytes,
+    String source = 'NDI',
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/ndi'),
+    );
+    request.headers.addAll(_headers(auth: true));
+    request.fields['source'] = source;
+    request.files.add(http.MultipartFile.fromBytes(
+      'image',
+      jpegBytes,
+      filename: 'ndi.jpg',
+      contentType: MediaType('image', 'jpeg'),
+    ));
+    final streamed = await _client.send(request).timeout(_fileTimeout);
+    final data = await _parseMultipart(streamed, fallback: 'Could not show NDI');
+    final ndi = asJsonMap(data['ndi']);
+    if (ndi == null) {
+      throw ApiException('Could not show NDI');
+    }
+    return NdiCue.fromJson(ndi);
+  }
+
+  Future<void> ndiClear(String streamUuid) async {
+    final response = await _send(_client.delete(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/ndi'),
+      headers: _headers(auth: true),
+    ));
+    await _json(response, fallback: 'Could not clear NDI');
   }
 }
 

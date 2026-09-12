@@ -170,6 +170,22 @@ class DisplaySongItem {
   }
 }
 
+class NdiCue {
+  NdiCue({required this.source, required this.imageUrl, this.updatedAt});
+
+  final String source;
+  final String imageUrl;
+  final String? updatedAt;
+
+  factory NdiCue.fromJson(Map<String, dynamic> json) {
+    return NdiCue(
+      source: json['source'] as String? ?? 'NDI',
+      imageUrl: json['image_url'] as String? ?? '',
+      updatedAt: json['updated_at'] as String?,
+    );
+  }
+}
+
 class SongCue {
   SongCue({
     required this.title,

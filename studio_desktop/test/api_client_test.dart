@@ -195,6 +195,36 @@ void main() {
     await client.deleteGalleryItem('abc', 17);
   });
 
+  test('downloadLibraryAssetFile uses bearer token and API file route', () async {
+    final dest = File(
+      '${Directory.systemTemp.path}/sm-lib-dl-${DateTime.now().microsecondsSinceEpoch}.mp3',
+    );
+    addTearDown(() {
+      if (dest.existsSync()) dest.deleteSync();
+    });
+
+    final client = ApiClient(
+      client: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, endsWith('/streams/abc/library/12/file'));
+        expect(request.headers['authorization'], 'Bearer test');
+        return http.Response.bytes(
+          const [1, 2, 3, 4],
+          200,
+          headers: {'content-type': 'audio/mpeg'},
+        );
+      }),
+    );
+    client.setToken('test');
+    await client.downloadLibraryAssetFile(
+      streamUuid: 'abc',
+      assetId: 12,
+      dest: dest,
+    );
+    expect(dest.existsSync(), isTrue);
+    expect(dest.lengthSync(), 4);
+  });
+
   test('network timeout becomes ApiException', () async {
     final client = ApiClient(
       timeout: const Duration(milliseconds: 40),

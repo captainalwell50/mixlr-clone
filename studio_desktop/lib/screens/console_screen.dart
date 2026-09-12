@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../models.dart';
 import '../services/api_client.dart';
+import '../services/audio_file_extension.dart';
 import '../services/auth_state.dart';
 import '../services/live_board_sync.dart';
 import '../services/mixer_bridge.dart';
@@ -22,6 +24,7 @@ import '../theme.dart';
 import '../services/studio_tutorial_store.dart';
 import '../widgets/console_chassis.dart';
 import '../widgets/gallery_lightbox.dart';
+import '../widgets/ndi_panel.dart';
 import '../widgets/scripture_panel.dart';
 import '../widgets/song_panel.dart';
 import '../widgets/studio_mode_cards.dart';
@@ -537,6 +540,38 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   String? get _listenUrl =>
       _event?.url ?? _stream?.listenUrl ?? _home?.organization?.publicChannelUrl;
 
+  Future<String?> _localPathForWindowsQueue(
+    LibraryAsset asset, {
+    String? pickedPath,
+  }) async {
+    if (pickedPath != null &&
+        pickedPath.isNotEmpty &&
+        File(pickedPath).existsSync()) {
+      return pickedPath;
+    }
+    if (!Platform.isWindows) return null;
+    if (asset.id <= 0) return null;
+    final stream = _stream;
+    if (stream == null) return null;
+    final ext = audioFileExtension(
+      url: asset.url,
+      filename: asset.originalFilename,
+      mimeType: asset.mimeType,
+    );
+    final dir = await getApplicationSupportDirectory();
+    final dest = File(
+      '${dir.path}/SoundMixStudio/playlist/sm-track-asset-${asset.id}.$ext',
+    );
+    if (dest.existsSync() && dest.lengthSync() > 0) return dest.path;
+    if (!mounted) return null;
+    await context.read<AuthState>().api.downloadLibraryAssetFile(
+          streamUuid: stream.uuid,
+          assetId: asset.id,
+          dest: dest,
+        );
+    return dest.path;
+  }
+
   Future<void> _upload() async {
     final stream = _stream;
     if (stream == null) return;
@@ -555,7 +590,11 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
             title: picked.name,
           );
       await _refreshLibrary();
-      final localPath = await _mixer.queueTrack(asset);
+      final queuedPath = await _localPathForWindowsQueue(
+        asset,
+        pickedPath: picked.path,
+      );
+      final localPath = await _mixer.queueTrack(asset, localPath: queuedPath ?? picked.path);
       await _rememberQueued(
         PlaylistQueueEntry(
           id: 'asset-${asset.id}',
@@ -587,7 +626,8 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       _status = 'Queueing “${asset.title}”…';
     });
     try {
-      final localPath = await _mixer.queueTrack(asset);
+      final queuedPath = await _localPathForWindowsQueue(asset);
+      final localPath = await _mixer.queueTrack(asset, localPath: queuedPath);
       await _rememberQueued(
         PlaylistQueueEntry(
           id: 'asset-${asset.id}',
@@ -667,12 +707,21 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       for (final entry in saved) {
         final useLocal = _queueStore.localFileReady(entry);
         try {
+          final queuedPath = useLocal
+              ? entry.localPath
+              : await _localPathForWindowsQueue(
+                  LibraryAsset(
+                    id: entry.assetId ?? 0,
+                    title: entry.title,
+                    url: entry.url,
+                  ),
+                );
           final path = await _mixer.queueRaw(
             id: entry.id,
             title: entry.title,
             url: entry.url,
             assetId: entry.assetId,
-            localPath: useLocal ? entry.localPath : null,
+            localPath: queuedPath,
           );
           restored.add(entry.copyWith(localPath: path ?? entry.localPath));
         } catch (_) {}
@@ -828,7 +877,8 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: type,
       allowedExtensions: allowedExtensions,
-      withData: true,
+      withData: false,
+      lockParentWindow: true,
     );
     final file = result?.files.single;
     if (file == null) return null;
@@ -1676,6 +1726,12 @@ class _ChurchLiveBoardState extends State<_ChurchLiveBoard> {
             liveBoard: _liveBoard,
           ),
         ),
+        const SizedBox(height: 16),
+        NdiPanel(
+          api: widget.api,
+          streamUuid: widget.streamUuid,
+          liveBoard: _liveBoard,
+        ),
       ],
     );
   }
@@ -2031,29 +2087,27 @@ class _GalleryHoverTileState extends State<_GalleryHoverTile> {
   }
 }
 
-/// Copy a macOS security-scoped picker result into the sandbox temp dir.
+/// Copy a picker result into the sandbox temp dir without loading the whole
+/// file into RAM (Windows file_picker + large playlists otherwise fail).
 Future<String?> persistPickedStudioFile(PlatformFile file) async {
-  final bytes = file.bytes;
   final ext = (file.extension != null && file.extension!.isNotEmpty)
       ? file.extension!
       : 'bin';
-  if (bytes != null && bytes.isNotEmpty) {
-    final dest = File(
-      '${Directory.systemTemp.path}/sm-upload-${DateTime.now().microsecondsSinceEpoch}.$ext',
-    );
-    await dest.writeAsBytes(bytes, flush: true);
-    return dest.path;
-  }
+  final destPath =
+      '${Directory.systemTemp.path}/sm-upload-${DateTime.now().microsecondsSinceEpoch}.$ext';
+  final dest = File(destPath);
   final path = file.path;
-  if (path == null || path.isEmpty) return null;
-  try {
-    final data = await File(path).readAsBytes();
-    final dest = File(
-      '${Directory.systemTemp.path}/sm-upload-${DateTime.now().microsecondsSinceEpoch}.$ext',
-    );
-    await dest.writeAsBytes(data, flush: true);
-    return dest.path;
-  } catch (_) {
-    return path;
+  if (path != null && path.isNotEmpty) {
+    try {
+      await File(path).copy(destPath);
+      if (dest.existsSync() && dest.lengthSync() > 0) return destPath;
+    } catch (_) {}
   }
+  final bytes = file.bytes;
+  if (bytes != null && bytes.isNotEmpty) {
+    await dest.writeAsBytes(bytes, flush: true);
+    return destPath;
+  }
+  if (path != null && path.isNotEmpty) return path;
+  return null;
 }
