@@ -11,6 +11,11 @@ class BinaryMessenger;
 
 class NdiPluginHost {
  public:
+  NdiPluginHost();
+  ~NdiPluginHost();
+  NdiPluginHost(const NdiPluginHost&) = delete;
+  NdiPluginHost& operator=(const NdiPluginHost&) = delete;
+
   static constexpr UINT kFrameMessage = WM_APP + 77;
 
   void Register(flutter::BinaryMessenger* messenger, HWND hwnd);

@@ -424,6 +424,10 @@ class NdiPluginHost::Impl {
   uint64_t last_hash_ = 0;
 };
 
+NdiPluginHost::NdiPluginHost() = default;
+
+NdiPluginHost::~NdiPluginHost() { Shutdown(); }
+
 void NdiPluginHost::Register(flutter::BinaryMessenger* messenger, HWND hwnd) {
   impl_ = std::make_unique<Impl>();
   impl_->Register(messenger, hwnd);
@@ -432,6 +436,7 @@ void NdiPluginHost::Register(flutter::BinaryMessenger* messenger, HWND hwnd) {
 void NdiPluginHost::Shutdown() {
   if (impl_) {
     impl_->Shutdown();
+    impl_.reset();
   }
 }
 
