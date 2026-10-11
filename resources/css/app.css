@@ -31,11 +31,12 @@
     --stage-border: color-mix(in srgb, var(--color-cream) 18%, transparent);
     --stage-danger: var(--color-danger);
 
-    /* Semantic Light Theme Tokens (Default :root) */
-    --app-bg: #f8fafc;
+    /* Refined Semantic Light Theme Tokens (Default :root) */
+    --app-bg: #f4f6f5;
     --app-surface: #ffffff;
     --app-surface-elevated: #ffffff;
-    --app-surface-muted: #f1f5f9;
+    --app-surface-muted: #f8faf9;
+    --app-sidebar-bg: #f9fbfa;
     --app-border: #e2e8f0;
     --app-border-muted: #edf2f7;
     --app-border-strong: #cbd5e1;
@@ -49,13 +50,19 @@
     --app-input-bg: #ffffff;
     --app-input-border: #cbd5e1;
     --app-hover: #f1f5f9;
-    --app-nav-active: #e2e8f0;
+    --app-nav-active-bg: #ecfdf5;
+    --app-nav-active-text: #065f46;
+    --app-nav-active-border: #a7f3d0;
+    --app-table-header-bg: #f1f5f4;
+    --app-table-header-text: #334155;
     --app-table-row: #ffffff;
-    --app-table-hover: #f8fafc;
-    --app-table-divider: #e2e8f0;
+    --app-table-hover: #f8faf9;
+    --app-table-divider: #eef2f0;
     --app-overlay: rgba(15, 23, 42, 0.45);
-    --app-shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
-    --app-shadow-dropdown: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    --app-shadow-surface: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+    --app-shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
+    --app-shadow-card-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+    --app-shadow-dropdown: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
 }
 
 html.dark,
@@ -65,6 +72,7 @@ html.dark,
     --app-surface: #121215;
     --app-surface-elevated: #18181b;
     --app-surface-muted: #1e1e24;
+    --app-sidebar-bg: #0e0e11;
     --app-border: #27272a;
     --app-border-muted: #1e1e24;
     --app-border-strong: #3f3f46;
@@ -78,12 +86,18 @@ html.dark,
     --app-input-bg: #18181b;
     --app-input-border: #3f3f46;
     --app-hover: #27272a;
-    --app-nav-active: #27272a;
+    --app-nav-active-bg: rgba(16, 185, 129, 0.15);
+    --app-nav-active-text: #a7f3d0;
+    --app-nav-active-border: rgba(16, 185, 129, 0.4);
+    --app-table-header-bg: #18181b;
+    --app-table-header-text: #a1a1aa;
     --app-table-row: #121215;
     --app-table-hover: #1c1c21;
     --app-table-divider: #27272a;
     --app-overlay: rgba(0, 0, 0, 0.8);
+    --app-shadow-surface: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
     --app-shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.2);
+    --app-shadow-card-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     --app-shadow-dropdown: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
 }
 
@@ -119,9 +133,16 @@ html:not(.dark) body.app-shell {
     color: var(--app-text) !important;
 }
 
-/* Main content areas & full screen backgrounds */
+/* Main content areas & background wash */
 html:not(.dark) .creator-shell main,
-html:not(.dark) .admin-shell main,
+html:not(.dark) .admin-shell main {
+    background-color: var(--app-bg) !important;
+    color: var(--app-text) !important;
+    background-image: radial-gradient(100% 120% at 50% 0%, rgba(16, 185, 129, 0.035) 0%, transparent 65%) !important;
+    background-repeat: no-repeat !important;
+    background-size: 100% 480px !important;
+}
+
 html:not(.dark) .creator-shell .bg-zinc-950,
 html:not(.dark) .admin-shell .bg-zinc-950 {
     background-color: var(--app-bg) !important;
@@ -131,17 +152,65 @@ html:not(.dark) .admin-shell .bg-zinc-950 {
 /* Headers & Sticky topbars */
 html:not(.dark) .creator-shell header,
 html:not(.dark) .admin-shell header {
-    background-color: rgba(255, 255, 255, 0.95) !important;
-    border-color: var(--app-border) !important;
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+    background-color: rgba(255, 255, 255, 0.96) !important;
+    border-bottom: 1px solid var(--app-border) !important;
+    box-shadow: var(--app-shadow-surface) !important;
 }
 
 /* Sidebars */
 html:not(.dark) .creator-shell aside,
 html:not(.dark) .admin-shell aside {
-    background-color: #ffffff !important;
-    border-color: var(--app-border) !important;
-    box-shadow: 1px 0 3px 0 rgba(0, 0, 0, 0.02);
+    background-color: var(--app-sidebar-bg) !important;
+    border-right: 1px solid var(--app-border) !important;
+    box-shadow: 1px 0 2px 0 rgba(0, 0, 0, 0.02) !important;
+}
+
+/* Sidebar Section Headers */
+html:not(.dark) .admin-shell aside .uppercase,
+html:not(.dark) .creator-shell aside .uppercase {
+    color: var(--app-text-muted) !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.06em !important;
+}
+
+/* Inactive nav links */
+html:not(.dark) .admin-shell aside nav a.text-zinc-300,
+html:not(.dark) .admin-shell aside nav a.text-zinc-400,
+html:not(.dark) .creator-shell aside nav a.text-zinc-400,
+html:not(.dark) .creator-shell aside nav a.text-zinc-300 {
+    color: #475569 !important;
+}
+html:not(.dark) .admin-shell aside nav a:hover,
+html:not(.dark) .creator-shell aside nav a:hover {
+    background-color: #f1f5f4 !important;
+    color: #0f172a !important;
+}
+html:not(.dark) .admin-shell aside nav a svg,
+html:not(.dark) .creator-shell aside nav a svg {
+    color: #64748b;
+}
+html:not(.dark) .admin-shell aside nav a:hover svg,
+html:not(.dark) .creator-shell aside nav a:hover svg {
+    color: #0f172a;
+}
+
+/* Active nav links with green accent rail */
+html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/70,
+html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/60,
+html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/60,
+html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/70 {
+    background-color: var(--app-nav-active-bg) !important;
+    color: var(--app-nav-active-text) !important;
+    font-weight: 600 !important;
+    border: 1px solid var(--app-nav-active-border) !important;
+    border-left: 3px solid var(--app-accent) !important;
+}
+html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/70 svg,
+html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/60 svg,
+html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/60 svg,
+html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/70 svg {
+    color: var(--app-accent) !important;
+    opacity: 1 !important;
 }
 
 /* Cards, Panels, Sections */
@@ -158,9 +227,32 @@ html:not(.dark) .admin-shell .bg-zinc-900\/90,
 html:not(.dark) .creator-shell .bg-zinc-900\/95,
 html:not(.dark) .admin-shell .bg-zinc-900\/95,
 html:not(.dark) .creator-shell .bg-zinc-900\/40,
-html:not(.dark) .admin-shell .bg-zinc-900\/40 {
+html:not(.dark) .admin-shell .bg-zinc-900\/40,
+html:not(.dark) .creator-shell .bg-zinc-900\/30,
+html:not(.dark) .admin-shell .bg-zinc-900\/30 {
     background-color: #ffffff !important;
-    box-shadow: var(--app-shadow-card);
+    border-color: var(--app-border) !important;
+    box-shadow: var(--app-shadow-card) !important;
+}
+
+/* Card hovers */
+html:not(.dark) .creator-shell a.bg-zinc-900\/50:hover,
+html:not(.dark) .admin-shell a.bg-zinc-900\/50:hover,
+html:not(.dark) .creator-shell a.bg-zinc-900\/60:hover,
+html:not(.dark) .admin-shell a.bg-zinc-900\/60:hover,
+html:not(.dark) .creator-shell a.bg-zinc-900\/40:hover,
+html:not(.dark) .admin-shell a.bg-zinc-900\/40:hover {
+    background-color: #ffffff !important;
+    border-color: var(--app-border-strong) !important;
+    box-shadow: var(--app-shadow-card-hover) !important;
+}
+
+/* Selected / Live KPI Cards */
+html:not(.dark) .admin-shell a.border-emerald-600.bg-emerald-950\/40,
+html:not(.dark) .admin-shell a.border-emerald-700\/60.bg-emerald-950\/30 {
+    background-color: #f0fdf4 !important;
+    border-color: #86efac !important;
+    box-shadow: var(--app-shadow-card) !important;
 }
 
 /* Secondary/nested panels */
@@ -171,6 +263,19 @@ html:not(.dark) .admin-shell .bg-zinc-800\/50,
 html:not(.dark) .creator-shell .bg-zinc-800\/80,
 html:not(.dark) .admin-shell .bg-zinc-800\/80 {
     background-color: var(--app-surface-muted) !important;
+    border-color: var(--app-border) !important;
+}
+
+/* Icon tiles in KPI cards and buttons */
+html:not(.dark) .creator-shell .h-8.w-8.rounded-lg.bg-zinc-800,
+html:not(.dark) .admin-shell .h-8.w-8.rounded-lg.bg-zinc-800,
+html:not(.dark) .creator-shell .h-6.w-6.rounded-md.bg-zinc-800\/80,
+html:not(.dark) .admin-shell .h-6.w-6.rounded-md.bg-zinc-800\/80,
+html:not(.dark) .creator-shell .h-7.w-7.rounded-lg.bg-zinc-800,
+html:not(.dark) .admin-shell .h-7.w-7.rounded-lg.bg-zinc-800 {
+    background-color: #f1f5f4 !important;
+    color: #334155 !important;
+    border: 1px solid #e2e8f0 !important;
 }
 
 /* Borders */
@@ -183,7 +288,11 @@ html:not(.dark) .admin-shell .border-zinc-700,
 html:not(.dark) .creator-shell .border-zinc-700\/80,
 html:not(.dark) .admin-shell .border-zinc-700\/80,
 html:not(.dark) .creator-shell .divide-zinc-800 > :not([hidden]) ~ :not([hidden]),
-html:not(.dark) .admin-shell .divide-zinc-800 > :not([hidden]) ~ :not([hidden]) {
+html:not(.dark) .admin-shell .divide-zinc-800 > :not([hidden]) ~ :not([hidden]),
+html:not(.dark) .creator-shell .divide-zinc-800\/80 > :not([hidden]) ~ :not([hidden]),
+html:not(.dark) .admin-shell .divide-zinc-800\/80 > :not([hidden]) ~ :not([hidden]),
+html:not(.dark) .creator-shell .divide-zinc-800\/60 > :not([hidden]) ~ :not([hidden]),
+html:not(.dark) .admin-shell .divide-zinc-800\/60 > :not([hidden]) ~ :not([hidden]) {
     border-color: var(--app-border) !important;
 }
 
@@ -214,6 +323,12 @@ html:not(.dark) .admin-shell .text-zinc-600 {
     color: #94a3b8 !important;
 }
 
+/* UUID and mono lines in Light Mode */
+html:not(.dark) .font-mono.text-zinc-500,
+html:not(.dark) .font-mono.text-zinc-400 {
+    color: #64748b !important;
+}
+
 /* Hovers in Light Mode */
 html:not(.dark) .creator-shell .hover\:bg-zinc-800:hover,
 html:not(.dark) .admin-shell .hover\:bg-zinc-800:hover,
@@ -237,6 +352,7 @@ html:not(.dark) .admin-shell textarea {
     background-color: #ffffff !important;
     color: #0f172a !important;
     border-color: #cbd5e1 !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
 }
 
 html:not(.dark) .creator-shell input::placeholder,
@@ -252,31 +368,116 @@ html:not(.dark) .creator-shell select:focus,
 html:not(.dark) .admin-shell select:focus,
 html:not(.dark) .creator-shell textarea:focus,
 html:not(.dark) .admin-shell textarea:focus {
+    background-color: #ffffff !important;
     border-color: #059669 !important;
-    box-shadow: 0 0 0 1px #059669 !important;
+    box-shadow: 0 0 0 1px #059669, 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Filter Toolbar panel */
+html:not(.dark) .creator-shell .rounded-xl.border.border-zinc-800.bg-zinc-900\/60,
+html:not(.dark) .admin-shell .rounded-xl.border.border-zinc-800.bg-zinc-900\/60 {
+    background-color: #ffffff !important;
+    border-color: var(--app-border) !important;
+    box-shadow: var(--app-shadow-surface) !important;
+}
+
+/* Top bar search field */
+html:not(.dark) #admin-search-input {
+    background-color: #f8fafc !important;
+    border-color: var(--app-border) !important;
+    color: #0f172a !important;
+    box-shadow: inset 0 1px 1px 0 rgba(0, 0, 0, 0.03);
+}
+html:not(.dark) #admin-search-input:focus {
+    background-color: #ffffff !important;
+    border-color: #059669 !important;
+    box-shadow: 0 0 0 1px #059669, 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
 }
 
 /* Table styling in Light Mode */
+html:not(.dark) .creator-shell table,
+html:not(.dark) .admin-shell table {
+    background-color: #ffffff !important;
+}
+
 html:not(.dark) .creator-shell thead,
 html:not(.dark) .admin-shell thead,
 html:not(.dark) .creator-shell thead tr,
 html:not(.dark) .admin-shell thead tr,
 html:not(.dark) .creator-shell thead th,
 html:not(.dark) .admin-shell thead th {
-    background-color: #f1f5f9 !important;
-    color: #475569 !important;
-    border-bottom: 1px solid #e2e8f0 !important;
+    background-color: var(--app-table-header-bg) !important;
+    color: var(--app-table-header-text) !important;
+    font-weight: 700 !important;
+    border-bottom: 1px solid var(--app-border-strong) !important;
+    letter-spacing: 0.05em !important;
 }
 
 html:not(.dark) .creator-shell tbody tr,
 html:not(.dark) .admin-shell tbody tr {
     background-color: #ffffff !important;
-    border-bottom: 1px solid #e2e8f0 !important;
+    border-bottom: 1px solid var(--app-table-divider) !important;
 }
 
 html:not(.dark) .creator-shell tbody tr:hover,
 html:not(.dark) .admin-shell tbody tr:hover {
+    background-color: var(--app-table-hover) !important;
+}
+
+html:not(.dark) .admin-shell tbody tr.bg-emerald-950\/10 {
+    background-color: #f0fdf4 !important;
+}
+html:not(.dark) .admin-shell tbody tr.bg-emerald-950\/10:hover {
+    background-color: #ecfdf5 !important;
+}
+
+/* Table Action Buttons Hierarchy */
+html:not(.dark) .table-action-inspect,
+html:not(.dark) .admin-shell .table-action-inspect {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+}
+html:not(.dark) .table-action-inspect:hover,
+html:not(.dark) .admin-shell .table-action-inspect:hover {
     background-color: #f8fafc !important;
+    border-color: #94a3b8 !important;
+    color: #0f172a !important;
+}
+
+html:not(.dark) .table-action-listen,
+html:not(.dark) .admin-shell .table-action-listen {
+    background-color: #ecfdf5 !important;
+    border: 1px solid #a7f3d0 !important;
+    color: #065f46 !important;
+    font-weight: 600 !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+}
+html:not(.dark) .table-action-listen:hover,
+html:not(.dark) .admin-shell .table-action-listen:hover {
+    background-color: #d1fae5 !important;
+    border-color: #6ee7b7 !important;
+    color: #047857 !important;
+}
+
+html:not(.dark) .table-action-studio,
+html:not(.dark) .table-action-embed,
+html:not(.dark) .admin-shell .table-action-studio,
+html:not(.dark) .admin-shell .table-action-embed {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #475569 !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+}
+html:not(.dark) .table-action-studio:hover,
+html:not(.dark) .table-action-embed:hover,
+html:not(.dark) .admin-shell .table-action-studio:hover,
+html:not(.dark) .admin-shell .table-action-embed:hover {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
 }
 
 /* Dropdowns, Details, and Menus in Light Mode */
@@ -285,6 +486,42 @@ html:not(.dark) .admin-shell details .absolute {
     background-color: #ffffff !important;
     border-color: var(--app-border) !important;
     box-shadow: var(--app-shadow-dropdown) !important;
+}
+
+/* Theme selector compact bar in top bar */
+html:not(.dark) .theme-selector-compact {
+    background-color: #f1f5f4 !important;
+    border-color: var(--app-border) !important;
+    box-shadow: inset 0 1px 1px 0 rgba(0, 0, 0, 0.04) !important;
+}
+html:not(.dark) .theme-selector-compact .theme-option-btn {
+    color: var(--app-text-muted) !important;
+}
+html:not(.dark) .theme-selector-compact .theme-option-btn:hover {
+    color: #0f172a !important;
+}
+html:not(.dark) .theme-selector-compact .theme-option-btn.theme-option-active {
+    background-color: #ffffff !important;
+    color: #065f46 !important;
+    font-weight: 600 !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.06) !important;
+    border: 1px solid var(--app-border) !important;
+}
+
+/* Expanded theme selector cards */
+html:not(.dark) [data-theme-option] {
+    background-color: #ffffff !important;
+    border-color: var(--app-border) !important;
+    box-shadow: var(--app-shadow-card) !important;
+}
+html:not(.dark) [data-theme-option]:hover {
+    border-color: var(--app-border-strong) !important;
+    box-shadow: var(--app-shadow-card-hover) !important;
+}
+html:not(.dark) [data-theme-option].theme-option-active {
+    background-color: #f0fdf4 !important;
+    border-color: #059669 !important;
+    box-shadow: 0 0 0 1px #059669, var(--app-shadow-card) !important;
 }
 
 /* Success / Emerald badges */
@@ -391,7 +628,7 @@ html:not(.dark) .creator-shell,
 html:not(.dark) .admin-shell,
 html:not(.dark) .billing-page,
 html:not(.dark) .console {
-    --stage-ink: #f8fafc;
+    --stage-ink: #f4f6f5;
     --stage-panel: #ffffff;
     --stage-border: #e2e8f0;
     --stage-cream: #0f172a;
@@ -434,8 +671,17 @@ html:not(.dark) .admin-shell .bg-zinc-800.text-white {
 /* Gradients in Light Mode */
 html:not(.dark) .creator-shell .bg-gradient-to-br.from-zinc-900\/90,
 html:not(.dark) .admin-shell .bg-gradient-to-br.from-zinc-900\/90 {
-    background-image: none !important;
+    background-image: linear-gradient(135deg, #ffffff 0%, #f9fbfa 100%) !important;
     background-color: #ffffff !important;
+    border-color: var(--app-border) !important;
+    box-shadow: var(--app-shadow-card) !important;
+}
+html:not(.dark) .creator-shell .border-red-500\/50.bg-gradient-to-br,
+html:not(.dark) .admin-shell .border-red-500\/50.bg-gradient-to-br {
+    background-image: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%) !important;
+    background-color: #ffffff !important;
+    border-color: #fca5a5 !important;
+    box-shadow: 0 4px 12px 0 rgba(239, 68, 68, 0.08) !important;
 }
 html:not(.dark) .creator-shell .from-red-950\/40,
 html:not(.dark) .admin-shell .from-red-950\/40 {

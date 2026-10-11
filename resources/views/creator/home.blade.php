@@ -367,9 +367,11 @@
             <a href="{{ route('admin.events.index') }}" class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 transition hover:border-zinc-700 hover:bg-zinc-900/80">
                 <div class="flex items-center justify-between text-xs text-zinc-400">
                     <span class="uppercase tracking-wider font-semibold">Broadcasts This Month</span>
-                    <svg class="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
-                    </svg>
+                    <div class="h-6 w-6 rounded-md bg-emerald-950/60 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-800/40">
+                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                        </svg>
+                    </div>
                 </div>
                 <div class="mt-2 text-2xl sm:text-3xl font-bold text-white font-mono">{{ number_format($broadcastsThisMonth) }}</div>
                 <div class="mt-1 text-[11px] text-zinc-400">Services on air since 1st</div>
@@ -379,9 +381,11 @@
             <a href="{{ route('admin.events.index') }}" class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 transition hover:border-zinc-700 hover:bg-zinc-900/80">
                 <div class="flex items-center justify-between text-xs text-zinc-400">
                     <span class="uppercase tracking-wider font-semibold">Upcoming Events</span>
-                    <svg class="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 9v7.5" />
-                    </svg>
+                    <div class="h-6 w-6 rounded-md bg-zinc-800/80 text-zinc-400 flex items-center justify-center shrink-0 border border-zinc-700/60">
+                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 9v7.5" />
+                        </svg>
+                    </div>
                 </div>
                 <div class="mt-2 text-2xl sm:text-3xl font-bold text-white font-mono">{{ number_format($upcomingEventsCount) }}</div>
                 <div class="mt-1 text-[11px] text-zinc-400">Scheduled on calendar</div>
@@ -391,9 +395,11 @@
             <a href="{{ route('archive.index') }}" class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 transition hover:border-zinc-700 hover:bg-zinc-900/80">
                 <div class="flex items-center justify-between text-xs text-zinc-400">
                     <span class="uppercase tracking-wider font-semibold">Podcasts Published</span>
-                    <svg class="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="m9 9 10.5-3m0 6.553v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66a.75.75 0 0 0 .582-.726V9.66a.75.75 0 0 0-.54-.723L9.75 6.375A.75.75 0 0 0 9 7.098v9.704a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66a.75.75 0 0 0 .582-.726V9Z" />
-                    </svg>
+                    <div class="h-6 w-6 rounded-md bg-zinc-800/80 text-zinc-400 flex items-center justify-center shrink-0 border border-zinc-700/60">
+                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m9 9 10.5-3m0 6.553v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66a.75.75 0 0 0 .582-.726V9.66a.75.75 0 0 0-.54-.723L9.75 6.375A.75.75 0 0 0 9 7.098v9.704a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66a.75.75 0 0 0 .582-.726V9Z" />
+                        </svg>
+                    </div>
                 </div>
                 <div class="mt-2 text-2xl sm:text-3xl font-bold text-white font-mono">{{ number_format($publishedPodcastsCount) }}</div>
                 <div class="mt-1 text-[11px] text-zinc-400">{{ number_format($totalRecordingsCount) }} total recordings</div>
@@ -404,9 +410,11 @@
                 <a href="{{ route('admin.analytics.index') }}" class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 transition hover:border-zinc-700 hover:bg-zinc-900/80">
                     <div class="flex items-center justify-between text-xs text-zinc-400">
                         <span class="uppercase tracking-wider font-semibold">Listeners (30d)</span>
-                        <svg class="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-                        </svg>
+                        <div class="h-6 w-6 rounded-md bg-emerald-950/60 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-800/40">
+                            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                            </svg>
+                        </div>
                     </div>
                     <div class="mt-2 text-2xl sm:text-3xl font-bold text-emerald-400 font-mono">{{ number_format($uniqueListeners30d ?? 0) }}</div>
                     <div class="mt-1 text-[11px] text-zinc-400">Confirmed unique listeners</div>

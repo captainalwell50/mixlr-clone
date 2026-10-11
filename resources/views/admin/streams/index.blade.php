@@ -29,7 +29,9 @@
         <a href="{{ route('admin.streams.index', ['status' => 'live']) }}" class="rounded-xl border p-3.5 transition {{ request('status') === 'live' ? 'border-emerald-600 bg-emerald-950/40 text-emerald-300' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/80' }}">
             <div class="flex items-center justify-between text-xs text-zinc-400">
                 <span class="uppercase tracking-wider font-semibold">Live Now</span>
-                <span class="h-2 w-2 rounded-full {{ $liveCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600' }}"></span>
+                <div class="h-6 w-6 rounded-md bg-emerald-950/60 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-800/40">
+                    <span class="h-2 w-2 rounded-full {{ $liveCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600' }}"></span>
+                </div>
             </div>
             <div class="mt-1 text-2xl font-bold text-white">{{ number_format($liveCount) }}</div>
             <div class="mt-1 text-[11px] text-zinc-500">Currently broadcasting</div>
@@ -38,9 +40,11 @@
         <a href="{{ route('admin.streams.index') }}" class="rounded-xl border p-3.5 transition {{ !request()->has('status') && !request()->has('q') && !request()->has('organization_id') ? 'border-emerald-700/60 bg-emerald-950/30' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/80' }}">
             <div class="flex items-center justify-between text-xs text-zinc-400">
                 <span class="uppercase tracking-wider font-semibold">Total Streams</span>
-                <svg class="h-4 w-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.348 14.652a3.75 3.75 0 0 1 0-5.304m5.304 0a3.75 3.75 0 0 1 0 5.304m-7.425 2.121a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-                </svg>
+                <div class="h-6 w-6 rounded-md bg-zinc-800/80 text-zinc-400 flex items-center justify-center shrink-0 border border-zinc-700/60">
+                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.348 14.652a3.75 3.75 0 0 1 0-5.304m5.304 0a3.75 3.75 0 0 1 0 5.304m-7.425 2.121a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                    </svg>
+                </div>
             </div>
             <div class="mt-1 text-2xl font-bold text-white">{{ number_format($totalCount) }}</div>
             <div class="mt-1 text-[11px] text-zinc-500">Configured endpoints</div>
@@ -49,9 +53,11 @@
         <a href="{{ route('admin.events.index') }}" class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-3.5 transition hover:bg-zinc-900/80">
             <div class="flex items-center justify-between text-xs text-zinc-400">
                 <span class="uppercase tracking-wider font-semibold">Broadcasts Today</span>
-                <svg class="h-4 w-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 9v7.5" />
-                </svg>
+                <div class="h-6 w-6 rounded-md bg-zinc-800/80 text-zinc-400 flex items-center justify-center shrink-0 border border-zinc-700/60">
+                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 9v7.5" />
+                    </svg>
+                </div>
             </div>
             <div class="mt-1 text-2xl font-bold text-white">{{ number_format($broadcastsToday) }}</div>
             <div class="mt-1 text-[11px] text-zinc-500">Services since 00:00</div>
@@ -60,7 +66,9 @@
         <a href="{{ route('admin.streams.index', ['status' => 'offline']) }}" class="rounded-xl border p-3.5 transition {{ request('status') === 'offline' ? 'border-zinc-600 bg-zinc-800/60' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/80' }}">
             <div class="flex items-center justify-between text-xs text-zinc-400">
                 <span class="uppercase tracking-wider font-semibold">Offline</span>
-                <span class="h-2 w-2 rounded-full bg-zinc-600"></span>
+                <div class="h-6 w-6 rounded-md bg-zinc-800/80 text-zinc-400 flex items-center justify-center shrink-0 border border-zinc-700/60">
+                    <span class="h-2 w-2 rounded-full bg-zinc-500"></span>
+                </div>
             </div>
             <div class="mt-1 text-2xl font-bold text-zinc-300">{{ number_format($offlineCount) }}</div>
             <div class="mt-1 text-[11px] text-zinc-500">Standby streams</div>
@@ -230,7 +238,7 @@
                                     <!-- Primary: Inspect -->
                                     <a
                                         href="{{ route('admin.streams.edit', $stream) }}"
-                                        class="inline-flex items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-100 hover:bg-zinc-700 hover:text-white transition"
+                                        class="table-action-inspect inline-flex items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-100 hover:bg-zinc-700 hover:text-white transition"
                                     >
                                         <span>Inspect</span>
                                     </a>
@@ -240,7 +248,7 @@
                                         href="{{ route('listen.stream', $stream) }}"
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        class="inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
+                                        class="table-action-listen inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
                                         title="Open public listener"
                                     >
                                         Listen
@@ -251,7 +259,7 @@
                                         href="{{ route('admin.streams.studio', $stream) }}"
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        class="inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
+                                        class="table-action-studio inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
                                         title="Launch Studio broadcast console"
                                     >
                                         Studio
@@ -262,7 +270,7 @@
                                         href="{{ route('embed.stream', $stream) }}"
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        class="inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition"
+                                        class="table-action-embed inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition"
                                         title="View audio embed player"
                                     >
                                         Embed
