@@ -37,6 +37,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
   final _sessionKey = const Uuid().v4();
 
   String? _streamUuid;
+  final Map<String, String> _streamCapabilities = {};
   ListenPayload? _payload;
   String? _error;
   bool _loading = false;
@@ -51,6 +52,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
   bool _scriptureEnabled = false;
   ScriptureCue? _scripture;
   SongCue? _song;
+  NdiCue? _ndi;
   Duration _listened = Duration.zero;
   bool _uiAttached = false;
   bool _observed = false;
@@ -96,6 +98,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
   bool get scriptureEnabled => _scriptureEnabled;
   ScriptureCue? get scripture => _scripture;
   SongCue? get song => _song;
+  NdiCue? get ndi => _ndi;
   Duration get listened => _listened;
   DateTime? get listenStartedAt => _listenStartedAt;
   bool get uiAttached => _uiAttached;
@@ -269,8 +272,10 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
       _playing = false;
       if (_streamUuid != uuid) return;
 
-      final payload =
-          await _auth.api.listen(uuid).timeout(const Duration(seconds: 15));
+      final cachedCapability = _streamCapabilities[uuid];
+      final payload = await _auth.api
+          .listen(uuid, mediaCapability: cachedCapability)
+          .timeout(const Duration(seconds: 15));
       if (_streamUuid != uuid) return;
 
       _payload = payload;
@@ -282,6 +287,20 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
         creatorType: payload.creatorType,
       );
       notifyListeners();
+
+      if (payload.isPasswordRequired) {
+        _streamCapabilities.remove(uuid);
+        _loading = false;
+        _connecting = false;
+        _playing = false;
+        _error = null;
+        notifyListeners();
+        return;
+      }
+
+      if (payload.capability != null && payload.capability!.isNotEmpty) {
+        _streamCapabilities[uuid] = payload.capability!;
+      }
 
       if (!payload.isLive) {
         _loading = false;
@@ -370,6 +389,110 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<bool> unlockWithPassword(String password, {BuildContext? context}) async {
+    final uuid = _streamUuid;
+    if (uuid == null || uuid.isEmpty) return false;
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final payload = await _auth.api.unlockStream(uuid, password);
+      if (payload.capability != null && payload.capability!.isNotEmpty) {
+        _streamCapabilities[uuid] = payload.capability!;
+      }
+      _payload = payload;
+      _error = null;
+      _loading = false;
+      _connecting = true;
+      _userWantsPlay = true;
+      _hasUserPaused = false;
+      notifyListeners();
+
+      final started = await _startMedia(payload);
+      if (started) {
+        _connecting = false;
+        _error = null;
+        notifyListeners();
+        final ctx = context;
+        unawaited(syncForegroundService(
+          playing: true,
+          context: (ctx != null && ctx.mounted) ? ctx : null,
+        ));
+      } else {
+        _connecting = false;
+        _error = null;
+        notifyListeners();
+        _scheduleListenReconnect();
+      }
+
+      unawaited(pingPresence());
+      unawaited(refreshScripture());
+      _startStatusWatch();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      _connecting = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'That access password wasn\'t accepted.';
+      _loading = false;
+      _connecting = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  bool get isFollowing => _payload?.following ?? false;
+
+  Future<bool> toggleFollow(BuildContext context, {Future<bool> Function()? onRequireLogin}) async {
+    final uuid = _streamUuid;
+    final p = _payload;
+    if (uuid == null || p == null) return false;
+
+    if (!_auth.isLoggedIn) {
+      if (onRequireLogin != null) {
+        final loggedIn = await onRequireLogin();
+        if (!loggedIn) return false;
+      } else {
+        return false;
+      }
+    }
+
+    try {
+      final wasFollowing = p.following;
+      final result = wasFollowing
+          ? await _auth.api.unfollowStream(uuid)
+          : await _auth.api.followStream(uuid);
+
+      _payload = p.copyWith(following: result.following);
+      notifyListeners();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return true;
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _startStatusWatch() {
     _statusTimer?.cancel();
     if (_streamUuid == null) return;
@@ -414,6 +537,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
               whepUrl: _payload!.whepUrl,
               playbackMode: _payload!.playbackMode,
               preferHls: _payload!.preferHls,
+              privateListen: _payload!.privateListen,
               orgName: _payload!.orgName,
               orgSlug: _payload!.orgSlug,
               themeColor: _payload!.themeColor,
@@ -476,6 +600,15 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> _startMedia(ListenPayload payload) async {
     _startingMedia = true;
     try {
+      if (payload.privateListen) {
+        final whepOk = await _tryWhep(payload.whepUrl);
+        if (whepOk) {
+          _whepSucceeded = true;
+          return true;
+        }
+        return false;
+      }
+
       final preferHls =
           payload.preferHls || payload.playbackMode == 'hls' || _hlsSucceeded;
       final stickToWhep = _whepSucceeded && !preferHls;
@@ -708,10 +841,11 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     final payload = _payload;
     if (uuid == null) return;
     if (payload?.creatorType != null && !payload!.isChurch) {
-      if (_scriptureEnabled || _scripture != null || _song != null) {
+      if (_scriptureEnabled || _scripture != null || _song != null || _ndi != null) {
         _scriptureEnabled = false;
         _scripture = null;
         _song = null;
+        _ndi = null;
         notifyListeners();
       }
       return;
@@ -726,11 +860,13 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
           await _auth.api.scripture(uuid).timeout(const Duration(seconds: 8));
       final changed = _scriptureEnabled != result.enabled ||
           _scripture != result.cue ||
-          _song != result.song;
+          _song != result.song ||
+          _ndi != result.ndi;
       if (!changed) return;
       _scriptureEnabled = result.enabled;
       _scripture = result.cue;
       _song = result.song;
+      _ndi = result.ndi;
       notifyListeners();
       if (result.enabled) {
         _channel.select(
@@ -912,6 +1048,7 @@ class ListenController extends ChangeNotifier with WidgetsBindingObserver {
     _scriptureEnabled = false;
     _scripture = null;
     _song = null;
+    _ndi = null;
     _listeners = 0;
     _likes = 0;
     notifyListeners();

@@ -4,11 +4,14 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CreatorApiController;
 use App\Http\Controllers\Api\GalleryApiController;
 use App\Http\Controllers\Api\ListenApiController;
+use App\Http\Controllers\Api\NdiApiController;
 use App\Http\Controllers\Api\ScriptureApiController;
 use App\Http\Controllers\Api\SongApiController;
 use App\Http\Controllers\Api\StudioLibraryApiController;
+use App\Http\Controllers\Api\VmCapacityController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\StreamEngageController;
+use App\Http\Controllers\StudioSessionController;
 use App\Http\Controllers\Webhooks\MediaMtxAuthController;
 use App\Http\Controllers\Webhooks\MediaMtxWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -18,6 +21,9 @@ Route::post('/webhooks/mediamtx', MediaMtxWebhookController::class)
 
 Route::post('/mediamtx/auth', MediaMtxAuthController::class)
     ->middleware('throttle:600,1');
+
+Route::get('/ops/vm-capacity', VmCapacityController::class)
+    ->middleware('throttle:60,1');
 
 Route::prefix('v1')->group(function (): void {
     Route::post('/auth/login', [AuthController::class, 'login'])
@@ -38,6 +44,9 @@ Route::prefix('v1')->group(function (): void {
     Route::get('/listen/{stream}/chat', [ChatController::class, 'index'])
         ->middleware('throttle:listen-poll')
         ->name('api.listen.chat');
+    Route::post('/listen/{stream}/unlock', [ListenApiController::class, 'unlock'])
+        ->middleware('throttle:30,1')
+        ->name('api.listen.unlock');
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -51,9 +60,18 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/auth/avatar', [AuthController::class, 'updateAvatar'])
             ->middleware('throttle:20,1');
 
+        Route::post('/listen/{stream}/follow', [ListenApiController::class, 'follow'])
+            ->middleware('throttle:30,1')
+            ->name('api.listen.follow');
+        Route::delete('/listen/{stream}/follow', [ListenApiController::class, 'unfollow'])
+            ->middleware('throttle:30,1')
+            ->name('api.listen.unfollow');
+
         Route::get('/creator/home', [CreatorApiController::class, 'home']);
         Route::get('/streams/{stream}/publish', [CreatorApiController::class, 'publish']);
         Route::post('/streams/{stream}/go-live', [CreatorApiController::class, 'goLive']);
+        Route::post('/streams/{stream}/publisher-claim', [StudioSessionController::class, 'publisherClaim'])
+            ->middleware('throttle:60,1');
         Route::post('/streams/{stream}/pause', [CreatorApiController::class, 'pause']);
         Route::post('/streams/{stream}/end', [CreatorApiController::class, 'end']);
 
@@ -105,6 +123,11 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('/streams/{stream}/songs/{song}', [SongApiController::class, 'destroy'])
             ->middleware('throttle:60,1');
         Route::post('/streams/{stream}/songs/{song}/cue', [SongApiController::class, 'cue'])
+            ->middleware('throttle:60,1');
+
+        Route::post('/streams/{stream}/ndi', [NdiApiController::class, 'store'])
+            ->middleware('throttle:180,1');
+        Route::delete('/streams/{stream}/ndi', [NdiApiController::class, 'destroy'])
             ->middleware('throttle:60,1');
 
         Route::post('/listen/{stream}/like', [StreamEngageController::class, 'like'])

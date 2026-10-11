@@ -243,12 +243,15 @@ class ListenPayload {
     required this.uuid,
     required this.title,
     required this.status,
+    this.access = 'granted',
+    this.capability,
     this.description,
     this.chatEnabled = true,
     this.hlsUrl,
     this.whepUrl,
     this.playbackMode = 'whep',
     this.preferHls = false,
+    this.privateListen = false,
     this.orgName,
     this.orgSlug,
     this.themeColor,
@@ -256,11 +259,14 @@ class ListenPayload {
     this.artworkUrl,
     this.creatorType,
     this.giving,
+    this.following = false,
   });
 
   final String uuid;
   final String title;
   final String status;
+  final String access;
+  final String? capability;
   final String? description;
   final bool chatEnabled;
   final String? hlsUrl;
@@ -268,6 +274,10 @@ class ListenPayload {
   /// Server primary mode for public listen: `hls` or `whep`.
   final String playbackMode;
   final bool preferHls;
+
+  /// Private events are WHEP-only. HLS is omitted because native players do
+  /// not attach the media capability to every segment.
+  final bool privateListen;
   final String? orgName;
   final String? orgSlug;
   final String? themeColor;
@@ -276,9 +286,57 @@ class ListenPayload {
   final String? artworkUrl;
   final String? creatorType;
   final GivingInfo? giving;
+  final bool following;
 
   bool get isLive => status == 'live';
   bool get isChurch => creatorType == 'church';
+  bool get isPasswordRequired => access == 'password_required';
+  bool get isAccessGranted => access == 'granted' || access == 'public';
+
+  ListenPayload copyWith({
+    String? title,
+    String? status,
+    String? access,
+    String? capability,
+    String? description,
+    bool? chatEnabled,
+    String? hlsUrl,
+    String? whepUrl,
+    String? playbackMode,
+    bool? preferHls,
+    bool? privateListen,
+    String? orgName,
+    String? orgSlug,
+    String? themeColor,
+    String? logoUrl,
+    String? artworkUrl,
+    String? creatorType,
+    GivingInfo? giving,
+    bool? following,
+  }) {
+    return ListenPayload(
+      uuid: uuid,
+      title: title ?? this.title,
+      status: status ?? this.status,
+      access: access ?? this.access,
+      capability: capability ?? this.capability,
+      description: description ?? this.description,
+      chatEnabled: chatEnabled ?? this.chatEnabled,
+      hlsUrl: hlsUrl ?? this.hlsUrl,
+      whepUrl: whepUrl ?? this.whepUrl,
+      playbackMode: playbackMode ?? this.playbackMode,
+      preferHls: preferHls ?? this.preferHls,
+      privateListen: privateListen ?? this.privateListen,
+      orgName: orgName ?? this.orgName,
+      orgSlug: orgSlug ?? this.orgSlug,
+      themeColor: themeColor ?? this.themeColor,
+      logoUrl: logoUrl ?? this.logoUrl,
+      artworkUrl: artworkUrl ?? this.artworkUrl,
+      creatorType: creatorType ?? this.creatorType,
+      giving: giving ?? this.giving,
+      following: following ?? this.following,
+    );
+  }
 
   factory ListenPayload.fromJson(Map<String, dynamic> json) {
     final stream = asStringKeyMap(json['stream']) ?? {};
@@ -287,19 +345,28 @@ class ListenPayload {
     if (uuid.isEmpty) {
       throw const FormatException('Listen payload missing stream uuid');
     }
-    final preferHls = jsonFlag(stream['prefer_hls']);
-    final playbackMode = stream['playback_mode'] as String? ??
-        (preferHls ? 'hls' : 'whep');
+    final privateListen = jsonFlag(stream['private_listen']);
+    final preferHls = privateListen ? false : jsonFlag(stream['prefer_hls']);
+    final playbackMode = privateListen
+        ? 'whep'
+        : (stream['playback_mode'] as String? ?? (preferHls ? 'hls' : 'whep'));
+    final access = json['access'] as String? ??
+        (privateListen ? 'password_required' : 'public');
+    final capability = json['capability'] as String?;
+
     return ListenPayload(
       uuid: uuid,
       title: stream['title'] as String? ?? 'Live',
       status: stream['status'] as String? ?? 'offline',
+      access: access,
+      capability: capability,
       description: stream['description'] as String?,
       chatEnabled: stream['chat_enabled'] as bool? ?? true,
-      hlsUrl: stream['hls_url'] as String?,
+      hlsUrl: privateListen ? null : stream['hls_url'] as String?,
       whepUrl: stream['whep_url'] as String?,
       playbackMode: playbackMode,
-      preferHls: preferHls || playbackMode == 'hls',
+      preferHls: privateListen ? false : (preferHls || playbackMode == 'hls'),
+      privateListen: privateListen,
       orgName: org?['name'] as String?,
       orgSlug: org?['slug'] as String?,
       themeColor: org?['theme_color'] as String?,
@@ -307,6 +374,7 @@ class ListenPayload {
       artworkUrl: org?['artwork_url'] as String?,
       creatorType: org?['creator_type'] as String?,
       giving: GivingInfo.tryParse(org?['giving']),
+      following: jsonFlag(org?['following']),
     );
   }
 }
@@ -343,6 +411,32 @@ class ScriptureCue {
 
   @override
   int get hashCode => Object.hash(ref, text, version, updatedAt);
+}
+
+class NdiCue {
+  NdiCue({required this.source, required this.imageUrl, this.updatedAt});
+
+  final String source;
+  final String imageUrl;
+  final String? updatedAt;
+
+  factory NdiCue.fromJson(Map<String, dynamic> json) {
+    return NdiCue(
+      source: json['source'] as String? ?? 'NDI',
+      imageUrl: json['image_url'] as String? ?? '',
+      updatedAt: json['updated_at'] as String?,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is NdiCue &&
+      other.source == source &&
+      other.imageUrl == imageUrl &&
+      other.updatedAt == updatedAt;
+
+  @override
+  int get hashCode => Object.hash(source, imageUrl, updatedAt);
 }
 
 /// Last successful listen-board cue wins. Song only shows when it is newer
@@ -475,12 +569,14 @@ class PublishInfo {
     this.hlsUrl,
     this.whepUrl,
     this.stream,
+    this.opusSendBitrate = 320000,
   });
 
   final String whipUrl;
   final String? hlsUrl;
   final String? whepUrl;
   final StreamSummary? stream;
+  final int opusSendBitrate;
 
   factory PublishInfo.fromJson(Map<String, dynamic> json) {
     final streamJson = json['stream'] as Map<String, dynamic>?;
@@ -489,6 +585,30 @@ class PublishInfo {
       hlsUrl: json['hls_url'] as String?,
       whepUrl: json['whep_url'] as String?,
       stream: streamJson == null ? null : StreamSummary.fromJson(streamJson),
+      opusSendBitrate: json['opus_send_bitrate'] as int? ?? 320000,
+    );
+  }
+}
+
+class ChatMessageItem {
+  ChatMessageItem({
+    required this.id,
+    required this.name,
+    required this.body,
+    this.at,
+  });
+
+  final int id;
+  final String name;
+  final String body;
+  final String? at;
+
+  factory ChatMessageItem.fromJson(Map<String, dynamic> json) {
+    return ChatMessageItem(
+      id: json['id'] as int? ?? 0,
+      name: json['name'] as String? ?? 'Listener',
+      body: json['body'] as String? ?? '',
+      at: json['at'] as String?,
     );
   }
 }

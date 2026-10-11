@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Webhooks;
 
 use App\Http\Controllers\Controller;
 use App\Models\Stream;
+use App\Support\ListenerMediaCapability;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -31,10 +32,33 @@ class MediaMtxAuthController extends Controller
         }
 
         return match ($action) {
-            'read', 'playback' => response('ok', Response::HTTP_OK),
+            'read', 'playback' => $this->authorizeListen($request, $stream),
             'publish' => $this->authorizePublish($request, $stream, $parsed['aac']),
             default => response('forbidden', Response::HTTP_FORBIDDEN),
         };
+    }
+
+    /**
+     * Public and unlisted programmes stay open. A live or paused private event
+     * requires a short-lived listen capability. Deny with 403 so MediaMTX does
+     * not answer the browser with a Basic-auth challenge.
+     */
+    private function authorizeListen(Request $request, Stream $stream): Response
+    {
+        $capability = app(ListenerMediaCapability::class);
+        $gate = $capability->gateEvent($stream);
+        // The AAC remux reads the primary path from inside the container.
+        // That loopback reader is not a listener. External clients are not 127.0.0.1.
+        if ($gate === null || $this->isLoopbackIp((string) $request->input('ip', ''))) {
+            return response('ok', Response::HTTP_OK);
+        }
+
+        $token = $this->mediaToken($request);
+        if ($token === '' || ! $capability->accepts($token, $stream, $gate)) {
+            return response('forbidden', Response::HTTP_FORBIDDEN);
+        }
+
+        return response('ok', Response::HTTP_OK);
     }
 
     private function authorizePublish(Request $request, Stream $stream, bool $aacSidecar): Response
@@ -114,6 +138,20 @@ class MediaMtxAuthController extends Controller
         }
 
         return true;
+    }
+
+    private function mediaToken(Request $request): string
+    {
+        $query = (string) $request->input('query', '');
+        if ($query !== '') {
+            parse_str($query, $params);
+            $token = $params[ListenerMediaCapability::QUERY_KEY] ?? null;
+            if (is_string($token) && $token !== '') {
+                return $token;
+            }
+        }
+
+        return '';
     }
 
     /**

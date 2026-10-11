@@ -176,6 +176,20 @@ class ApiClient {
     return PublishInfo.fromJson(data);
   }
 
+  Future<({bool owns, bool replaced})> publisherClaim(
+    String streamUuid, {
+    required String claim,
+    required String intent,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/publisher-claim'),
+      headers: _headers(auth: true, contentType: 'application/json'),
+      body: jsonEncode({'claim': claim, 'intent': intent}),
+    );
+    final data = await _json(response, fallback: 'Could not check the publisher');
+    return (owns: data['owns'] == true, replaced: data['replaced'] == true);
+  }
+
   Future<PublishInfo> goLive(String streamUuid) async {
     final response = await _client.post(
       Uri.parse('${AppConfig.apiV1}/streams/$streamUuid/go-live'),
@@ -187,6 +201,7 @@ class ApiClient {
       whipUrl: publish['whip_url'] as String? ?? '',
       hlsUrl: publish['hls_url'] as String?,
       whepUrl: publish['whep_url'] as String?,
+      opusSendBitrate: publish['opus_send_bitrate'] as int? ?? 320000,
       stream: data['stream'] == null
           ? null
           : StreamSummary.fromJson(data['stream'] as Map<String, dynamic>),
@@ -222,9 +237,13 @@ class ApiClient {
         .toList();
   }
 
-  Future<ListenPayload> listen(String streamUuid) async {
+  Future<ListenPayload> listen(String streamUuid, {String? mediaCapability}) async {
+    final baseUri = Uri.parse('${AppConfig.apiV1}/listen/$streamUuid');
+    final uri = (mediaCapability != null && mediaCapability.isNotEmpty)
+        ? baseUri.replace(queryParameters: {'media': mediaCapability})
+        : baseUri;
     final response = await _client.get(
-      Uri.parse('${AppConfig.apiV1}/listen/$streamUuid'),
+      uri,
       headers: _headers(auth: _token != null),
     );
     final data = await _json(response, fallback: 'Stream not found');
@@ -266,10 +285,54 @@ class ApiClient {
     return data['likes'] as int? ?? 0;
   }
 
+  Future<ListenPayload> unlockStream(String streamUuid, String password) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/listen/$streamUuid/unlock'),
+      headers: _headers(
+        auth: _token != null,
+        contentType: 'application/json',
+      ),
+      body: jsonEncode({'password': password}),
+    );
+    final data = await _json(response, fallback: 'Incorrect password');
+    return ListenPayload.fromJson(data);
+  }
+
+  Future<({bool enabled, bool requiresAuth, List<ChatMessageItem> messages})>
+      fetchChat(String streamUuid, {int afterId = 0}) async {
+    final uri = Uri.parse('${AppConfig.apiV1}/listen/$streamUuid/chat').replace(
+      queryParameters: afterId > 0 ? {'after': '$afterId'} : null,
+    );
+    final response = await _client.get(
+      uri,
+      headers: _headers(auth: _token != null),
+    );
+    final data = await _json(response, fallback: 'Chat unavailable');
+    final enabled = jsonFlag(data['enabled']);
+    final requiresAuth = jsonFlag(data['requires_auth']);
+    final list = (data['messages'] as List<dynamic>? ?? [])
+        .map((e) => ChatMessageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (enabled: enabled, requiresAuth: requiresAuth, messages: list);
+  }
+
+  Future<ChatMessageItem> sendChat(String streamUuid, String body) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/listen/$streamUuid/chat'),
+      headers: _headers(
+        auth: true,
+        contentType: 'application/json',
+      ),
+      body: jsonEncode({'body': body}),
+    );
+    final data = await _json(response, fallback: 'Could not send message');
+    final msg = asStringKeyMap(data['message']) ?? data;
+    return ChatMessageItem.fromJson(msg);
+  }
+
   /// Public listen-portal scripture/song poll (same as web `/listen/{uuid}/scripture`).
-  Future<({bool enabled, ScriptureCue? cue, SongCue? song})> scripture(
-    String streamUuid,
-  ) async {
+  Future<({bool enabled, String? liveBoard, ScriptureCue? cue, SongCue? song, NdiCue? ndi})>
+      scripture(String streamUuid) async {
     final response = await _client.get(
       Uri.parse('${AppConfig.apiBase}/listen/$streamUuid/scripture'),
       headers: _headers(auth: _token != null),
@@ -292,7 +355,17 @@ class ApiClient {
         song = parsed;
       }
     }
-    return (enabled: enabled, cue: cue, song: song);
+    NdiCue? ndi;
+    final ndiRaw = asStringKeyMap(data['ndi']);
+    if (ndiRaw != null) {
+      final parsed = NdiCue.fromJson(ndiRaw);
+      if (parsed.imageUrl.isNotEmpty) {
+        ndi = parsed;
+      }
+    }
+    final liveBoard =
+        data['live_board'] is String ? data['live_board'] as String : null;
+    return (enabled: enabled, liveBoard: liveBoard, cue: cue, song: song, ndi: ndi);
   }
 
   /// Public listen-portal gallery (same as web `/listen/{uuid}/gallery`).
@@ -312,5 +385,29 @@ class ApiClient {
         .whereType<GalleryItem>()
         .where((item) => item.url.isNotEmpty)
         .toList();
+  }
+
+  Future<({bool following, String message})> followStream(String streamUuid) async {
+    final response = await _client.post(
+      Uri.parse('${AppConfig.apiV1}/listen/$streamUuid/follow'),
+      headers: _headers(auth: true),
+    );
+    final data = await _json(response, fallback: 'Could not follow channel');
+    return (
+      following: jsonFlag(data['following']),
+      message: data['message'] as String? ?? 'Following channel.',
+    );
+  }
+
+  Future<({bool following, String message})> unfollowStream(String streamUuid) async {
+    final response = await _client.delete(
+      Uri.parse('${AppConfig.apiV1}/listen/$streamUuid/follow'),
+      headers: _headers(auth: true),
+    );
+    final data = await _json(response, fallback: 'Could not unfollow channel');
+    return (
+      following: jsonFlag(data['following']),
+      message: data['message'] as String? ?? 'Unfollowed channel.',
+    );
   }
 }
