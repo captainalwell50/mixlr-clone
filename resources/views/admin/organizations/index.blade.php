@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends(auth()->user()?->isAdmin() ? 'layouts.admin' : 'layouts.app')
 
 @section('title', 'Channels')
 
@@ -20,6 +20,7 @@
                 <tr>
                     <th>Name</th>
                     <th>Slug</th>
+                    <th>Package</th>
                     <th></th>
                 </tr>
             </thead>
@@ -28,6 +29,9 @@
                     <tr>
                         <td class="text-[var(--stage-cream)]">{{ $org->name }}</td>
                         <td class="text-[var(--stage-muted)]">{{ $org->slug }}</td>
+                        <td class="text-[var(--stage-muted)]">
+                            {{ $org->subscription?->plan?->name ?? ($org->subscription?->status?->label() ?? '—') }}
+                        </td>
                         <td class="text-right whitespace-nowrap">
                             <a href="{{ $org->channelUrl() }}" class="console-muted-link" target="_blank">Page</a>
                             <span class="text-[var(--stage-muted)]">·</span>
@@ -40,7 +44,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="3" class="py-8 text-center text-[var(--stage-muted)]">No organizations yet.</td>
+                        <td colspan="4" class="py-8 text-center text-[var(--stage-muted)]">No organizations yet.</td>
                     </tr>
                 @endforelse
             </tbody>

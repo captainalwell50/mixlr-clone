@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Enums\StreamStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Event;
 use App\Models\Organization;
 use App\Models\Stream;
 use Illuminate\Http\RedirectResponse;
@@ -17,16 +18,80 @@ class StreamController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        $query = Stream::query()->with('organization')->latest();
+        $query = Stream::query()->with('organization');
+
+        $manageableOrgs = ! $user->isAdmin()
+            ? $user->manageableOrganizations()->orderBy('name')->get(['organizations.id', 'organizations.name'])
+            : null;
+        $orgIds = $manageableOrgs?->pluck('id');
 
         if (! $user->isAdmin()) {
-            $orgIds = $user->manageableOrganizations()->pluck('organizations.id');
             $query->whereIn('organization_id', $orgIds);
         }
 
-        $streams = $query->paginate(20);
+        $q = trim((string) $request->query('q', ''));
+        if ($q !== '') {
+            $query->where(function ($sub) use ($q) {
+                $sub->where('title', 'like', "%{$q}%")
+                    ->orWhere('uuid', 'like', "%{$q}%")
+                    ->orWhereHas('organization', function ($org) use ($q) {
+                        $org->where('name', 'like', "%{$q}%")
+                            ->orWhere('slug', 'like', "%{$q}%");
+                    });
+            });
+        }
 
-        return view('admin.streams.index', compact('streams'));
+        $status = $request->query('status');
+        if (in_array($status, ['live', 'offline'], true)) {
+            $query->where('status', $status);
+        }
+
+        $organizationId = $request->query('organization_id');
+        if (filled($organizationId)) {
+            $query->where('organization_id', $organizationId);
+        }
+
+        $sort = $request->query('sort', 'latest');
+        match ($sort) {
+            'oldest' => $query->oldest('id'),
+            'title' => $query->orderBy('title'),
+            'status' => $query->orderByDesc('status')->latest('id'),
+            default => $query->latest('id'),
+        };
+
+        $streams = $query->paginate(20)->withQueryString();
+
+        // Operational summary counts
+        $summaryBase = Stream::query();
+        if (! $user->isAdmin()) {
+            $summaryBase->whereIn('organization_id', $orgIds);
+        }
+
+        $liveCount = (clone $summaryBase)->where('status', StreamStatus::Live)->count();
+        $totalCount = (clone $summaryBase)->count();
+        $offlineCount = (clone $summaryBase)->where('status', StreamStatus::Offline)->count();
+
+        $broadcastsToday = Event::query()
+            ->when(! $user->isAdmin(), fn ($eq) => $eq->whereIn('organization_id', $orgIds))
+            ->where('started_at', '>=', now()->startOfDay())
+            ->count();
+
+        $organizations = $user->isAdmin()
+            ? Organization::query()->orderBy('name')->get(['id', 'name'])
+            : $manageableOrgs;
+
+        return view('admin.streams.index', compact(
+            'streams',
+            'q',
+            'status',
+            'organizationId',
+            'sort',
+            'liveCount',
+            'totalCount',
+            'offlineCount',
+            'broadcastsToday',
+            'organizations',
+        ));
     }
 
     public function create(Request $request): View

@@ -17,7 +17,9 @@ class AdminUsersTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.users.index'))
             ->assertOk()
-            ->assertSee('Users');
+            ->assertSee('Users')
+            ->assertSee('Signed up')
+            ->assertSee(\App\Support\LocalTime::format($admin->created_at, 'M j, Y'), false);
 
         $this->actingAs($admin)
             ->post(route('admin.users.store'), [

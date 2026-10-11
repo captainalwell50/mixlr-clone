@@ -9,7 +9,7 @@ class DashboardController extends Controller
     public function __invoke(): RedirectResponse
     {
         if (auth()->user()?->is_admin) {
-            return redirect()->route('admin.streams.index');
+            return redirect()->route('admin.dashboard');
         }
 
         if (! auth()->user()?->organizations()->exists()) {

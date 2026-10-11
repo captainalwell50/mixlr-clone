@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends(auth()->user()?->isAdmin() ? 'layouts.admin' : 'layouts.creator')
 
 @section('title', 'Edit event')
 
@@ -56,10 +56,11 @@
             <textarea id="description" name="description" rows="3" class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white">{{ old('description', $event->description) }}</textarea>
         </div>
         <div>
-            <label for="scheduled_at" class="block text-sm text-zinc-300">Scheduled start</label>
+            <label for="scheduled_at" class="block text-sm text-zinc-300">Scheduled start (Nigeria time)</label>
             <input id="scheduled_at" type="datetime-local" name="scheduled_at"
-                value="{{ old('scheduled_at', $event->scheduled_at?->format('Y-m-d\TH:i')) }}"
+                value="{{ old('scheduled_at', \App\Support\LocalTime::formValue($event->scheduled_at)) }}"
                 class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white">
+            <p class="mt-1 text-xs text-zinc-500">WAT · GMT+1</p>
         </div>
         <div>
             <label for="access" class="block text-sm text-zinc-300">Access</label>

@@ -28,7 +28,11 @@ class EventController extends Controller
             $query->whereIn('organization_id', $orgIds);
         }
 
-        $events = $query->paginate(20);
+        if ($request->has('status') && in_array($request->query('status'), ['live', 'scheduled', 'ended', 'paused'], true)) {
+            $query->where('status', $request->query('status'));
+        }
+
+        $events = $query->paginate(20)->withQueryString();
 
         return view('admin.events.index', compact('events'));
     }
@@ -157,6 +161,9 @@ class EventController extends Controller
 
         $data['chat_enabled'] = $request->boolean('chat_enabled', true);
         $data['show_listener_count'] = $request->boolean('show_listener_count', true);
+        $data['scheduled_at'] = \App\Support\LocalTime::parseForm(
+            is_string($data['scheduled_at'] ?? null) ? $data['scheduled_at'] : null
+        );
 
         return $data;
     }

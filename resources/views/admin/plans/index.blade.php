@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.admin')
 
 @section('title', 'Pricing packages')
 
@@ -35,8 +35,8 @@
                             <p class="text-xs text-[var(--stage-muted)]">{{ $plan->slug }}</p>
                         </td>
                         <td class="text-[var(--stage-muted)]">
-                            {{ $plan->amountLabel() }}
-                            @unless ($plan->isFree())
+                            {{ $plan->isCustom() ? 'Contact sales' : $plan->amountLabel() }}
+                            @unless ($plan->isFree() || $plan->isCustom())
                                 <span class="text-xs">/ {{ $plan->interval }}</span>
                             @endunless
                         </td>

@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends(auth()->user()?->isAdmin() ? 'layouts.admin' : 'layouts.app')
 
 @section('title', 'New stream')
 

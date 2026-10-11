@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.admin')
 
 @section('title', 'Users')
 
@@ -38,6 +38,8 @@
                     <th>Email</th>
                     <th>Role</th>
                     <th>Channels</th>
+                    <th>Package</th>
+                    <th>Signed up</th>
                     <th></th>
                 </tr>
             </thead>
@@ -50,13 +52,23 @@
                             {{ $user->is_admin ? 'Platform admin' : 'User' }}
                         </td>
                         <td class="text-[var(--stage-muted)]">{{ $user->organizations_count }}</td>
+                        <td class="text-[var(--stage-muted)]">
+                            @php
+                                $org = $user->organizations->first();
+                                $sub = $org?->subscription;
+                            @endphp
+                            {{ $sub?->plan?->name ?? ($sub ? $sub->status->label() : '—') }}
+                        </td>
+                        <td class="text-[var(--stage-muted)] whitespace-nowrap" title="{{ $user->created_at?->timezone(\App\Support\LocalTime::tz())->toIso8601String() }}">
+                            {{ $user->created_at ? \App\Support\LocalTime::format($user->created_at, 'M j, Y') : '—' }}
+                        </td>
                         <td class="text-right whitespace-nowrap">
                             <a href="{{ route('admin.users.edit', $user) }}" class="console-link">Edit</a>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="text-[var(--stage-muted)]">No users found.</td>
+                        <td colspan="7" class="text-[var(--stage-muted)]">No users found.</td>
                     </tr>
                 @endforelse
             </tbody>

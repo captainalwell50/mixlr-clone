@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.admin')
 
 @section('title', $plan->exists ? 'Edit '.$plan->name : 'New pricing package')
 
@@ -56,6 +56,13 @@
                 <label class="flex items-center gap-2 text-sm mt-6">
                     <input type="checkbox" name="is_active" value="1" @checked(old('is_active', $plan->is_active ?? true))>
                     <span>Active (shown on billing page)</span>
+                </label>
+                <label class="flex items-start gap-2 text-sm mt-6 sm:col-span-2">
+                    <input type="checkbox" name="is_custom" value="1" @checked(old('is_custom', $plan->is_custom ?? false))>
+                    <span>
+                        <span class="block">Contact sales package</span>
+                        <span class="block text-xs text-[var(--stage-muted)]">Hide price and features. Billing shows Contact sales instead of Paystack checkout.</span>
+                    </span>
                 </label>
             </div>
         </section>

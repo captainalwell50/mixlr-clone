@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.admin')
 
 @section('title', $user->exists ? 'Edit '.$user->name : 'New user')
 
@@ -66,13 +66,18 @@
         </section>
 
         @if ($user->exists && $user->organizations->isNotEmpty())
-            <section class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6 space-y-3">
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Channels</h2>
-                <ul class="space-y-2 text-sm">
+            <section class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6 space-y-4">
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Channels &amp; package</h2>
+                <ul class="space-y-4 text-sm">
                     @foreach ($user->organizations as $org)
-                        <li class="flex flex-wrap items-center justify-between gap-2">
-                            <span class="text-[var(--stage-cream)]">{{ $org->name }} <span class="text-[var(--stage-muted)]">({{ $org->pivot->role }})</span></span>
-                            <a href="{{ route('admin.organizations.members', $org) }}" class="console-link">Members</a>
+                        <li class="rounded-lg border border-[var(--stage-border)] p-4 space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <span class="text-[var(--stage-cream)]">{{ $org->name }} <span class="text-[var(--stage-muted)]">({{ $org->pivot->role }})</span></span>
+                                <a href="{{ route('admin.organizations.members', $org) }}" class="console-link">Members</a>
+                            </div>
+                            @if ($plans->isNotEmpty())
+                                @include('admin.partials.assign-plan', ['organization' => $org, 'plans' => $plans])
+                            @endif
                         </li>
                     @endforeach
                 </ul>

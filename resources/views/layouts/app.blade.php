@@ -21,23 +21,31 @@
                 <a href="{{ route('how-it-works') }}">How it works</a>
                 <a href="{{ route('discover') }}">Discover</a>
                 <a href="{{ route('archive.index') }}">Podcasts</a>
+                <a href="{{ route('digital-library.home') }}">Digital Library</a>
                 <a href="{{ route('downloads') }}">Download</a>
                 @auth
                     @if(auth()->user()->is_admin)
-                        <a href="{{ route('admin.events.index') }}">Events</a>
-                        <a href="{{ route('admin.analytics.index') }}">Analytics</a>
-                        <a href="{{ route('admin.organizations.index') }}">Channels</a>
-                        <a href="{{ route('admin.streams.index') }}">Streams</a>
-                        <a href="{{ route('admin.plans.index') }}">Packages</a>
-                        <a href="{{ route('admin.users.index') }}">Users</a>
-                        <a href="{{ route('admin.settings.edit') }}">Settings</a>
+                        <a href="{{ route('admin.dashboard') }}" class="nav-accent">Admin Console</a>
                     @elseif(auth()->user()->organizations()->exists())
                         <a href="{{ route('creator.home') }}">Home</a>
                         <a href="{{ route('admin.events.index') }}">Events</a>
                         <a href="{{ route('admin.streams.index') }}">Streams</a>
+                        @php
+                            $libraryOrganization = auth()->user()->organizations()->wherePivotIn('role', ['owner', 'admin'])->first();
+                        @endphp
+                        @if ($libraryOrganization)
+                            <a href="{{ route('digital-library.sell.show', $libraryOrganization) }}">Digital Library</a>
+                        @endif
+                        @if ($showUpgradeCta ?? false)
+                            <a href="{{ route('billing.plans') }}" class="nav-accent">Upgrade</a>
+                        @endif
                     @else
                         <a href="{{ route('onboarding.show') }}">Set up channel</a>
                     @endif
+                    @if (auth()->user()->affiliateAccount?->canRefer())
+                        <a href="{{ route('affiliate.prospects.index') }}">My prospects</a>
+                    @endif
+                    <a href="{{ route('my-library') }}">My Library</a>
                     <a href="{{ route('account.edit') }}">Account</a>
                     <span class="text-[var(--stage-muted)]">{{ auth()->user()->name }}</span>
                     <form method="POST" action="{{ route('logout') }}" class="inline">
