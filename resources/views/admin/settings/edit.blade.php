@@ -5,7 +5,7 @@
 @section('content')
     <div class="console-head">
         <div>
-            <p class="site-section-label">Operator</p>
+            <p class="site-section-label">Platform Admin</p>
             <h1 class="console-title mt-2">Platform settings</h1>
             <p class="console-lead">Global controls for public listen playback, origin VM size, email, contact, and Paystack billing.</p>
         </div>

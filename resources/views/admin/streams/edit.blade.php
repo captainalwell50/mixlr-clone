@@ -13,16 +13,16 @@
             <span>Back to Streams</span>
         </a>
         <div class="flex items-center gap-2">
-            <a href="{{ route('listen.stream', $stream) }}" target="_blank" class="rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition">
+            <a href="{{ route('listen.stream', $stream) }}" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition">
                 Listen
             </a>
-            <a href="{{ route('admin.streams.studio', $stream) }}" target="_blank" class="rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-2.5 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-900/60 transition">
+            <a href="{{ route('admin.streams.studio', $stream) }}" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-2.5 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-900/60 transition">
                 Open Studio
             </a>
         </div>
     </div>
 
-    <!-- OPERATOR DETAIL HEADER CARD -->
+    <!-- STREAM DETAIL HEADER CARD -->
     @php
         $isLive = $stream->status === \App\Enums\StreamStatus::Live;
         $listeners = $isLive ? $stream->activeListenerCount() : 0;
@@ -32,7 +32,7 @@
         <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
                 <div class="flex items-center gap-2">
-                    <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Operator Inspection</span>
+                    <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Stream Inspection</span>
                     @if ($stream->is_public)
                         <span class="rounded bg-zinc-800 px-1.5 py-0.2 text-[10px] text-zinc-300">Public (Discover)</span>
                     @else
@@ -97,7 +97,7 @@
     <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
         <div>
             <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-300">Technical Identifiers & Endpoints</h2>
-            <p class="mt-0.5 text-xs text-zinc-500">Authoritative identifiers and WebRTC / HLS protocol URLs for this stream.</p>
+            <p class="mt-0.5 text-xs text-zinc-500">Stream identifiers and WebRTC / HLS protocol URLs for this broadcast.</p>
         </div>
         <dl class="space-y-3 text-xs">
             <div>

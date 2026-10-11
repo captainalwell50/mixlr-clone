@@ -134,6 +134,8 @@
                     @if ($studioUrl)
                         <a
                             href="{{ $studioUrl }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
                             class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 hover:bg-emerald-500 transition"
                         >
                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -221,6 +223,8 @@
                         @if ($canBroadcast)
                             <a
                                 href="{{ $studioUrl }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 hover:bg-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             >
                                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -259,6 +263,7 @@
             @if ($studioUrl)
                 <a
                     href="{{ $canBroadcast ? $studioUrl : route('billing.plans') }}"
+                    @if ($canBroadcast) target="_blank" rel="noopener noreferrer" @endif
                     class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 flex flex-col items-start gap-2 hover:border-emerald-600/60 hover:bg-zinc-900 transition group"
                 >
                     <div class="h-8 w-8 rounded-lg bg-emerald-950/80 text-emerald-400 flex items-center justify-center ring-1 ring-emerald-700/50 group-hover:scale-105 transition-transform">
@@ -404,7 +409,7 @@
                         </svg>
                     </div>
                     <div class="mt-2 text-2xl sm:text-3xl font-bold text-emerald-400 font-mono">{{ number_format($uniqueListeners30d ?? 0) }}</div>
-                    <div class="mt-1 text-[11px] text-zinc-400">Authoritative unique reach</div>
+                    <div class="mt-1 text-[11px] text-zinc-400">Confirmed unique listeners</div>
                 </a>
             @else
                 <div class="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 flex flex-col justify-between">
@@ -462,8 +467,8 @@
                             </div>
 
                             <div class="flex items-center gap-2 shrink-0 text-xs">
-                                <a href="{{ route('events.show', $evt) }}" target="_blank" class="text-zinc-400 hover:text-zinc-200">
-                                    Page ↗
+                                <a href="{{ route('events.show', $evt) }}" target="_blank" rel="noopener noreferrer" class="text-zinc-400 hover:text-zinc-200">
+                                    View
                                 </a>
                                 <span class="text-zinc-600">·</span>
                                 <a href="{{ route('admin.events.edit', $evt) }}" class="text-emerald-400 hover:text-emerald-300 font-medium">
@@ -519,8 +524,8 @@
                             </div>
 
                             <div class="flex items-center gap-2 shrink-0 text-xs">
-                                <a href="{{ route('events.show', $bcast) }}" target="_blank" class="text-zinc-400 hover:text-zinc-200">
-                                    Page ↗
+                                <a href="{{ route('events.show', $bcast) }}" target="_blank" rel="noopener noreferrer" class="text-zinc-400 hover:text-zinc-200">
+                                    View
                                 </a>
                                 <span class="text-zinc-600">·</span>
                                 <a href="{{ route('admin.events.edit', $bcast) }}" class="text-emerald-400 hover:text-emerald-300 font-medium">
@@ -872,7 +877,7 @@
                     <div>
                         <div>First broadcast</div>
                         @if (! $setupChecklist['has_broadcasted'] && $studioUrl)
-                            <a href="{{ $studioUrl }}" class="text-emerald-400 hover:text-emerald-300 text-[11px] block mt-0.5">Test studio →</a>
+                            <a href="{{ $studioUrl }}" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:text-emerald-300 text-[11px] block mt-0.5">Test studio →</a>
                         @endif
                     </div>
                 </div>

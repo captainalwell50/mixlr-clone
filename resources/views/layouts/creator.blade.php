@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full bg-zinc-950">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="#0c1210">
     <title>@yield('title', $creatorOrg?->name ?? 'Creator Console') · {{ config('app.name', 'Sound Mix Live') }}</title>
+    @include('partials.theme-head')
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=source-sans-3:400,500,600,700|jet-brains-mono:400,500" rel="stylesheet" />
     @vite(['resources/css/app.css', 'resources/js/pwa.js'])
@@ -24,7 +25,7 @@
         }
     </style>
 </head>
-<body class="h-full bg-zinc-950 font-sans text-zinc-100 antialiased selection:bg-emerald-500 selection:text-white">
+<body class="h-full bg-zinc-950 font-sans text-zinc-100 antialiased selection:bg-emerald-500 selection:text-white creator-shell app-shell">
     <!-- Mobile sidebar backdrop -->
     <div
         id="mobile-creator-backdrop"
@@ -138,8 +139,10 @@
                 @if ($creatorIsLive)
                     <a
                         href="{{ $creatorStudioUrl ?? ($creatorOrg ? $creatorOrg->channelUrl() : '#') }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         class="inline-flex items-center gap-2 rounded-full border border-red-500/40 bg-red-950/60 px-3 py-1 text-xs font-semibold text-red-300 hover:bg-red-900/60 transition shadow-sm"
-                        title="Broadcast is currently LIVE"
+                        title="Broadcast is currently LIVE — Click to open Studio"
                     >
                         <span class="relative flex h-2 w-2">
                             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -163,6 +166,8 @@
                     @if ($creatorCanBroadcast)
                         <a
                             href="{{ $creatorStudioUrl }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
                             class="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         >
                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -198,6 +203,10 @@
                         <div class="px-3 py-2 border-b border-zinc-800">
                             <p class="text-xs font-semibold text-white truncate">{{ auth()->user()?->name }}</p>
                             <p class="text-[11px] text-zinc-400 truncate">{{ auth()->user()?->email }}</p>
+                        </div>
+                        <div class="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
+                            <span class="text-[11px] font-medium text-zinc-400">Theme</span>
+                            @include('partials.theme-selector', ['mode' => 'compact'])
                         </div>
                         <div class="py-1">
                             @if ($creatorOrg)
@@ -267,12 +276,17 @@
                             @if ($creatorStudioUrl)
                                 <a
                                     href="{{ $creatorStudioUrl }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition text-zinc-400 hover:bg-zinc-900/80 hover:text-zinc-200"
                                 >
                                     <svg class="h-4 w-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
                                     </svg>
                                     <span class="flex-1">Web Studio</span>
+                                    <svg class="h-3 w-3 text-zinc-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                    </svg>
                                     @if ($creatorIsLive)
                                         <span class="h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
                                     @endif

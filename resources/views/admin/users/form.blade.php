@@ -5,7 +5,7 @@
 @section('content')
     <div class="console-head">
         <div>
-            <p class="site-section-label">Operator</p>
+            <p class="site-section-label">Platform Admin</p>
             <h1 class="console-title mt-2">{{ $user->exists ? 'Edit user' : 'New user' }}</h1>
             <p class="console-lead">
                 {{ $user->exists ? 'Update profile, password, or admin access.' : 'Create a login and optionally grant platform admin.' }}
@@ -42,7 +42,7 @@
                 </label>
                 <label class="flex items-center gap-2 text-sm mt-2 sm:col-span-2">
                     <input type="checkbox" name="is_admin" value="1" @checked(old('is_admin', $user->is_admin))>
-                    <span>Platform admin (full operator access)</span>
+                    <span>Platform admin (full administrative access)</span>
                 </label>
             </div>
         </section>

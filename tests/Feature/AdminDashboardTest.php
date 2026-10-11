@@ -361,4 +361,19 @@ class AdminDashboardTest extends TestCase
             ->assertSee('1,000.00')
             ->assertDontSee('1,020.00'); // No FX mixing of 1000 + 20
     }
+
+    public function test_admin_shell_renders_flash_free_theme_script_and_theme_selector(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $response = $this->actingAs($admin)->get(route('admin.dashboard'));
+
+        $response->assertOk()
+            ->assertSee('soundmix_theme', false)
+            ->assertSee('window.SoundMixTheme', false)
+            ->assertSee('data-theme-option="light"', false)
+            ->assertSee('data-theme-option="dark"', false)
+            ->assertSee('data-theme-option="system"', false)
+            ->assertSee('admin-shell', false);
+    }
 }

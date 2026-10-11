@@ -633,4 +633,144 @@ class CreatorDashboardTest extends TestCase
         $resB->assertDontSee('20,000.00'); // Org A's gross must NOT leak into Org B
         $resB->assertDontSee('17,000.00'); // Org A's net must NOT leak into Org B
     }
+
+    private function creatorWithOrg(string $orgName = 'Grace Community Church', string $slug = 'grace-church'): array
+    {
+        $user = User::factory()->create(['is_admin' => false]);
+        $org = Organization::query()->create([
+            'name' => $orgName,
+            'slug' => $slug . '-' . uniqid(),
+        ]);
+        $org->users()->attach($user->id, ['role' => OrgRole::Owner->value]);
+
+        return [$user, $org];
+    }
+
+    public function test_studio_navigation_links_open_in_new_tab_with_security_attributes(): void
+    {
+        [$user, $org] = $this->creatorWithOrg();
+        $this->createStream($org, [
+            'title' => 'Main Sanctuary',
+            'status' => StreamStatus::Offline,
+        ]);
+
+        $plan = Plan::query()->create([
+            'name' => 'Pro Broadcast',
+            'slug' => 'pro-broadcast-' . uniqid(),
+            'amount' => 1500000,
+            'currency' => 'NGN',
+            'interval' => 'monthly',
+            'limits' => [],
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        Subscription::query()->create([
+            'organization_id' => $org->id,
+            'plan_id' => $plan->id,
+            'status' => SubscriptionStatus::Active,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('creator.home'))->assertOk();
+
+        // Check Open Studio / Web Studio have target="_blank" and rel="noopener noreferrer"
+        $response->assertSee('target="_blank"', false);
+        $response->assertSee('rel="noopener noreferrer"', false);
+        $response->assertSee('Web Studio', false);
+        $response->assertSee('Open Studio', false);
+    }
+
+    public function test_account_profile_page_renders_within_creator_shell_for_creators(): void
+    {
+        [$user, $org] = $this->creatorWithOrg();
+
+        $response = $this->actingAs($user)->get(route('account.edit'))->assertOk();
+
+        // Must render inside Creator shell, not plain layouts.app
+        $response->assertSee('Account & Security', false);
+        $response->assertSee('Profile Information', false);
+        $response->assertSee('Security & Password', false);
+        $response->assertSee('Danger Zone — Delete Account', false);
+        $response->assertSee('Organizations &amp; Content Remain', false);
+        $response->assertSee('Ownership Transfer', false);
+        $response->assertSee('Platform Super Admins', false);
+        $response->assertSee($org->name, false);
+    }
+
+    public function test_events_create_and_edit_forms_render_accessible_password_groupings(): void
+    {
+        [$user, $org] = $this->creatorWithOrg();
+        $stream = $this->createStream($org, ['title' => 'Sanctuary Live']);
+        $event = $org->events()->create([
+            'title' => 'Sunday Service',
+            'stream_id' => $stream->id,
+            'status' => EventStatus::Scheduled,
+            'access' => EventAccess::Public,
+        ]);
+
+        $tz = \App\Support\LocalTime::tz();
+
+        // 1. Create form
+        $createRes = $this->actingAs($user)->get(route('admin.events.create'))->assertOk();
+        $createRes->assertSee('Event Details', false);
+        $createRes->assertSee('Schedule & Timing', false);
+        $createRes->assertSee('Access & Privacy', false);
+        $createRes->assertSee('Engagement & Interactivity', false);
+        $createRes->assertSee('password-field-container', false);
+        $createRes->assertSee('aria-live="polite"', false);
+        $createRes->assertSee($tz, false);
+        $createRes->assertDontSee('Listeners worldwide will automatically see the start time converted', false);
+
+        // 2. Edit form
+        $editRes = $this->actingAs($user)->get(route('admin.events.edit', $event))->assertOk();
+        $editRes->assertSee('Event Details', false);
+        $editRes->assertSee('Schedule & Timing', false);
+        $editRes->assertSee('Access & Privacy', false);
+        $editRes->assertSee('Engagement & Interactivity', false);
+        $editRes->assertSee('Danger Zone', false);
+        $editRes->assertSee('password-field-container', false);
+        $editRes->assertSee($tz, false);
+        $editRes->assertDontSee('Listeners worldwide will automatically see the start time converted', false);
+    }
+
+    public function test_events_and_creator_home_do_not_contain_ambiguous_page_arrow(): void
+    {
+        [$user, $org] = $this->creatorWithOrg();
+        $stream = $this->createStream($org, ['title' => 'Sanctuary Live']);
+        $event = $org->events()->create([
+            'title' => 'Midweek Communion',
+            'stream_id' => $stream->id,
+            'status' => EventStatus::Scheduled,
+            'access' => EventAccess::Public,
+        ]);
+
+        $homeRes = $this->actingAs($user)->get(route('creator.home'))->assertOk();
+        $homeRes->assertDontSee('Page ↗', false);
+        $homeRes->assertSee('View', false);
+
+        $eventsRes = $this->actingAs($user)->get(route('admin.events.index'))->assertOk();
+        $eventsRes->assertDontSee('Page ↗', false);
+        $eventsRes->assertSee('View', false);
+    }
+
+    public function test_creator_shell_renders_flash_free_theme_script_and_theme_selectors(): void
+    {
+        [$user, $org] = $this->creatorWithOrg();
+
+        // 1. Creator Dashboard renders synchronous head script and dropdown theme selector
+        $homeRes = $this->actingAs($user)->get(route('creator.home'))->assertOk();
+        $homeRes->assertSee('soundmix_theme', false);
+        $homeRes->assertSee('window.SoundMixTheme', false);
+        $homeRes->assertSee('data-theme-option="light"', false);
+        $homeRes->assertSee('data-theme-option="dark"', false);
+        $homeRes->assertSee('data-theme-option="system"', false);
+
+        // 2. Account Profile renders expanded theme selector
+        $accountRes = $this->actingAs($user)->get(route('account.edit'))->assertOk();
+        $accountRes->assertSee('Interface Appearance', false);
+        $accountRes->assertSee('data-theme-option="light"', false);
+        $accountRes->assertSee('data-theme-option="dark"', false);
+        $accountRes->assertSee('data-theme-option="system"', false);
+        $accountRes->assertSee('System Automatic', false);
+    }
 }

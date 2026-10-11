@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full bg-zinc-950">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="#0c1210">
     <title>@yield('title', 'Super Admin') · {{ config('app.name', 'Sound Mix Live') }} Console</title>
+    @include('partials.theme-head')
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=source-sans-3:400,500,600,700|jet-brains-mono:400,500" rel="stylesheet" />
     @vite(['resources/css/app.css', 'resources/js/pwa.js'])
@@ -25,7 +26,7 @@
         }
     </style>
 </head>
-<body class="h-full bg-zinc-950 font-sans text-zinc-100 antialiased selection:bg-emerald-500 selection:text-white" x-data="{ sidebarOpen: false }">
+<body class="h-full bg-zinc-950 font-sans text-zinc-100 antialiased selection:bg-emerald-500 selection:text-white admin-shell app-shell" x-data="{ sidebarOpen: false }">
     @php
         $attentionService = app(\App\Services\AdminAttentionService::class);
         $attentionCount = $attentionService->totalAttentionCount();
@@ -103,6 +104,9 @@
                     @endif
                 </a>
 
+                <!-- Compact theme selector -->
+                @include('partials.theme-selector', ['mode' => 'compact'])
+
                 <!-- Public site link -->
                 <a
                     href="{{ route('how-it-works') }}"
@@ -118,10 +122,10 @@
 
                 <!-- Admin Account Menu -->
                 <div class="relative flex items-center gap-2 pl-2 border-l border-zinc-800">
-                    <div class="flex flex-col text-right hidden sm:block">
+                    <a href="{{ route('account.edit') }}" class="flex flex-col text-right hidden sm:block hover:opacity-80 transition" title="Manage Account Profile">
                         <span class="text-xs font-medium text-zinc-200">{{ $user->name }}</span>
                         <span class="text-[10px] text-zinc-400">Platform Admin</span>
-                    </div>
+                    </a>
                     <form method="POST" action="{{ route('logout') }}" class="inline">
                         @csrf
                         <button
@@ -345,7 +349,7 @@
                     </div>
                 </div>
 
-                <!-- Sidebar footer: Operator health badge -->
+                <!-- Sidebar footer: Console health badge -->
                 <div class="p-3 border-t border-zinc-800 bg-zinc-950/40 text-[11px] text-zinc-400 flex items-center justify-between">
                     <span class="flex items-center gap-1.5">
                         <span class="h-2 w-2 rounded-full bg-emerald-400"></span>

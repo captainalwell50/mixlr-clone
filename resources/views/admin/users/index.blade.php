@@ -5,7 +5,7 @@
 @section('content')
     <div class="console-head">
         <div>
-            <p class="site-section-label">Operator</p>
+            <p class="site-section-label">Platform Admin</p>
             <h1 class="console-title mt-2">Users</h1>
             <p class="console-lead">Create accounts, set passwords, and grant platform admin access.</p>
         </div>

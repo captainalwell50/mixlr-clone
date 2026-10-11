@@ -12,7 +12,7 @@
                 <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Operations Console</span>
             </div>
             <h1 class="text-2xl font-bold tracking-tight text-white mt-1">Platform Dashboard</h1>
-            <p class="text-xs text-zinc-400 mt-0.5">Authoritative live telemetry, attention queues, and platform state.</p>
+            <p class="text-xs text-zinc-400 mt-0.5">Platform telemetry, attention queues, and live system state.</p>
         </div>
         <div class="flex items-center gap-3">
             <span class="text-[11px] text-zinc-500 font-mono hidden sm:inline-block">Snapshot: {{ now()->timezone(\App\Support\LocalTime::tz())->format('M j, Y · H:i:s T') }}</span>
@@ -129,10 +129,10 @@
                             <a href="{{ route('admin.streams.edit', $stream) }}" class="flex-1 text-center rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition">
                                 Inspect
                             </a>
-                            <a href="{{ route('listen.stream', $stream) }}" target="_blank" class="rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-2.5 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-900/60 transition">
+                            <a href="{{ route('listen.stream', $stream) }}" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-2.5 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-900/60 transition">
                                 Listen
                             </a>
-                            <a href="{{ route('admin.streams.studio', $stream) }}" target="_blank" class="rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition">
+                            <a href="{{ route('admin.streams.studio', $stream) }}" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition">
                                 Studio
                             </a>
                         </div>
@@ -159,8 +159,8 @@
     <!-- OPERATIONAL METRICS / KPI GRID -->
     <section>
         <div class="flex items-center justify-between mb-3">
-            <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-300">Authoritative Platform Metrics</h2>
-            <span class="text-xs text-zinc-500">Calculated directly from authoritative database state</span>
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-300">Platform Performance & Activity</h2>
+            <span class="text-xs text-zinc-500">Live metrics from verified platform activity</span>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

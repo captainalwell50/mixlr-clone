@@ -5,7 +5,7 @@
 @section('content')
     <div class="console-head">
         <div>
-            <p class="site-section-label">Operator</p>
+            <p class="site-section-label">Platform Admin</p>
             <h1 class="console-title mt-2">Channels</h1>
             <p class="console-lead">Branding, members, and public channel pages.</p>
         </div>

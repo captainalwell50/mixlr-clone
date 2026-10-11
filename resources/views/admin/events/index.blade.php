@@ -10,7 +10,7 @@
             <div class="flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
                 <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-                    {{ auth()->user()?->isAdmin() ? 'Operator Console' : 'Church Operations' }}
+                    {{ auth()->user()?->isAdmin() ? 'Platform Console' : 'Church Operations' }}
                 </span>
             </div>
             <h1 class="text-2xl font-bold tracking-tight text-white mt-1">Events & Schedule</h1>
@@ -117,9 +117,17 @@
                                 @endif
                             </td>
                             <td class="py-3 px-4 text-right whitespace-nowrap space-x-2">
-                                <a href="{{ route('events.show', $event) }}" target="_blank" class="text-zinc-400 hover:text-zinc-200">
-                                    Page ↗
-                                </a>
+                                @if ($event->status->value === 'live')
+                                    <a href="{{ route('events.show', $event) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:text-emerald-300 font-semibold inline-flex items-center gap-1">
+                                        <span>Listen</span>
+                                        <span class="sr-only">(opens live page in new tab)</span>
+                                    </a>
+                                @else
+                                    <a href="{{ route('events.show', $event) }}" target="_blank" rel="noopener noreferrer" class="text-zinc-400 hover:text-zinc-200 inline-flex items-center gap-1">
+                                        <span>View</span>
+                                        <span class="sr-only">(opens event page in new tab)</span>
+                                    </a>
+                                @endif
                                 <span class="text-zinc-600">·</span>
                                 <a href="{{ route('admin.events.edit', $event) }}" class="text-emerald-400 hover:text-emerald-300 font-semibold">
                                     Edit

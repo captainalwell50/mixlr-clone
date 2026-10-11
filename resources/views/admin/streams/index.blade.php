@@ -9,7 +9,7 @@
         <div>
             <div class="flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
-                <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">{{ auth()->user()?->isAdmin() ? 'Operator Console' : 'Church Operations' }}</span>
+                <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">{{ auth()->user()?->isAdmin() ? 'Platform Console' : 'Church Operations' }}</span>
             </div>
             <h1 class="text-2xl font-bold tracking-tight text-white mt-1">Streams</h1>
             <p class="text-xs text-zinc-400 mt-0.5">Broadcast endpoints, studio ingest, embeds, and current active status.</p>
@@ -239,6 +239,7 @@
                                     <a
                                         href="{{ route('listen.stream', $stream) }}"
                                         target="_blank"
+                                        rel="noopener noreferrer"
                                         class="inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
                                         title="Open public listener"
                                     >
@@ -249,6 +250,7 @@
                                     <a
                                         href="{{ route('admin.streams.studio', $stream) }}"
                                         target="_blank"
+                                        rel="noopener noreferrer"
                                         class="inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
                                         title="Launch Studio broadcast console"
                                     >
@@ -259,6 +261,7 @@
                                     <a
                                         href="{{ route('embed.stream', $stream) }}"
                                         target="_blank"
+                                        rel="noopener noreferrer"
                                         class="inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition"
                                         title="View audio embed player"
                                     >

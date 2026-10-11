@@ -1,5 +1,7 @@
 @import 'tailwindcss';
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.blade.php';
 @source '../**/*.blade.php';
@@ -28,6 +30,475 @@
     --stage-panel: var(--color-ink-elevated);
     --stage-border: color-mix(in srgb, var(--color-cream) 18%, transparent);
     --stage-danger: var(--color-danger);
+
+    /* Semantic Light Theme Tokens (Default :root) */
+    --app-bg: #f8fafc;
+    --app-surface: #ffffff;
+    --app-surface-elevated: #ffffff;
+    --app-surface-muted: #f1f5f9;
+    --app-border: #e2e8f0;
+    --app-border-muted: #edf2f7;
+    --app-border-strong: #cbd5e1;
+    --app-text: #0f172a;
+    --app-text-secondary: #334155;
+    --app-text-muted: #64748b;
+    --app-accent: #059669;
+    --app-accent-hover: #047857;
+    --app-accent-soft: rgba(5, 150, 105, 0.08);
+    --app-accent-border: #a7f3d0;
+    --app-input-bg: #ffffff;
+    --app-input-border: #cbd5e1;
+    --app-hover: #f1f5f9;
+    --app-nav-active: #e2e8f0;
+    --app-table-row: #ffffff;
+    --app-table-hover: #f8fafc;
+    --app-table-divider: #e2e8f0;
+    --app-overlay: rgba(15, 23, 42, 0.45);
+    --app-shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+    --app-shadow-dropdown: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+}
+
+html.dark,
+.dark {
+    /* Semantic Dark Theme Tokens */
+    --app-bg: #09090b;
+    --app-surface: #121215;
+    --app-surface-elevated: #18181b;
+    --app-surface-muted: #1e1e24;
+    --app-border: #27272a;
+    --app-border-muted: #1e1e24;
+    --app-border-strong: #3f3f46;
+    --app-text: #f4f4f5;
+    --app-text-secondary: #a1a1aa;
+    --app-text-muted: #71717a;
+    --app-accent: #10b981;
+    --app-accent-hover: #059669;
+    --app-accent-soft: rgba(16, 185, 129, 0.15);
+    --app-accent-border: rgba(16, 185, 129, 0.3);
+    --app-input-bg: #18181b;
+    --app-input-border: #3f3f46;
+    --app-hover: #27272a;
+    --app-nav-active: #27272a;
+    --app-table-row: #121215;
+    --app-table-hover: #1c1c21;
+    --app-table-divider: #27272a;
+    --app-overlay: rgba(0, 0, 0, 0.8);
+    --app-shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.2);
+    --app-shadow-dropdown: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+}
+
+/* Theme selector UI helper states */
+.theme-option-btn.theme-option-active {
+    background-color: var(--app-accent) !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+[data-theme-option].theme-option-active {
+    border-color: var(--app-accent) !important;
+    box-shadow: 0 0 0 1px var(--app-accent) !important;
+}
+
+[data-theme-option].theme-option-active .theme-check-icon {
+    display: flex !important;
+}
+
+/* Contextual theme application for Authenticated App Shells (.creator-shell, .admin-shell, .app-shell) */
+html:not(.dark) .creator-shell,
+html:not(.dark) .admin-shell,
+html:not(.dark) .app-shell {
+    background-color: var(--app-bg) !important;
+    color: var(--app-text) !important;
+}
+
+/* Page body backgrounds in light mode */
+html:not(.dark) body.creator-shell,
+html:not(.dark) body.admin-shell,
+html:not(.dark) body.app-shell {
+    background-color: var(--app-bg) !important;
+    color: var(--app-text) !important;
+}
+
+/* Main content areas & full screen backgrounds */
+html:not(.dark) .creator-shell main,
+html:not(.dark) .admin-shell main,
+html:not(.dark) .creator-shell .bg-zinc-950,
+html:not(.dark) .admin-shell .bg-zinc-950 {
+    background-color: var(--app-bg) !important;
+    color: var(--app-text) !important;
+}
+
+/* Headers & Sticky topbars */
+html:not(.dark) .creator-shell header,
+html:not(.dark) .admin-shell header {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    border-color: var(--app-border) !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+}
+
+/* Sidebars */
+html:not(.dark) .creator-shell aside,
+html:not(.dark) .admin-shell aside {
+    background-color: #ffffff !important;
+    border-color: var(--app-border) !important;
+    box-shadow: 1px 0 3px 0 rgba(0, 0, 0, 0.02);
+}
+
+/* Cards, Panels, Sections */
+html:not(.dark) .creator-shell .bg-zinc-900,
+html:not(.dark) .admin-shell .bg-zinc-900,
+html:not(.dark) .creator-shell .bg-zinc-900\/50,
+html:not(.dark) .admin-shell .bg-zinc-900\/50,
+html:not(.dark) .creator-shell .bg-zinc-900\/60,
+html:not(.dark) .admin-shell .bg-zinc-900\/60,
+html:not(.dark) .creator-shell .bg-zinc-900\/80,
+html:not(.dark) .admin-shell .bg-zinc-900\/80,
+html:not(.dark) .creator-shell .bg-zinc-900\/90,
+html:not(.dark) .admin-shell .bg-zinc-900\/90,
+html:not(.dark) .creator-shell .bg-zinc-900\/95,
+html:not(.dark) .admin-shell .bg-zinc-900\/95,
+html:not(.dark) .creator-shell .bg-zinc-900\/40,
+html:not(.dark) .admin-shell .bg-zinc-900\/40 {
+    background-color: #ffffff !important;
+    box-shadow: var(--app-shadow-card);
+}
+
+/* Secondary/nested panels */
+html:not(.dark) .creator-shell .bg-zinc-800,
+html:not(.dark) .admin-shell .bg-zinc-800,
+html:not(.dark) .creator-shell .bg-zinc-800\/50,
+html:not(.dark) .admin-shell .bg-zinc-800\/50,
+html:not(.dark) .creator-shell .bg-zinc-800\/80,
+html:not(.dark) .admin-shell .bg-zinc-800\/80 {
+    background-color: var(--app-surface-muted) !important;
+}
+
+/* Borders */
+html:not(.dark) .creator-shell .border-zinc-800,
+html:not(.dark) .admin-shell .border-zinc-800,
+html:not(.dark) .creator-shell .border-zinc-800\/80,
+html:not(.dark) .admin-shell .border-zinc-800\/80,
+html:not(.dark) .creator-shell .border-zinc-700,
+html:not(.dark) .admin-shell .border-zinc-700,
+html:not(.dark) .creator-shell .border-zinc-700\/80,
+html:not(.dark) .admin-shell .border-zinc-700\/80,
+html:not(.dark) .creator-shell .divide-zinc-800 > :not([hidden]) ~ :not([hidden]),
+html:not(.dark) .admin-shell .divide-zinc-800 > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--app-border) !important;
+}
+
+/* Typography in Light Mode */
+html:not(.dark) .creator-shell .text-white,
+html:not(.dark) .admin-shell .text-white,
+html:not(.dark) .creator-shell .text-zinc-100,
+html:not(.dark) .admin-shell .text-zinc-100 {
+    color: var(--app-text) !important;
+}
+
+html:not(.dark) .creator-shell .text-zinc-200,
+html:not(.dark) .admin-shell .text-zinc-200,
+html:not(.dark) .creator-shell .text-zinc-300,
+html:not(.dark) .admin-shell .text-zinc-300 {
+    color: var(--app-text-secondary) !important;
+}
+
+html:not(.dark) .creator-shell .text-zinc-400,
+html:not(.dark) .admin-shell .text-zinc-400,
+html:not(.dark) .creator-shell .text-zinc-500,
+html:not(.dark) .admin-shell .text-zinc-500 {
+    color: var(--app-text-muted) !important;
+}
+
+html:not(.dark) .creator-shell .text-zinc-600,
+html:not(.dark) .admin-shell .text-zinc-600 {
+    color: #94a3b8 !important;
+}
+
+/* Hovers in Light Mode */
+html:not(.dark) .creator-shell .hover\:bg-zinc-800:hover,
+html:not(.dark) .admin-shell .hover\:bg-zinc-800:hover,
+html:not(.dark) .creator-shell .hover\:bg-zinc-700:hover,
+html:not(.dark) .admin-shell .hover\:bg-zinc-700:hover {
+    background-color: var(--app-hover) !important;
+}
+
+html:not(.dark) .creator-shell .hover\:text-white:hover,
+html:not(.dark) .admin-shell .hover\:text-white:hover {
+    color: var(--app-text) !important;
+}
+
+/* Form Inputs, Selects, Textareas */
+html:not(.dark) .creator-shell input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) .admin-shell input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) .creator-shell select,
+html:not(.dark) .admin-shell select,
+html:not(.dark) .creator-shell textarea,
+html:not(.dark) .admin-shell textarea {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+}
+
+html:not(.dark) .creator-shell input::placeholder,
+html:not(.dark) .admin-shell input::placeholder,
+html:not(.dark) .creator-shell textarea::placeholder,
+html:not(.dark) .admin-shell textarea::placeholder {
+    color: #94a3b8 !important;
+}
+
+html:not(.dark) .creator-shell input:focus,
+html:not(.dark) .admin-shell input:focus,
+html:not(.dark) .creator-shell select:focus,
+html:not(.dark) .admin-shell select:focus,
+html:not(.dark) .creator-shell textarea:focus,
+html:not(.dark) .admin-shell textarea:focus {
+    border-color: #059669 !important;
+    box-shadow: 0 0 0 1px #059669 !important;
+}
+
+/* Table styling in Light Mode */
+html:not(.dark) .creator-shell thead,
+html:not(.dark) .admin-shell thead,
+html:not(.dark) .creator-shell thead tr,
+html:not(.dark) .admin-shell thead tr,
+html:not(.dark) .creator-shell thead th,
+html:not(.dark) .admin-shell thead th {
+    background-color: #f1f5f9 !important;
+    color: #475569 !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html:not(.dark) .creator-shell tbody tr,
+html:not(.dark) .admin-shell tbody tr {
+    background-color: #ffffff !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html:not(.dark) .creator-shell tbody tr:hover,
+html:not(.dark) .admin-shell tbody tr:hover {
+    background-color: #f8fafc !important;
+}
+
+/* Dropdowns, Details, and Menus in Light Mode */
+html:not(.dark) .creator-shell details .absolute,
+html:not(.dark) .admin-shell details .absolute {
+    background-color: #ffffff !important;
+    border-color: var(--app-border) !important;
+    box-shadow: var(--app-shadow-dropdown) !important;
+}
+
+/* Success / Emerald badges */
+html:not(.dark) .creator-shell .bg-emerald-950,
+html:not(.dark) .admin-shell .bg-emerald-950,
+html:not(.dark) .creator-shell .bg-emerald-950\/40,
+html:not(.dark) .admin-shell .bg-emerald-950\/40,
+html:not(.dark) .creator-shell .bg-emerald-950\/50,
+html:not(.dark) .admin-shell .bg-emerald-950\/50,
+html:not(.dark) .creator-shell .bg-emerald-950\/60,
+html:not(.dark) .admin-shell .bg-emerald-950\/60,
+html:not(.dark) .creator-shell .bg-emerald-950\/70,
+html:not(.dark) .admin-shell .bg-emerald-950\/70,
+html:not(.dark) .creator-shell .bg-emerald-950\/80,
+html:not(.dark) .admin-shell .bg-emerald-950\/80 {
+    background-color: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
+    color: #065f46 !important;
+}
+
+html:not(.dark) .creator-shell .text-emerald-400,
+html:not(.dark) .admin-shell .text-emerald-400,
+html:not(.dark) .creator-shell .text-emerald-300,
+html:not(.dark) .admin-shell .text-emerald-300 {
+    color: #059669 !important;
+}
+
+/* Warning / Amber badges */
+html:not(.dark) .creator-shell .bg-amber-950,
+html:not(.dark) .admin-shell .bg-amber-950,
+html:not(.dark) .creator-shell .bg-amber-950\/40,
+html:not(.dark) .admin-shell .bg-amber-950\/40,
+html:not(.dark) .creator-shell .bg-amber-950\/60,
+html:not(.dark) .admin-shell .bg-amber-950\/60 {
+    background-color: #fffbeb !important;
+    border-color: #fde68a !important;
+    color: #92400e !important;
+}
+
+html:not(.dark) .creator-shell .text-amber-400,
+html:not(.dark) .admin-shell .text-amber-400,
+html:not(.dark) .creator-shell .text-amber-300,
+html:not(.dark) .admin-shell .text-amber-300,
+html:not(.dark) .creator-shell .text-amber-200,
+html:not(.dark) .admin-shell .text-amber-200 {
+    color: #b45309 !important;
+}
+
+/* Danger / Red / Rose badges */
+html:not(.dark) .creator-shell .bg-red-950,
+html:not(.dark) .admin-shell .bg-red-950,
+html:not(.dark) .creator-shell .bg-red-950\/20,
+html:not(.dark) .admin-shell .bg-red-950\/20,
+html:not(.dark) .creator-shell .bg-red-950\/40,
+html:not(.dark) .admin-shell .bg-red-950\/40,
+html:not(.dark) .creator-shell .bg-red-950\/60,
+html:not(.dark) .admin-shell .bg-red-950\/60,
+html:not(.dark) .creator-shell .bg-red-950\/30,
+html:not(.dark) .admin-shell .bg-red-950\/30,
+html:not(.dark) .creator-shell .bg-rose-950\/50,
+html:not(.dark) .admin-shell .bg-rose-950\/50 {
+    background-color: #fef2f2 !important;
+    border-color: #fecaca !important;
+    color: #991b1b !important;
+}
+
+html:not(.dark) .creator-shell .border-red-900\/40,
+html:not(.dark) .admin-shell .border-red-900\/40,
+html:not(.dark) .creator-shell .border-red-900\/60,
+html:not(.dark) .admin-shell .border-red-900\/60 {
+    border-color: #fecaca !important;
+}
+
+html:not(.dark) .creator-shell .text-red-400,
+html:not(.dark) .admin-shell .text-red-400,
+html:not(.dark) .creator-shell .text-red-300,
+html:not(.dark) .admin-shell .text-red-300,
+html:not(.dark) .creator-shell .text-rose-300,
+html:not(.dark) .admin-shell .text-rose-300 {
+    color: #dc2626 !important;
+}
+
+html:not(.dark) .creator-shell .text-red-200,
+html:not(.dark) .admin-shell .text-red-200,
+html:not(.dark) .creator-shell .text-red-200\/90,
+html:not(.dark) .admin-shell .text-red-200\/90,
+html:not(.dark) .creator-shell .text-red-200\/80,
+html:not(.dark) .admin-shell .text-red-200\/80 {
+    color: #991b1b !important;
+}
+
+/* Scrollbars in Light Mode */
+html:not(.dark) .creator-sidebar-scroll,
+html:not(.dark) .admin-sidebar-scroll {
+    scrollbar-color: rgba(0, 0, 0, 0.18) transparent !important;
+}
+html:not(.dark) .creator-sidebar-scroll::-webkit-scrollbar-thumb,
+html:not(.dark) .admin-sidebar-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.18) !important;
+}
+
+/* Stage variable overrides for authenticated light shells */
+html:not(.dark) .creator-shell,
+html:not(.dark) .admin-shell,
+html:not(.dark) .billing-page,
+html:not(.dark) .console {
+    --stage-ink: #f8fafc;
+    --stage-panel: #ffffff;
+    --stage-border: #e2e8f0;
+    --stage-cream: #0f172a;
+    --stage-text: #0f172a;
+    --stage-muted: #64748b;
+    --stage-accent: #059669;
+}
+
+html:not(.dark) .console-title {
+    color: #0f172a !important;
+}
+
+html:not(.dark) .console-lead {
+    color: #475569 !important;
+}
+
+/* Ring colors in Light Mode */
+html:not(.dark) .creator-shell .ring-zinc-700,
+html:not(.dark) .admin-shell .ring-zinc-700 {
+    --tw-ring-color: #cbd5e1 !important;
+}
+html:not(.dark) .creator-shell .ring-zinc-800,
+html:not(.dark) .admin-shell .ring-zinc-800 {
+    --tw-ring-color: #e2e8f0 !important;
+}
+html:not(.dark) .creator-shell .ring-black\/50,
+html:not(.dark) .admin-shell .ring-black\/50 {
+    --tw-ring-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Active tab & button pills in Light Mode */
+html:not(.dark) .creator-shell .bg-zinc-800.text-white,
+html:not(.dark) .admin-shell .bg-zinc-800.text-white {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Gradients in Light Mode */
+html:not(.dark) .creator-shell .bg-gradient-to-br.from-zinc-900\/90,
+html:not(.dark) .admin-shell .bg-gradient-to-br.from-zinc-900\/90 {
+    background-image: none !important;
+    background-color: #ffffff !important;
+}
+html:not(.dark) .creator-shell .from-red-950\/40,
+html:not(.dark) .admin-shell .from-red-950\/40 {
+    background-image: none !important;
+    background-color: #fef2f2 !important;
+    border-color: #fecaca !important;
+}
+html:not(.dark) .creator-shell .from-emerald-950\/30,
+html:not(.dark) .admin-shell .from-emerald-950\/30 {
+    background-image: none !important;
+    background-color: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
+}
+html:not(.dark) .creator-shell .shadow-black\/20,
+html:not(.dark) .admin-shell .shadow-black\/20 {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Billing plan cards in Light Mode */
+html:not(.dark) .billing-plan-card {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: var(--app-shadow-card) !important;
+}
+html:not(.dark) .billing-plan-card.is-recommended {
+    border-color: #059669 !important;
+    box-shadow: 0 0 0 1px #059669, 0 10px 25px -5px rgba(5, 150, 105, 0.15) !important;
+    background: #ffffff !important;
+}
+html:not(.dark) .billing-plan-badge {
+    background: #059669 !important;
+    color: #ffffff !important;
+}
+html:not(.dark) .billing-plan-features svg {
+    color: #059669 !important;
+}
+
+/* Console tables & ghost buttons in Light Mode */
+html:not(.dark) .console-table {
+    border-color: #e2e8f0 !important;
+    background: #ffffff !important;
+    box-shadow: var(--app-shadow-card) !important;
+}
+html:not(.dark) .console-table thead tr {
+    background: #f8fafc !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+html:not(.dark) .console-table th {
+    color: #475569 !important;
+}
+html:not(.dark) .console-table tbody tr {
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+html:not(.dark) .console-table td {
+    color: #0f172a !important;
+}
+html:not(.dark) .console-btn-ghost {
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+    background-color: #ffffff !important;
+}
+html:not(.dark) .console-btn-ghost:hover {
+    background-color: #f1f5f9 !important;
 }
 
 /* ——— Shared type ——— */
