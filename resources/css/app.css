@@ -36,7 +36,7 @@
     --app-surface: #ffffff;
     --app-surface-elevated: #ffffff;
     --app-surface-muted: #f8faf9;
-    --app-sidebar-bg: #f9fbfa;
+    --app-sidebar-bg: #f0fdf4;
     --app-border: #e2e8f0;
     --app-border-muted: #edf2f7;
     --app-border-strong: #cbd5e1;
@@ -50,9 +50,9 @@
     --app-input-bg: #ffffff;
     --app-input-border: #cbd5e1;
     --app-hover: #f1f5f9;
-    --app-nav-active-bg: #ecfdf5;
+    --app-nav-active-bg: #ffffff;
     --app-nav-active-text: #065f46;
-    --app-nav-active-border: #a7f3d0;
+    --app-nav-active-border: #86efac;
     --app-table-header-bg: #f1f5f4;
     --app-table-header-text: #334155;
     --app-table-row: #ffffff;
@@ -158,17 +158,21 @@ html:not(.dark) .admin-shell header {
 }
 
 /* Sidebars */
+html:not(.dark) #creator-sidebar,
+html:not(.dark) #admin-sidebar,
+html:not(.dark) .creator-shell aside#creator-sidebar,
+html:not(.dark) .admin-shell aside#admin-sidebar,
 html:not(.dark) .creator-shell aside,
 html:not(.dark) .admin-shell aside {
     background-color: var(--app-sidebar-bg) !important;
-    border-right: 1px solid var(--app-border) !important;
+    border-right: 1px solid #dcfce7 !important;
     box-shadow: 1px 0 2px 0 rgba(0, 0, 0, 0.02) !important;
 }
 
 /* Sidebar Section Headers */
 html:not(.dark) .admin-shell aside .uppercase,
 html:not(.dark) .creator-shell aside .uppercase {
-    color: var(--app-text-muted) !important;
+    color: #047857 !important;
     font-weight: 700 !important;
     letter-spacing: 0.06em !important;
 }
@@ -178,20 +182,20 @@ html:not(.dark) .admin-shell aside nav a.text-zinc-300,
 html:not(.dark) .admin-shell aside nav a.text-zinc-400,
 html:not(.dark) .creator-shell aside nav a.text-zinc-400,
 html:not(.dark) .creator-shell aside nav a.text-zinc-300 {
-    color: #475569 !important;
+    color: #334155 !important;
 }
 html:not(.dark) .admin-shell aside nav a:hover,
 html:not(.dark) .creator-shell aside nav a:hover {
-    background-color: #f1f5f4 !important;
-    color: #0f172a !important;
+    background-color: #dcfce7 !important;
+    color: #065f46 !important;
 }
 html:not(.dark) .admin-shell aside nav a svg,
 html:not(.dark) .creator-shell aside nav a svg {
-    color: #64748b;
+    color: #059669;
 }
 html:not(.dark) .admin-shell aside nav a:hover svg,
 html:not(.dark) .creator-shell aside nav a:hover svg {
-    color: #0f172a;
+    color: #047857;
 }
 
 /* Active nav links with green accent rail */
@@ -204,6 +208,7 @@ html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/70 {
     font-weight: 600 !important;
     border: 1px solid var(--app-nav-active-border) !important;
     border-left: 3px solid var(--app-accent) !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04) !important;
 }
 html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/70 svg,
 html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/60 svg,
@@ -211,6 +216,17 @@ html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/60 svg,
 html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/70 svg {
     color: var(--app-accent) !important;
     opacity: 1 !important;
+}
+
+/* Sidebar dividers & footer links */
+html:not(.dark) .creator-shell aside .border-t,
+html:not(.dark) .admin-shell aside .border-t,
+html:not(.dark) .admin-shell aside .border-b {
+    border-color: #dcfce7 !important;
+}
+html:not(.dark) .creator-shell aside a.text-zinc-400:hover {
+    background-color: #dcfce7 !important;
+    color: #065f46 !important;
 }
 
 /* Cards, Panels, Sections */
@@ -233,6 +249,16 @@ html:not(.dark) .admin-shell .bg-zinc-900\/30 {
     background-color: #ffffff !important;
     border-color: var(--app-border) !important;
     box-shadow: var(--app-shadow-card) !important;
+}
+
+/* Sidebar background guarantee (takes precedence over .bg-zinc-* card rules) */
+html:not(.dark) #creator-sidebar,
+html:not(.dark) #admin-sidebar,
+html:not(.dark) .creator-shell aside#creator-sidebar,
+html:not(.dark) .admin-shell aside#admin-sidebar,
+html:not(.dark) .creator-shell aside,
+html:not(.dark) .admin-shell aside {
+    background-color: var(--app-sidebar-bg) !important;
 }
 
 /* Card hovers */
