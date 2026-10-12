@@ -45,6 +45,7 @@
                     @endif
                     @if (auth()->user()->affiliateAccount?->canRefer())
                         <a href="{{ route('affiliate.prospects.index') }}">My prospects</a>
+                        <a href="{{ route('affiliate.commissions.index') }}">My earnings</a>
                     @endif
                     <a href="{{ route('my-library') }}">My Library</a>
                     <a href="{{ route('account.edit') }}">Account</a>

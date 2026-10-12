@@ -46,6 +46,15 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('manageAffiliates', fn (User $user): bool => $user->isAdmin());
         Gate::define('manageDigitalLibrary', fn (User $user): bool => $user->isAdmin());
 
+        \Illuminate\Support\Facades\Event::listen(
+            \App\Events\SubscriptionPaymentConfirmed::class,
+            \App\Listeners\RecordAffiliateCommissionOnPaymentConfirmed::class,
+        );
+        \Illuminate\Support\Facades\Event::listen(
+            \App\Events\SubscriptionPaymentReversed::class,
+            \App\Listeners\ReverseAffiliateCommissionOnPaymentReversed::class,
+        );
+
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
 
