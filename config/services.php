@@ -39,6 +39,7 @@ return [
         'public_key' => env('PAYSTACK_PUBLIC_KEY'),
         'secret_key' => env('PAYSTACK_SECRET_KEY'),
         'base_url' => env('PAYSTACK_BASE_URL', 'https://api.paystack.co'),
+        'currency' => env('PAYSTACK_CURRENCY', 'NGN'),
     ],
 
     'google' => [
@@ -52,6 +53,14 @@ return [
                 'https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/userinfo.email'
             ))
         ))),
+    ],
+
+    'cloudflare' => [
+        'email_api_token' => env('CLOUDFLARE_EMAIL_API_TOKEN'),
+        'zone_id' => env('CLOUDFLARE_ZONE_ID'),
+        'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+        'domain' => env('CLOUDFLARE_EMAIL_DOMAIN', 'soundmix.live'),
+        'default_destination' => env('CLOUDFLARE_DEFAULT_DESTINATION'),
     ],
 
 ];

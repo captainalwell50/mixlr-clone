@@ -11,6 +11,19 @@
         </div>
     </div>
 
+    <!-- Sub-navigation Tabs -->
+    <div class="flex items-center gap-2 border-b border-[var(--stage-border)] pb-3 mb-6">
+        <a href="{{ route('admin.settings.edit') }}" class="rounded-lg px-3 py-1.5 text-xs font-semibold bg-emerald-950/70 text-emerald-300 border border-emerald-800/60">
+            Platform Settings
+        </a>
+        <a href="{{ route('admin.settings.email') }}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--stage-muted)] hover:text-white hover:bg-zinc-800 transition">
+            Email Settings
+        </a>
+        <a href="{{ route('admin.email-deliveries.index') }}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--stage-muted)] hover:text-white hover:bg-zinc-800 transition">
+            Email Deliveries
+        </a>
+    </div>
+
     @if (session('status'))
         <p class="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{{ session('status') }}</p>
     @endif
