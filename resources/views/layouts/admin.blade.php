@@ -26,7 +26,7 @@
         }
     </style>
 </head>
-<body class="h-full bg-zinc-950 font-sans text-zinc-100 antialiased selection:bg-emerald-500 selection:text-white admin-shell app-shell" x-data="{ sidebarOpen: false }">
+<body class="h-full bg-[var(--app-bg)] font-sans text-zinc-900 dark:text-zinc-100 antialiased selection:bg-emerald-500 selection:text-white admin-shell app-shell" x-data="{ sidebarOpen: false }">
     @php
         $attentionService = app(\App\Services\AdminAttentionService::class);
         $attentionCount = $attentionService->totalAttentionCount();
@@ -43,14 +43,14 @@
 
     <div class="flex min-h-screen flex-col">
         <!-- TOP BAR -->
-        <header class="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-zinc-800/80 bg-zinc-900/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-            <div class="flex items-center gap-3 lg:gap-4">
+        <header class="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-zinc-200 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-900/95 px-3 sm:px-6 lg:px-8 backdrop-blur">
+            <div class="flex items-center gap-2 sm:gap-3 lg:gap-4 shrink-0">
                 <!-- Mobile toggle button -->
                 <button
                     type="button"
                     id="mobile-sidebar-toggle"
                     onclick="toggleAdminSidebar()"
-                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 lg:hidden"
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 lg:hidden"
                     aria-label="Toggle navigation menu"
                     aria-expanded="false"
                     aria-controls="admin-sidebar"
@@ -68,7 +68,7 @@
             <div class="hidden md:flex flex-1 max-w-md mx-6">
                 <form action="{{ route('admin.search') }}" method="GET" class="w-full relative" role="search">
                     <label for="admin-search-input" class="sr-only">Search console</label>
-                    <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-zinc-500">
+                    <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-zinc-400 dark:text-zinc-500">
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
                         </svg>
@@ -79,17 +79,17 @@
                         name="q"
                         value="{{ request('q') }}"
                         placeholder="Search streams, channels, users, library..."
-                        class="w-full rounded-lg border border-zinc-700/80 bg-zinc-950/70 py-1.5 pl-9 pr-3 text-xs text-zinc-100 placeholder-zinc-500 transition focus:border-emerald-500 focus:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        class="w-full rounded-lg border border-zinc-300 dark:border-zinc-700/80 bg-zinc-50 dark:bg-zinc-950/70 py-1.5 pl-9 pr-3 text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 transition focus:border-emerald-500 focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                 </form>
             </div>
 
             <!-- Top bar right controls -->
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-1.5 sm:gap-3 shrink-0">
                 <!-- Attention Center Pill -->
                 <a
                     href="{{ route('admin.dashboard') }}#needs-attention"
-                    class="relative inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition {{ $attentionCount > 0 ? 'border-amber-700/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/40' : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-300' }}"
+                    class="relative inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 sm:px-2.5 text-xs font-medium transition {{ $attentionCount > 0 ? 'border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40' : 'border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-300' }}"
                     title="{{ $attentionCount > 0 ? $attentionCount . ' item(s) need attention' : 'No items need attention' }}"
                 >
                     <span class="relative flex h-2 w-2">
@@ -100,7 +100,7 @@
                     </span>
                     <span class="hidden sm:inline">Attention</span>
                     @if ($attentionCount > 0)
-                        <span class="ml-0.5 rounded-full bg-amber-500/20 px-1.5 py-0.2 text-[10px] font-bold text-amber-200">{{ $attentionCount }}</span>
+                        <span class="ml-0.5 rounded-full bg-amber-500/20 px-1.5 py-0.2 text-[10px] font-bold text-amber-800 dark:text-amber-200">{{ $attentionCount }}</span>
                     @endif
                 </a>
 
@@ -111,7 +111,7 @@
                 <a
                     href="{{ route('how-it-works') }}"
                     target="_blank"
-                    class="hidden sm:inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-emerald-400 transition"
+                    class="hidden sm:inline-flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition"
                     title="View public website"
                 >
                     <span>View site</span>
@@ -121,16 +121,16 @@
                 </a>
 
                 <!-- Admin Account Menu -->
-                <div class="relative flex items-center gap-2 pl-2 border-l border-zinc-800">
+                <div class="relative flex items-center gap-1.5 sm:gap-2 pl-1.5 sm:pl-2 border-l border-zinc-200 dark:border-zinc-800">
                     <a href="{{ route('account.edit') }}" class="flex flex-col text-right hidden sm:block hover:opacity-80 transition" title="Manage Account Profile">
-                        <span class="text-xs font-medium text-zinc-200">{{ $user->name }}</span>
-                        <span class="text-[10px] text-zinc-400">Platform Admin</span>
+                        <span class="text-xs font-medium text-zinc-800 dark:text-zinc-200">{{ $user->name }}</span>
+                        <span class="text-[10px] text-zinc-500 dark:text-zinc-400">Platform Admin</span>
                     </a>
                     <form method="POST" action="{{ route('logout') }}" class="inline">
                         @csrf
                         <button
                             type="submit"
-                            class="rounded-lg border border-zinc-700/80 bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-rose-300 hover:bg-rose-950/50 hover:border-rose-800 transition"
+                            class="rounded-lg border border-rose-200 dark:border-zinc-700/80 bg-rose-50 dark:bg-zinc-800/80 px-2 py-1 sm:px-2.5 text-xs font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-950/50 hover:border-rose-300 dark:hover:border-rose-800 transition"
                         >
                             Log out
                         </button>
@@ -144,7 +144,7 @@
             <!-- SIDEBAR -->
             <aside
                 id="admin-sidebar"
-                class="fixed inset-y-0 left-0 z-50 w-64 -translate-x-full border-r border-zinc-800 bg-zinc-900/95 transition-transform duration-200 ease-in-out lg:static lg:w-64 lg:translate-x-0 lg:bg-zinc-900/50 admin-sidebar-scroll flex flex-col justify-between"
+                class="fixed inset-y-0 left-0 z-50 w-64 -translate-x-full border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/95 transition-transform duration-200 ease-in-out lg:static lg:w-64 lg:translate-x-0 lg:bg-[#fcfdfd] lg:dark:bg-zinc-900/50 admin-sidebar-scroll flex flex-col justify-between"
                 aria-label="Admin Navigation"
             >
                 <div class="flex flex-col overflow-y-auto px-4 py-5 gap-6">
@@ -368,17 +368,17 @@
                 </div>
 
                 <!-- Sidebar footer: Console health badge -->
-                <div class="p-3 border-t border-zinc-800 bg-zinc-950/40 text-[11px] text-zinc-400 flex items-center justify-between">
+                <div class="p-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center justify-between">
                     <span class="flex items-center gap-1.5">
-                        <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
-                        <span>Console Active</span>
+                        <span class="h-2 w-2 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
+                        <span class="font-medium">Console Active</span>
                     </span>
-                    <span class="font-mono text-[10px] text-zinc-400">v1.2</span>
+                    <span class="font-mono text-[10px] text-zinc-400 dark:text-zinc-500">v1.2</span>
                 </div>
             </aside>
 
             <!-- MAIN CONTENT AREA -->
-            <main class="flex-1 overflow-y-auto bg-zinc-950 px-4 py-6 sm:px-6 lg:px-8">
+            <main class="flex-1 overflow-y-auto bg-[var(--app-bg)] px-4 py-6 sm:px-6 lg:px-8">
                 <!-- Session messages -->
                 @if (session('status'))
                     <div class="mb-6 rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">

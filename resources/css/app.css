@@ -36,7 +36,7 @@
     --app-surface: #ffffff;
     --app-surface-elevated: #ffffff;
     --app-surface-muted: #f8faf9;
-    --app-sidebar-bg: #f0fdf4;
+    --app-sidebar-bg: #fcfdfd;
     --app-border: #e2e8f0;
     --app-border-muted: #edf2f7;
     --app-border-strong: #cbd5e1;
@@ -165,15 +165,16 @@ html:not(.dark) .admin-shell aside#admin-sidebar,
 html:not(.dark) .creator-shell aside,
 html:not(.dark) .admin-shell aside {
     background-color: var(--app-sidebar-bg) !important;
-    border-right: 1px solid #dcfce7 !important;
+    border-right: 1px solid var(--app-border) !important;
     box-shadow: 1px 0 2px 0 rgba(0, 0, 0, 0.02) !important;
 }
 
 /* Sidebar Section Headers */
 html:not(.dark) .admin-shell aside .uppercase,
 html:not(.dark) .creator-shell aside .uppercase {
-    color: #047857 !important;
-    font-weight: 700 !important;
+    color: var(--app-text-muted) !important;
+    font-weight: 600 !important;
+    font-size: 11px !important;
     letter-spacing: 0.06em !important;
 }
 
@@ -182,20 +183,20 @@ html:not(.dark) .admin-shell aside nav a.text-zinc-300,
 html:not(.dark) .admin-shell aside nav a.text-zinc-400,
 html:not(.dark) .creator-shell aside nav a.text-zinc-400,
 html:not(.dark) .creator-shell aside nav a.text-zinc-300 {
-    color: #334155 !important;
+    color: var(--app-text-secondary) !important;
 }
 html:not(.dark) .admin-shell aside nav a:hover,
 html:not(.dark) .creator-shell aside nav a:hover {
-    background-color: #dcfce7 !important;
-    color: #065f46 !important;
+    background-color: var(--app-hover) !important;
+    color: var(--app-text) !important;
 }
 html:not(.dark) .admin-shell aside nav a svg,
 html:not(.dark) .creator-shell aside nav a svg {
-    color: #059669;
+    color: var(--app-text-muted);
 }
 html:not(.dark) .admin-shell aside nav a:hover svg,
 html:not(.dark) .creator-shell aside nav a:hover svg {
-    color: #047857;
+    color: var(--app-accent);
 }
 
 /* Active nav links with green accent rail */
@@ -203,10 +204,10 @@ html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/70,
 html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/60,
 html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/60,
 html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/70 {
-    background-color: var(--app-nav-active-bg) !important;
+    background-color: #ffffff !important;
     color: var(--app-nav-active-text) !important;
     font-weight: 600 !important;
-    border: 1px solid var(--app-nav-active-border) !important;
+    border: 1px solid var(--app-border) !important;
     border-left: 3px solid var(--app-accent) !important;
     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04) !important;
 }
@@ -221,28 +222,28 @@ html:not(.dark) .creator-shell aside nav a.bg-emerald-950\/70 svg {
 /* Sidebar nested sub-navigation in Light Mode */
 html:not(.dark) .admin-shell aside .space-y-0\.5.border-l,
 html:not(.dark) .admin-shell aside .admin-subnav {
-    border-color: #86efac !important;
+    border-color: var(--app-border) !important;
 }
 
 html:not(.dark) .admin-shell aside .space-y-0\.5 a.text-zinc-400,
 html:not(.dark) .admin-shell aside a.admin-subnav-link {
-    color: #334155 !important;
+    color: var(--app-text-muted) !important;
 }
 
 html:not(.dark) .admin-shell aside .space-y-0\.5 a:hover,
 html:not(.dark) .admin-shell aside a.admin-subnav-link:hover {
-    background-color: #dcfce7 !important;
-    color: #065f46 !important;
+    background-color: var(--app-hover) !important;
+    color: var(--app-text) !important;
 }
 
 html:not(.dark) .admin-shell aside .space-y-0\.5 a.bg-zinc-800\/60,
 html:not(.dark) .admin-shell aside .space-y-0\.5 a.text-emerald-400,
 html:not(.dark) .admin-shell aside a.admin-subnav-active {
     background-color: #ffffff !important;
-    color: #065f46 !important;
-    font-weight: 700 !important;
-    border: 1px solid #86efac !important;
-    border-left: 3px solid #059669 !important;
+    color: var(--app-nav-active-text) !important;
+    font-weight: 600 !important;
+    border: 1px solid var(--app-border) !important;
+    border-left: 3px solid var(--app-accent) !important;
     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04) !important;
 }
 
@@ -250,13 +251,13 @@ html:not(.dark) .admin-shell aside .space-y-0\.5 a.bg-zinc-800\/60:hover,
 html:not(.dark) .admin-shell aside .space-y-0\.5 a.text-emerald-400:hover,
 html:not(.dark) .admin-shell aside a.admin-subnav-active:hover {
     background-color: #ffffff !important;
-    color: #047857 !important;
-    border-color: #4ade80 !important;
+    color: var(--app-accent-hover) !important;
+    border-color: var(--app-border-strong) !important;
 }
 
 html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/70 span.text-zinc-400,
 html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/60 span.text-zinc-400 {
-    color: #059669 !important;
+    color: var(--app-accent) !important;
     font-weight: 600 !important;
 }
 
@@ -264,15 +265,15 @@ html:not(.dark) .admin-shell aside nav a.bg-emerald-950\/60 span.text-zinc-400 {
 html:not(.dark) .creator-shell aside .border-t,
 html:not(.dark) .admin-shell aside .border-t,
 html:not(.dark) .admin-shell aside .border-b {
-    border-color: #dcfce7 !important;
+    border-color: var(--app-border) !important;
 }
 html:not(.dark) .admin-shell aside div.border-t.bg-zinc-950\/40 {
-    background-color: #f0fdf4 !important;
-    border-color: #dcfce7 !important;
+    background-color: var(--app-sidebar-bg) !important;
+    border-color: var(--app-border) !important;
 }
 html:not(.dark) .creator-shell aside a.text-zinc-400:hover {
-    background-color: #dcfce7 !important;
-    color: #065f46 !important;
+    background-color: var(--app-hover) !important;
+    color: var(--app-text) !important;
 }
 
 /* Dark mode sub-navigation explicit definitions */
@@ -337,6 +338,12 @@ html:not(.dark) .admin-shell a.border-emerald-700\/60.bg-emerald-950\/30 {
 }
 
 /* Secondary/nested panels */
+html:not(.dark) .creator-shell .bg-zinc-950\/70,
+html:not(.dark) .admin-shell .bg-zinc-950\/70,
+html:not(.dark) .creator-shell .bg-zinc-950\/60,
+html:not(.dark) .admin-shell .bg-zinc-950\/60,
+html:not(.dark) .creator-shell .bg-zinc-950\/50,
+html:not(.dark) .admin-shell .bg-zinc-950\/50,
 html:not(.dark) .creator-shell .bg-zinc-800,
 html:not(.dark) .admin-shell .bg-zinc-800,
 html:not(.dark) .creator-shell .bg-zinc-800\/50,
@@ -345,6 +352,12 @@ html:not(.dark) .creator-shell .bg-zinc-800\/80,
 html:not(.dark) .admin-shell .bg-zinc-800\/80 {
     background-color: var(--app-surface-muted) !important;
     border-color: var(--app-border) !important;
+}
+
+html:not(.dark) .admin-shell .bg-zinc-950\/70 .text-white,
+html:not(.dark) .admin-shell .bg-zinc-950\/60 .text-white,
+html:not(.dark) .creator-shell .bg-zinc-950\/60 .text-white {
+    color: var(--app-text) !important;
 }
 
 /* Icon tiles in KPI cards and buttons */

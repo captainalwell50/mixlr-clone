@@ -61,7 +61,7 @@
                     <input type="checkbox" name="is_custom" value="1" @checked(old('is_custom', $plan->is_custom ?? false))>
                     <span>
                         <span class="block">Contact sales package</span>
-                        <span class="block text-xs text-[var(--stage-muted)]">Hide price and features. Billing shows Contact sales instead of Paystack checkout.</span>
+                        <span class="block text-xs text-[var(--stage-muted)]">Hide price and features. Billing shows Contact sales instead of automated checkout.</span>
                     </span>
                 </label>
             </div>

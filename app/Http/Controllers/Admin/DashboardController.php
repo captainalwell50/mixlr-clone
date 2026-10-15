@@ -22,6 +22,7 @@ use App\Services\AdminAttentionService;
 use App\Services\AzureVmCapacityService;
 use App\Services\ListenerPresenceService;
 use App\Services\PaystackClient;
+use App\Services\PlatformFinanceService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -33,6 +34,7 @@ class DashboardController extends Controller
         ListenerPresenceService $presenceService,
         AzureVmCapacityService $vmCapacity,
         PaystackClient $paystack,
+        PlatformFinanceService $finance,
     ): View {
         abort_unless($request->user()?->isAdmin(), 403);
 
@@ -100,6 +102,18 @@ class DashboardController extends Controller
         $vmSnapshot = $vmCapacity->snapshot();
         $paystackEnabled = $paystack->enabled();
 
+        // 5. Commercial & Finance Telemetry
+        $financeOverview = $finance->getOverviewMetrics();
+        $subscriptionPerformance = $finance->getSubscriptionPerformance();
+        $revenueTrend = $finance->getRevenueTrend('30d');
+
+        // 6. Growth & Acquisition Telemetry
+        $growthRange = in_array($request->query('growth_range'), ['7d', '30d', '90d', '12m'], true)
+            ? (string) $request->query('growth_range')
+            : '30d';
+        $growthMetrics = $finance->getGrowthMetrics();
+        $growthCurve = $finance->getGrowthCurve($growthRange);
+
         return view('admin.dashboard', [
             'metrics' => [
                 'live_now' => $liveNowCount,
@@ -116,6 +130,12 @@ class DashboardController extends Controller
                 'approved_affiliates' => $approvedAffiliatesCount,
                 'pending_affiliates' => $pendingAffiliatesCount,
             ],
+            'financeOverview' => $financeOverview,
+            'subscriptionPerformance' => $subscriptionPerformance,
+            'revenueTrend' => $revenueTrend,
+            'growthMetrics' => $growthMetrics,
+            'growthCurve' => $growthCurve,
+            'growthRange' => $growthRange,
             'liveStreams' => $liveStreams,
             'attentionItems' => $attentionItems,
             'listenPlaybackStatus' => $listenPlaybackStatus,

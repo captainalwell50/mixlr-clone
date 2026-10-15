@@ -21,7 +21,7 @@
     @if (auth()->user()?->isAdmin() && $plans->isNotEmpty())
         <section class="mt-8 max-w-lg rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Pricing package</h2>
-            <p class="mt-1 mb-4 text-sm text-[var(--stage-muted)]">Assign a package so this creator can go live without Paystack checkout.</p>
+            <p class="mt-1 mb-4 text-sm text-[var(--stage-muted)]">Assign a package so this creator can go live without automated checkout.</p>
             @include('admin.partials.assign-plan', ['organization' => $organization, 'plans' => $plans])
         </section>
     @endif
@@ -54,7 +54,7 @@
             <label for="support_url" class="block text-sm font-medium text-zinc-300">Support / donate URL</label>
             <input id="support_url" type="url" name="support_url" value="{{ old('support_url', $organization->support_url) }}"
                 class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white" placeholder="https://…">
-            <p class="mt-1 text-xs text-zinc-500">Listener giving (Paystack page or bank details) is on Customise channel.</p>
+            <p class="mt-1 text-xs text-zinc-500">Listener giving (giving page or bank details) is on Customise channel.</p>
         </div>
         <div>
             <label for="social_feed_url" class="block text-sm font-medium text-zinc-300">Social photo feed URL</label>

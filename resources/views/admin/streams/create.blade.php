@@ -4,7 +4,7 @@
 
 @section('content')
     <h1 class="console-title">New stream</h1>
-    <p class="console-lead">Creates a MediaMTX path for browser WHIP, OBS/RTMP, and HLS.</p>
+    <p class="console-lead">Creates a live broadcast path for browser WHIP, OBS/RTMP, and HLS.</p>
 
     <form method="POST" action="{{ route('admin.streams.store') }}" class="mt-8 max-w-lg space-y-4">
         @csrf

@@ -376,4 +376,43 @@ class AdminDashboardTest extends TestCase
             ->assertSee('data-theme-option="system"', false)
             ->assertSee('admin-shell', false);
     }
+
+    public function test_super_admin_dashboard_renders_growth_and_acquisition_section(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $response = $this->actingAs($admin)->get(route('admin.dashboard'));
+
+        $response->assertOk()
+            ->assertSee('Growth &amp; Acquisition', false)
+            ->assertSee('Signups Today')
+            ->assertSee('Signups (Month)')
+            ->assertSee('New Orgs (Mo)')
+            ->assertSee('New Paid Creators')
+            ->assertSee('Paid Conversion')
+            ->assertSee('MoM Signup Growth')
+            ->assertSee('Signup Growth')
+            ->assertSee('Acquisition Funnel')
+            ->assertSee('Registered Users')
+            ->assertSee('Organisations Created')
+            ->assertSee('Paid Creator Subscriptions')
+            ->assertSee('7 days')
+            ->assertSee('30 days')
+            ->assertSee('90 days')
+            ->assertSee('12 months');
+    }
+
+    public function test_super_admin_dashboard_uses_provider_neutral_copy(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $response = $this->actingAs($admin)->get(route('admin.dashboard'));
+
+        $response->assertOk()
+            ->assertSee('Payment Gateway API')
+            ->assertSee('Daily payment checkouts')
+            ->assertDontSee('Paystack API')
+            ->assertDontSee('Paystack Ready')
+            ->assertDontSee('Daily Paystack checkouts');
+    }
 }

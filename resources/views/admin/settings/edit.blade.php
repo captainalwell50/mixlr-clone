@@ -7,7 +7,7 @@
         <div>
             <p class="site-section-label">Platform Admin</p>
             <h1 class="console-title mt-2">Platform settings</h1>
-            <p class="console-lead">Global controls for public listen playback, origin VM size, email, contact, and Paystack billing.</p>
+            <p class="console-lead">Global controls for public listen playback, infrastructure capacity, email, contact, and payment gateway billing.</p>
         </div>
     </div>
 
@@ -194,10 +194,10 @@
 
         <section class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6 space-y-5">
             <div>
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Origin host capacity / VM size</h2>
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Infrastructure Capacity &amp; Compute Scaling</h2>
                 <p class="mt-2 text-sm text-[var(--stage-muted)]">
-                    With CDN HLS on, this media host only needs to be large while someone is publishing. Idle uses a cheaper SKU.
-                    Resize reboots the server for a few minutes — it is performed by host infrastructure automation (not from this page directly).
+                    With CDN HLS on, compute capacity only needs to scale up while someone is publishing. Idle state uses a lower-tier profile.
+                    Scaling is performed by infrastructure automation (not from this page directly).
                 </p>
             </div>
 
@@ -222,7 +222,7 @@
                 <p class="text-xs text-[var(--stage-muted)]">
                     Autoscale env flag:
                     <span class="{{ $vmCapacity['enabled'] ? 'text-emerald-200' : 'text-amber-200/90' }}">
-                        {{ $vmCapacity['enabled'] ? 'on' : 'off (set AZURE_VM_AUTOSCALE_ENABLED=true)' }}
+                        {{ $vmCapacity['enabled'] ? 'on' : 'off (autoscale env flag not set)' }}
                     </span>
                     @if ($vmCapacity['hold_peak_until'])
                         · Hold peak until {{ $vmCapacity['hold_peak_until'] }}
