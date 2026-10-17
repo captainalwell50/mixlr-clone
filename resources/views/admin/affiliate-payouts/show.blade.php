@@ -48,6 +48,28 @@
         </div>
     </div>
 
+    <div class="mt-4 rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-4 text-xs">
+        <span class="block text-xs uppercase tracking-wide text-[var(--stage-muted)] mb-2 font-semibold">Settlement Bank Destination Snapshot (Encrypted at Rest)</span>
+        <div class="grid gap-3 sm:grid-cols-4">
+            <div>
+                <span class="text-[var(--stage-muted)] block">Bank Name:</span>
+                <span class="text-white font-medium">{{ $payout->bank_name ?? 'Not snapshotted' }}</span>
+            </div>
+            <div>
+                <span class="text-[var(--stage-muted)] block">Bank Code:</span>
+                <span class="text-white font-mono">{{ $payout->bank_code ?? '—' }}</span>
+            </div>
+            <div>
+                <span class="text-[var(--stage-muted)] block">Account Name:</span>
+                <span class="text-white font-medium">{{ $payout->account_name ?? '—' }}</span>
+            </div>
+            <div>
+                <span class="text-[var(--stage-muted)] block">Account Number:</span>
+                <span class="text-emerald-400 font-mono font-medium">{{ $payout->maskedAccountNumber() ?? '—' }}</span>
+            </div>
+        </div>
+    </div>
+
     <div class="mt-4 rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-4 text-xs text-zinc-300">
         <span class="block text-xs uppercase tracking-wide text-[var(--stage-muted)] mb-2 font-semibold">Lifecycle Trail</span>
         <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

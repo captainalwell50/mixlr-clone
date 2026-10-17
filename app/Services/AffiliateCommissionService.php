@@ -5,6 +5,11 @@ namespace App\Services;
 use App\Enums\AffiliateCommissionStatus;
 use App\Enums\AffiliatePayoutStatus;
 use App\Enums\OrgRole;
+use App\Events\AffiliateCommissionPayable;
+use App\Events\AffiliateCommissionReversed;
+use App\Events\AffiliatePayoutApproved;
+use App\Events\AffiliatePayoutPaid;
+use App\Events\AffiliateQualificationAchieved;
 use App\Models\AffiliateAccount;
 use App\Models\AffiliateCommission;
 use App\Models\AffiliateCommissionAudit;
@@ -232,25 +237,43 @@ class AffiliateCommissionService
             return true;
         }
 
-        $target = AffiliateQualificationPolicy::requiredDistinctPayingOrganisations();
-        $count = $affiliate->qualifyingOrganizationsCount();
+        return DB::transaction(function () use ($affiliate): bool {
+            $locked = AffiliateAccount::query()
+                ->where('id', $affiliate->id)
+                ->lockForUpdate()
+                ->first();
 
-        if ($count >= $target) {
-            $affiliate->update(['payout_qualified_at' => now()]);
+            if (! $locked || $locked->isQualified()) {
+                if ($locked) {
+                    $affiliate->payout_qualified_at = $locked->payout_qualified_at;
+                }
 
-            $this->recordAudit(
-                account: $affiliate,
-                action: 'qualification_achieved',
-                notes: "Permanent payout qualification achieved with {$count} distinct paying churches.",
-            );
+                return true;
+            }
 
-            // Once qualified, release any matured held commissions for this affiliate immediately
-            $this->processMatureHolds($affiliate);
+            $target = AffiliateQualificationPolicy::requiredDistinctPayingOrganisations();
+            $count = $locked->qualifyingOrganizationsCount();
 
-            return true;
-        }
+            if ($count >= $target) {
+                $locked->update(['payout_qualified_at' => now()]);
+                $affiliate->payout_qualified_at = $locked->payout_qualified_at;
 
-        return false;
+                $this->recordAudit(
+                    account: $locked,
+                    action: 'qualification_achieved',
+                    notes: "Permanent payout qualification achieved with {$count} distinct paying churches.",
+                );
+
+                event(new AffiliateQualificationAchieved($locked));
+
+                // Once qualified, release any matured held commissions for this affiliate immediately
+                $this->processMatureHolds($locked);
+
+                return true;
+            }
+
+            return false;
+        });
     }
 
     /**
@@ -294,6 +317,8 @@ class AffiliateCommissionService
                     currency: $commission->currency,
                     notes: '14-day hold period completed and affiliate is qualified; commission is now payable.',
                 );
+
+                event(new AffiliateCommissionPayable($commission));
             });
 
             $transitioned++;
@@ -418,6 +443,8 @@ class AffiliateCommissionService
                     notes: "Held commission voided due to payment reversal: {$reason}",
                 );
 
+                event(new AffiliateCommissionReversed($commission, $reason));
+
                 return $commission;
             }
 
@@ -439,6 +466,8 @@ class AffiliateCommissionService
                     currency: $commission->currency,
                     notes: "Payable commission reversed due to payment reversal: {$reason}",
                 );
+
+                event(new AffiliateCommissionReversed($commission, $reason));
 
                 return $commission;
             }
@@ -496,6 +525,8 @@ class AffiliateCommissionService
                     notes: "Negative adjustment created for paid commission #{$commission->id}: {$reason}",
                 );
 
+                event(new AffiliateCommissionReversed($adjustment, $reason));
+
                 return $adjustment;
             }
 
@@ -533,7 +564,8 @@ class AffiliateCommissionService
                 ->lockForUpdate();
 
             if ($commissionIds !== null && count($commissionIds) > 0) {
-                $query->whereIn('id', $commissionIds);
+                $uniqueRequestedIds = array_values(array_unique($commissionIds));
+                $query->whereIn('id', $uniqueRequestedIds);
             }
 
             $commissions = $query->get();
@@ -541,6 +573,14 @@ class AffiliateCommissionService
                 throw ValidationException::withMessages([
                     'commissions' => 'No payable commissions found matching the criteria.',
                 ]);
+            }
+
+            if ($commissionIds !== null && count($commissionIds) > 0) {
+                if ($commissions->count() !== count(array_unique($commissionIds))) {
+                    throw ValidationException::withMessages([
+                        'commissions' => 'One or more requested commissions are not in payable status or are already allocated to a payout.',
+                    ]);
+                }
             }
 
             $totalAmountMinor = (int) $commissions->sum('commission_amount_minor');
@@ -551,7 +591,7 @@ class AffiliateCommissionService
             }
 
             $minPayoutMinor = (int) (AffiliateProgrammeSettings::all()['minimum_payout_minor'] ?? 0);
-            if ($totalAmountMinor < $minPayoutMinor) {
+            if ($minPayoutMinor > 0 && $totalAmountMinor < $minPayoutMinor) {
                 throw ValidationException::withMessages([
                     'amount' => "Payout amount ({$currency} ".number_format($totalAmountMinor / 100, 2).") is below minimum payout threshold ({$currency} ".number_format($minPayoutMinor / 100, 2).').',
                 ]);
@@ -562,6 +602,10 @@ class AffiliateCommissionService
                 'payout_reference' => AffiliatePayout::generateReference(),
                 'currency' => $currency,
                 'amount_minor' => $totalAmountMinor,
+                'bank_name' => $affiliate->bank_name,
+                'bank_code' => $affiliate->bank_code,
+                'account_name' => $affiliate->account_name,
+                'account_number' => $affiliate->account_number,
                 'status' => AffiliatePayoutStatus::Draft,
                 'notes' => $notes,
                 'admin_id' => $actor?->id,
@@ -627,7 +671,10 @@ class AffiliateCommissionService
                 notes: "Payout batch {$payout->payout_reference} approved.",
             );
 
-            return $payout->fresh();
+            $fresh = $payout->fresh();
+            event(new AffiliatePayoutApproved($fresh));
+
+            return $fresh;
         });
     }
 
@@ -693,7 +740,106 @@ class AffiliateCommissionService
                 notes: "Payout batch {$payout->payout_reference} marked as paid.",
             );
 
-            return $payout->fresh();
+            $fresh = $payout->fresh();
+            event(new AffiliatePayoutPaid($fresh));
+
+            return $fresh;
+        });
+    }
+
+    /**
+     * Affiliate-initiated payout request workflow.
+     * State transition: Creates a Draft payout batch awaiting Admin review.
+     * Only uses PAYABLE commissions. Never uses HELD or reversed commissions.
+     * Prevents duplicate allocation by locking commissions to this payout.
+     */
+    public function requestPayout(
+        AffiliateAccount $affiliate,
+        string $currency = 'NGN',
+        ?string $notes = null,
+    ): AffiliatePayout {
+        if (! $affiliate->canRefer()) {
+            throw ValidationException::withMessages([
+                'affiliate' => 'Your affiliate account is not eligible to request payouts.',
+            ]);
+        }
+
+        if (! $affiliate->isQualified()) {
+            throw ValidationException::withMessages([
+                'qualification' => 'You must reach payout qualification (minimum 5 distinct paying referred organisations) before requesting a payout.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($affiliate, $currency, $notes): AffiliatePayout {
+            $currency = strtoupper(trim($currency));
+
+            // Lock eligible payable commissions for this affiliate that have not been assigned to a payout
+            $commissions = AffiliateCommission::query()
+                ->where('affiliate_account_id', $affiliate->id)
+                ->where('status', AffiliateCommissionStatus::Payable->value)
+                ->where('currency', $currency)
+                ->whereNull('affiliate_payout_id')
+                ->lockForUpdate()
+                ->get();
+
+            if ($commissions->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'amount' => 'You do not have any payable commissions available for payout.',
+                ]);
+            }
+
+            $totalAmountMinor = (int) $commissions->sum('commission_amount_minor');
+            if ($totalAmountMinor <= 0) {
+                throw ValidationException::withMessages([
+                    'amount' => 'Available payout amount must be greater than zero.',
+                ]);
+            }
+
+            $minPayoutMinor = (int) (AffiliateProgrammeSettings::all()['minimum_payout_minor'] ?? 0);
+            if ($minPayoutMinor > 0 && $totalAmountMinor < $minPayoutMinor) {
+                throw ValidationException::withMessages([
+                    'amount' => "Your payable balance ({$currency} ".number_format($totalAmountMinor / 100, 2).") is below the minimum payout threshold of {$currency} ".number_format($minPayoutMinor / 100, 2).'.',
+                ]);
+            }
+
+            $payout = AffiliatePayout::query()->create([
+                'affiliate_account_id' => $affiliate->id,
+                'payout_reference' => AffiliatePayout::generateReference(),
+                'currency' => $currency,
+                'amount_minor' => $totalAmountMinor,
+                'bank_name' => $affiliate->bank_name,
+                'bank_code' => $affiliate->bank_code,
+                'account_name' => $affiliate->account_name,
+                'account_number' => $affiliate->account_number,
+                'status' => AffiliatePayoutStatus::Draft,
+                'notes' => $notes ? 'Affiliate request: '.trim($notes) : 'Requested by affiliate',
+                'admin_id' => null,
+                'approved_by' => null,
+                'approved_at' => null,
+            ]);
+
+            foreach ($commissions as $comm) {
+                AffiliatePayoutItem::query()->create([
+                    'affiliate_payout_id' => $payout->id,
+                    'affiliate_commission_id' => $comm->id,
+                    'amount_minor' => $comm->commission_amount_minor,
+                ]);
+
+                $comm->update(['affiliate_payout_id' => $payout->id]);
+            }
+
+            $this->recordAudit(
+                payout: $payout,
+                account: $affiliate,
+                action: 'payout_requested',
+                actorId: $affiliate->user_id,
+                toStatus: AffiliatePayoutStatus::Draft->value,
+                amountMinor: $totalAmountMinor,
+                currency: $currency,
+                notes: "Payout request {$payout->payout_reference} submitted by affiliate.",
+            );
+
+            return $payout;
         });
     }
 

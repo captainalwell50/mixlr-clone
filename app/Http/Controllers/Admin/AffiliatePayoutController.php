@@ -178,4 +178,101 @@ class AffiliatePayoutController extends Controller
 
         return back()->with('status', __('Payout batch cancelled and commissions released back to payable.'));
     }
+
+    public function batchStore(Request $request, AffiliateCommissionService $service): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor !== null, 403);
+
+        $affiliateIds = $request->input('affiliate_ids', []);
+
+        $query = AffiliateAccount::query()
+            ->whereNotNull('payout_qualified_at');
+
+        if (! empty($affiliateIds) && is_array($affiliateIds)) {
+            $query->whereIn('id', $affiliateIds);
+        } else {
+            $payableAffiliateIds = AffiliateCommission::query()
+                ->where('status', AffiliateCommissionStatus::Payable->value)
+                ->whereNull('affiliate_payout_id')
+                ->distinct('affiliate_account_id')
+                ->pluck('affiliate_account_id');
+            $query->whereIn('id', $payableAffiliateIds);
+        }
+
+        $affiliates = $query->get();
+        $createdCount = 0;
+
+        foreach ($affiliates as $affiliate) {
+            try {
+                $service->createPayout(
+                    affiliate: $affiliate,
+                    currency: 'NGN',
+                    actor: $actor,
+                    notes: 'Batch-generated payout draft',
+                );
+                $createdCount++;
+            } catch (\Exception $e) {
+                continue;
+            }
+        }
+
+        return redirect()
+            ->route('admin.affiliate-payouts.index')
+            ->with('status', __("Batch generated {$createdCount} payout draft(s)."));
+    }
+
+    public function batchApprove(Request $request, AffiliateCommissionService $service): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor !== null, 403);
+
+        $payoutIds = $request->validate([
+            'payout_ids' => ['required', 'array'],
+            'payout_ids.*' => ['integer', 'exists:affiliate_payouts,id'],
+        ])['payout_ids'];
+
+        $payouts = AffiliatePayout::query()
+            ->whereIn('id', $payoutIds)
+            ->where('status', AffiliatePayoutStatus::Draft)
+            ->get();
+
+        $approvedCount = 0;
+        foreach ($payouts as $payout) {
+            $service->approvePayout($payout, $actor);
+            $approvedCount++;
+        }
+
+        return redirect()
+            ->route('admin.affiliate-payouts.index')
+            ->with('status', __("Successfully approved {$approvedCount} payout batch(es)."));
+    }
+
+    public function batchMarkPaid(Request $request, AffiliateCommissionService $service): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor !== null, 403);
+
+        $validated = $request->validate([
+            'payout_ids' => ['required', 'array'],
+            'payout_ids.*' => ['integer', 'exists:affiliate_payouts,id'],
+            'payment_reference' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $payouts = AffiliatePayout::query()
+            ->whereIn('id', $validated['payout_ids'])
+            ->whereIn('status', [AffiliatePayoutStatus::Draft, AffiliatePayoutStatus::Approved])
+            ->get();
+
+        $paidCount = 0;
+        foreach ($payouts as $payout) {
+            $service->markPayoutPaid($payout, $actor, $validated['payment_reference'] ?? 'Batch manual settlement');
+            $paidCount++;
+        }
+
+        return redirect()
+            ->route('admin.affiliate-payouts.index')
+            ->with('status', __("Successfully marked {$paidCount} payout batch(es) as paid."));
+    }
 }
+

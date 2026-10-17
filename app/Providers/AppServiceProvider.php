@@ -54,6 +54,9 @@ class AppServiceProvider extends ServiceProvider
             \App\Events\SubscriptionPaymentReversed::class,
             \App\Listeners\ReverseAffiliateCommissionOnPaymentReversed::class,
         );
+        \Illuminate\Support\Facades\Event::subscribe(
+            \App\Listeners\SendAffiliateLifecycleNotifications::class,
+        );
 
         if ($this->app->environment('production')) {
             URL::forceScheme('https');

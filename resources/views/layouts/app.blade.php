@@ -14,7 +14,7 @@
     @vite(['resources/css/app.css', 'resources/js/pwa.js'])
     @yield('vite')
 </head>
-<body class="min-h-screen bg-[var(--color-ink)] font-sans text-[var(--stage-cream)] antialiased">
+<body class="app-shell min-h-screen bg-[var(--color-ink)] font-sans text-[var(--stage-cream)] antialiased">
     <nav class="app-nav">
         <div class="app-nav-inner">
             @include('partials.brand-logo', ['compact' => true, 'onDark' => true])
@@ -44,8 +44,7 @@
                         <a href="{{ route('onboarding.show') }}">Set up channel</a>
                     @endif
                     @if (auth()->user()->affiliateAccount?->canRefer())
-                        <a href="{{ route('affiliate.prospects.index') }}">My prospects</a>
-                        <a href="{{ route('affiliate.commissions.index') }}">My earnings</a>
+                        <a href="{{ route('affiliate.dashboard') }}">Partner Dashboard</a>
                     @endif
                     <a href="{{ route('my-library') }}">My Library</a>
                     <a href="{{ route('account.edit') }}">Account</a>

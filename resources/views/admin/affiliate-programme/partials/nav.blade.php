@@ -1,6 +1,7 @@
 <nav class="mb-6 flex flex-wrap gap-2 text-sm" aria-label="Affiliate programme">
     @foreach ([
         'Overview' => 'admin.affiliate-programme.overview',
+        'Reports' => 'admin.affiliate-reports.index',
         'Affiliates' => 'admin.affiliates.*',
         'Commissions' => 'admin.affiliate-commissions.*',
         'Payouts' => 'admin.affiliate-payouts.*',
@@ -11,6 +12,7 @@
     ] as $label => $pattern)
         @php
             $href = match ($pattern) {
+                'admin.affiliate-reports.index' => route('admin.affiliate-reports.index'),
                 'admin.affiliates.*' => route('admin.affiliates.index'),
                 'admin.affiliate-commissions.*' => route('admin.affiliate-commissions.index'),
                 'admin.affiliate-payouts.*' => route('admin.affiliate-payouts.index'),

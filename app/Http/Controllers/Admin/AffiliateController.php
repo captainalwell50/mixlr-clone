@@ -8,6 +8,7 @@ use App\Models\AffiliateAccount;
 use App\Models\Organization;
 use App\Models\User;
 use App\Services\AffiliateAttributionService;
+use App\Services\AffiliateCommissionService;
 use App\Services\AffiliateProgrammeSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,15 +18,21 @@ use Illuminate\View\View;
 
 class AffiliateController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, AffiliateCommissionService $commissionService): View
     {
         $q = trim((string) $request->query('q', ''));
+        $status = $request->query('status');
+        $validStatus = $status && AffiliateStatus::tryFrom((string) $status) ? $status : null;
+        $qualified = $request->query('qualified');
+        $hasPayable = $request->query('has_payable');
+        $hasHeld = $request->query('has_held');
+        $tier = $request->query('tier');
 
-        $affiliates = AffiliateAccount::query()
-            ->with('user')
+        $query = AffiliateAccount::query()
+            ->with(['user', 'commissions'])
             ->withCount('attributions')
-            ->when($q !== '', function ($query) use ($q): void {
-                $query->where(function ($inner) use ($q): void {
+            ->when($q !== '', function ($innerQuery) use ($q): void {
+                $innerQuery->where(function ($inner) use ($q): void {
                     $inner->where('referral_code', 'like', "%{$q}%")
                         ->orWhere('city', 'like', "%{$q}%")
                         ->orWhere('state_region', 'like', "%{$q}%")
@@ -36,13 +43,51 @@ class AffiliateController extends Controller
                         });
                 });
             })
-            ->orderByDesc('id')
+            ->when($validStatus, fn ($b) => $b->where('status', $validStatus))
+            ->when($qualified === 'yes', fn ($b) => $b->whereNotNull('payout_qualified_at'))
+            ->when($qualified === 'no', fn ($b) => $b->whereNull('payout_qualified_at'))
+            ->when($hasPayable === 'yes', function ($b): void {
+                $b->whereHas('commissions', function ($c): void {
+                    $c->where('status', \App\Enums\AffiliateCommissionStatus::Payable->value)
+                        ->whereNull('affiliate_payout_id');
+                });
+            })
+            ->when($hasHeld === 'yes', function ($b): void {
+                $b->whereHas('commissions', function ($c): void {
+                    $c->where('status', \App\Enums\AffiliateCommissionStatus::Held->value);
+                });
+            });
+
+        $affiliates = $query->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
+
+        // Calculate balances and tier for each affiliate on page
+        $affiliates->getCollection()->transform(function (AffiliateAccount $affiliate) use ($commissionService) {
+            $affiliate->balances = $commissionService->deriveBalances($affiliate);
+            $affiliate->level = $affiliate->currentLevel();
+            $affiliate->tier_progress = $affiliate->tierProgress();
+            return $affiliate;
+        });
+
+        // Filter by tier in memory if requested
+        if ($tier) {
+            $filtered = $affiliates->getCollection()->filter(function ($item) use ($tier) {
+                return strcasecmp($item->level['name'] ?? '', $tier) === 0;
+            });
+            $affiliates->setCollection($filtered);
+        }
 
         return view('admin.affiliates.index', [
             'affiliates' => $affiliates,
             'q' => $q,
+            'selectedStatus' => $validStatus,
+            'selectedQualified' => $qualified,
+            'selectedHasPayable' => $hasPayable,
+            'selectedHasHeld' => $hasHeld,
+            'selectedTier' => $tier,
+            'statuses' => AffiliateStatus::cases(),
+            'levels' => AffiliateProgrammeSettings::levels(),
         ]);
     }
 
@@ -117,9 +162,8 @@ class AffiliateController extends Controller
         $affiliate->loadCount(['attributions', 'referralVisits', 'commissions', 'payouts']);
 
         $attributions = $affiliate->attributions()
-            ->with('organization')
+            ->with(['organization.subscriptions'])
             ->latest('attributed_at')
-            ->limit(20)
             ->get();
 
         $recentCommissions = $affiliate->commissions()
@@ -128,9 +172,43 @@ class AffiliateController extends Controller
             ->limit(10)
             ->get();
 
+        $payouts = $affiliate->payouts()
+            ->withCount('commissions')
+            ->latest('id')
+            ->limit(15)
+            ->get();
+
+        $auditLogs = \App\Models\AffiliateCommissionAudit::query()
+            ->where('affiliate_account_id', $affiliate->id)
+            ->with('actor')
+            ->latest('id')
+            ->limit(20)
+            ->get();
+
+        $referredOrganizations = $attributions->map(function ($attr) use ($affiliate) {
+            $org = $attr->organization;
+            $commissions = $affiliate->commissions->where('organization_id', $org?->id);
+            $totalEarnedMinor = $commissions->whereIn('status', [
+                \App\Enums\AffiliateCommissionStatus::Held,
+                \App\Enums\AffiliateCommissionStatus::Payable,
+                \App\Enums\AffiliateCommissionStatus::Paid,
+            ])->sum('commission_amount_minor');
+
+            return [
+                'organization' => $org,
+                'source' => $attr->source,
+                'is_earning' => $attr->isEarningEligible(),
+                'attributed_at' => $attr->attributed_at,
+                'subscription_status' => $org?->subscriptions?->first()?->stripe_status ?? ($commissions->isNotEmpty() ? 'historical_paid' : 'no_subscription'),
+                'total_commissions_count' => $commissions->count(),
+                'total_earned_minor' => $totalEarnedMinor,
+            ];
+        });
+
         return view('admin.affiliates.show', [
             'affiliate' => $affiliate,
-            'attributions' => $attributions,
+            'attributions' => $attributions->take(20),
+            'referredOrganizations' => $referredOrganizations,
             'earningCount' => $affiliate->attributions()
                 ->whereIn('source', ['first_touch', 'prospect_reservation', 'admin'])
                 ->whereNotNull('affiliate_account_id')
@@ -140,6 +218,10 @@ class AffiliateController extends Controller
                 ->count(),
             'balances' => $commissionService->deriveBalances($affiliate),
             'recentCommissions' => $recentCommissions,
+            'payouts' => $payouts,
+            'auditLogs' => $auditLogs,
+            'riskFlags' => $affiliate->riskFlags(),
+            'tierProgress' => $affiliate->tierProgress(),
             'level' => $affiliate->currentLevel(),
         ]);
     }

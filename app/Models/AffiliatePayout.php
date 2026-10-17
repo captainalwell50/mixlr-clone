@@ -16,6 +16,10 @@ class AffiliatePayout extends Model
         'payout_reference',
         'currency',
         'amount_minor',
+        'bank_name',
+        'bank_code',
+        'account_name',
+        'account_number',
         'status',
         'notes',
         'admin_id',
@@ -28,6 +32,14 @@ class AffiliatePayout extends Model
         'cancellation_reason',
     ];
 
+    /**
+     * @var list<string>
+     */
+    protected $hidden = [
+        'account_number',
+        'account_name',
+    ];
+
     protected function casts(): array
     {
         return [
@@ -36,7 +48,39 @@ class AffiliatePayout extends Model
             'approved_at' => 'datetime',
             'paid_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'account_name' => 'encrypted',
+            'account_number' => 'encrypted',
         ];
+    }
+
+    public function maskedAccountNumber(): ?string
+    {
+        if (empty($this->account_number)) {
+            return null;
+        }
+
+        $raw = (string) $this->account_number;
+        $len = strlen($raw);
+        if ($len <= 4) {
+            return str_repeat('•', max(0, $len - 1)) . substr($raw, -1);
+        }
+
+        return str_repeat('•', 4) . substr($raw, -4);
+    }
+
+    public function payoutDestinationSummary(): ?string
+    {
+        if (empty($this->bank_name) || empty($this->account_number)) {
+            return null;
+        }
+
+        $masked = $this->maskedAccountNumber();
+        $summary = "{$this->bank_name} ({$masked})";
+        if (! empty($this->account_name)) {
+            $summary .= " - {$this->account_name}";
+        }
+
+        return $summary;
     }
 
     public function affiliateAccount(): BelongsTo

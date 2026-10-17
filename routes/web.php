@@ -18,7 +18,10 @@ use App\Http\Controllers\DigitalLibrary\SeriesController as PublicSeriesControll
 use App\Http\Controllers\Admin\AffiliateCommissionController;
 use App\Http\Controllers\Admin\AffiliatePayoutController;
 use App\Http\Controllers\Admin\AffiliateProspectController;
-use App\Http\Controllers\Affiliate\CommissionController as AffiliateCommissionStatementController;
+use App\Http\Controllers\Admin\AffiliateReportController;
+use App\Http\Controllers\Affiliate\CommissionController as AffiliatePortalCommissionController;
+use App\Http\Controllers\Affiliate\DashboardController as AffiliateDashboardController;
+use App\Http\Controllers\Affiliate\PayoutController as AffiliatePortalPayoutController;
 use App\Http\Controllers\Affiliate\ProspectController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\ChannelCustomiseController;
@@ -448,13 +451,19 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/onboarding/channel', [OnboardingController::class, 'storeChannel'])->name('onboarding.channel.store');
 
     Route::middleware('affiliate')->prefix('affiliate')->name('affiliate.')->group(function (): void {
+        Route::get('/', [AffiliateDashboardController::class, 'index'])->name('dashboard');
+        Route::get('dashboard', [AffiliateDashboardController::class, 'index']);
+        Route::get('commissions', [AffiliatePortalCommissionController::class, 'statement'])->name('commissions.index');
+        Route::get('payouts', [AffiliatePortalPayoutController::class, 'index'])->name('payouts.index');
+        Route::post('payouts/destination', [AffiliatePortalPayoutController::class, 'updateDestination'])->name('payouts.destination');
+        Route::post('payouts/request', [AffiliatePortalPayoutController::class, 'requestPayout'])->name('payouts.request');
+
         Route::get('prospects', [ProspectController::class, 'index'])->name('prospects.index');
         Route::get('prospects/create', [ProspectController::class, 'create'])->name('prospects.create');
         Route::get('prospects/search', [ProspectController::class, 'search'])->name('prospects.search');
         Route::post('prospects', [ProspectController::class, 'store'])->name('prospects.store');
         Route::get('prospects/{prospect}', [ProspectController::class, 'show'])->name('prospects.show');
         Route::post('prospects/{prospect}/status', [ProspectController::class, 'updateStatus'])->name('prospects.status');
-        Route::get('commissions', [AffiliateCommissionStatementController::class, 'statement'])->name('commissions.index');
     });
 
     Route::middleware('onboarded')->group(function (): void {
@@ -613,9 +622,14 @@ Route::middleware(['auth', 'onboarded'])->prefix('admin')->name('admin.')->group
         Route::get('affiliate-commissions', [AffiliateCommissionController::class, 'index'])->name('affiliate-commissions.index');
         Route::post('affiliate-commissions/{commission}/reverse', [AffiliateCommissionController::class, 'reverse'])->name('affiliate-commissions.reverse');
 
+        Route::get('affiliate-reports', [AffiliateReportController::class, 'index'])->name('affiliate-reports.index');
+
         Route::get('affiliate-payouts', [AffiliatePayoutController::class, 'index'])->name('affiliate-payouts.index');
         Route::get('affiliate-payouts/create', [AffiliatePayoutController::class, 'create'])->name('affiliate-payouts.create');
         Route::post('affiliate-payouts', [AffiliatePayoutController::class, 'store'])->name('affiliate-payouts.store');
+        Route::post('affiliate-payouts/batch-create', [AffiliatePayoutController::class, 'batchStore'])->name('affiliate-payouts.batch-create');
+        Route::post('affiliate-payouts/batch-approve', [AffiliatePayoutController::class, 'batchApprove'])->name('affiliate-payouts.batch-approve');
+        Route::post('affiliate-payouts/batch-mark-paid', [AffiliatePayoutController::class, 'batchMarkPaid'])->name('affiliate-payouts.batch-mark-paid');
         Route::get('affiliate-payouts/{payout}', [AffiliatePayoutController::class, 'show'])->name('affiliate-payouts.show');
         Route::post('affiliate-payouts/{payout}/approve', [AffiliatePayoutController::class, 'approve'])->name('affiliate-payouts.approve');
         Route::post('affiliate-payouts/{payout}/mark-paid', [AffiliatePayoutController::class, 'markPaid'])->name('affiliate-payouts.mark-paid');

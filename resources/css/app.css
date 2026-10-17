@@ -28,6 +28,7 @@
     --stage-muted: var(--color-muted);
     --stage-text: var(--color-cream);
     --stage-panel: var(--color-ink-elevated);
+    --stage-surface: var(--stage-panel);
     --stage-border: color-mix(in srgb, var(--color-cream) 18%, transparent);
     --stage-danger: var(--color-danger);
 
@@ -724,6 +725,7 @@ html:not(.dark) .billing-page,
 html:not(.dark) .console {
     --stage-ink: #f4f6f5;
     --stage-panel: #ffffff;
+    --stage-surface: #ffffff;
     --stage-border: #e2e8f0;
     --stage-cream: #0f172a;
     --stage-text: #0f172a;
