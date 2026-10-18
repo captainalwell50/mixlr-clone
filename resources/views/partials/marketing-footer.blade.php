@@ -22,3 +22,6 @@
         </p>
     </div>
 </footer>
+
+<x-whatsapp-support context="public" />
+
