@@ -525,5 +525,15 @@
             }
         });
     </script>
+
+    @hasSection('whatsapp_widget')
+        @yield('whatsapp_widget')
+    @else
+        <x-whatsapp-support
+            context="creator"
+            :organisation="$creatorOrg?->name"
+            :pageLabel="trim($__env->yieldContent('title', 'Creator Dashboard'))"
+        />
+    @endif
 </body>
 </html>

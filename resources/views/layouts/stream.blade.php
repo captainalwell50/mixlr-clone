@@ -9,12 +9,18 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="preconnect" href="https://fonts.bunny.net">
-    <link href="https://fonts.bunny.net/css?family=fraunces:500,600|source-sans-3:400,500,600|open-sans:600,700,800" rel="stylesheet" />
+    <link href="https://fonts.bunny.net/css?family=fraunces:500,600|source-sans-3:400,500,600|open-sans:600,700,800|ibm-plex-mono:500,600" rel="stylesheet" />
     <title>@yield('title', config('app.name', 'Sound Mix Live'))</title>
     @vite(['resources/css/app.css', 'resources/js/pwa.js'])
     @yield('vite')
 </head>
 <body class="stage-body">
     @yield('content')
+
+    @hasSection('whatsapp_widget')
+        @yield('whatsapp_widget')
+    @else
+        <x-whatsapp-support context="listener" />
+    @endif
 </body>
 </html>

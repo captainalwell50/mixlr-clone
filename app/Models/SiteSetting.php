@@ -25,6 +25,12 @@ class SiteSetting extends Model
 
     public const KEY_SUPPORT_EMAIL = 'support_email';
 
+    public const KEY_WHATSAPP_SUPPORT_ENABLED = 'whatsapp_support_enabled';
+
+    public const KEY_WHATSAPP_SUPPORT_NUMBER = 'whatsapp_support_number';
+
+    public const KEY_WHATSAPP_DEFAULT_MESSAGE = 'whatsapp_default_message';
+
     public const KEY_MAIL_MAILER = 'mail_mailer';
 
     public const KEY_MAIL_HOST = 'mail_host';
@@ -62,17 +68,51 @@ class SiteSetting extends Model
         'value',
     ];
 
-    public static function getValue(string $key): ?string
-    {
-        try {
-            return Cache::remember(self::cacheKey($key), now()->addHour(), function () use ($key): ?string {
-                $row = static::query()->where('key', $key)->first();
+    protected static ?array $runtimeCache = null;
 
-                return $row?->value;
+    protected static function booted(): void
+    {
+        static::saved(function () {
+            static::clearRuntimeCache();
+        });
+
+        static::deleted(function () {
+            static::clearRuntimeCache();
+        });
+    }
+
+    public static function clearRuntimeCache(): void
+    {
+        static::$runtimeCache = null;
+        Cache::forget('site_settings:all_v1');
+    }
+
+    public static function allValues(): array
+    {
+        if (static::$runtimeCache !== null) {
+            return static::$runtimeCache;
+        }
+
+        try {
+            static::$runtimeCache = Cache::remember('site_settings:all_v1', now()->addHour(), function (): array {
+                return static::query()->pluck('value', 'key')->all();
             });
         } catch (\Throwable) {
-            return static::query()->where('key', $key)->first()?->value;
+            try {
+                static::$runtimeCache = static::query()->pluck('value', 'key')->all();
+            } catch (\Throwable) {
+                static::$runtimeCache = [];
+            }
         }
+
+        return static::$runtimeCache ?? [];
+    }
+
+    public static function getValue(string $key): ?string
+    {
+        $all = static::allValues();
+
+        return array_key_exists($key, $all) ? $all[$key] : null;
     }
 
     public static function putValue(string $key, ?string $value): void
@@ -82,6 +122,8 @@ class SiteSetting extends Model
             ['value' => $value],
         );
 
+        static::$runtimeCache = null;
+        Cache::forget('site_settings:all_v1');
         Cache::forget(self::cacheKey($key));
     }
 
@@ -300,6 +342,164 @@ class SiteSetting extends Model
         }
 
         static::putValue(self::KEY_SUPPORT_EMAIL, $email);
+    }
+
+    public static function normalizeWhatsAppNumber(?string $raw): ?string
+    {
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        $trimmed = trim($raw);
+
+        // Reject if it contains letters or disallowed characters
+        if (preg_match('/[a-zA-Z]/', $trimmed) || preg_match('/[^0-9+\s\-().]/', $trimmed)) {
+            return null;
+        }
+
+        // Strip non-digit characters (+, spaces, hyphens, parentheses, etc.)
+        $digits = preg_replace('/[^\d]/', '', $trimmed);
+
+        // Strip leading 00 international dialing prefix (e.g. 00234... -> 234...)
+        if (str_starts_with($digits, '00')) {
+            $digits = preg_replace('/^00+/', '', $digits);
+        }
+
+        // Explicitly handle 11-digit Nigerian local format starting with 0 (e.g. 080XXXXXXXX -> 23480XXXXXXXX)
+        // Never silently strip to 80XXXXXXXX.
+        if (preg_match('/^0\d{10}$/', $digits)) {
+            $digits = '234' . substr($digits, 1);
+        }
+
+        // E.164 international numbers never begin with 0. Reject malformed numbers starting with 0.
+        if (str_starts_with($digits, '0')) {
+            return null;
+        }
+
+        // Standard E.164 international numbers are typically 8 to 15 digits
+        if (strlen($digits) < 8 || strlen($digits) > 15) {
+            return null;
+        }
+
+        return $digits;
+    }
+
+    public static function whatsappSupportEnabled(): bool
+    {
+        $stored = static::getValue(self::KEY_WHATSAPP_SUPPORT_ENABLED);
+        if ($stored !== null && $stored !== '') {
+            return filter_var($stored, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if (config()->has('services.whatsapp.enabled')) {
+            $cfg = config('services.whatsapp.enabled');
+            if ($cfg !== null && $cfg !== '') {
+                return filter_var($cfg, FILTER_VALIDATE_BOOLEAN);
+            }
+        }
+
+        $env = env('WHATSAPP_SUPPORT_ENABLED');
+        if ($env !== null && $env !== '') {
+            return filter_var($env, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        return static::whatsappSupportNumber() !== null;
+    }
+
+    public static function whatsappSupportNumber(): ?string
+    {
+        $stored = static::getValue(self::KEY_WHATSAPP_SUPPORT_NUMBER);
+        if (filled($stored)) {
+            $normalized = static::normalizeWhatsAppNumber((string) $stored);
+            if ($normalized !== null) {
+                return $normalized;
+            }
+        }
+
+        // When admin has saved WhatsApp configuration, do not fall back to env number
+        if (static::getValue(self::KEY_WHATSAPP_SUPPORT_ENABLED) !== null) {
+            return null;
+        }
+
+        if (config()->has('services.whatsapp.number')) {
+            $cfg = config('services.whatsapp.number');
+            if ($cfg !== null && $cfg !== '') {
+                return static::normalizeWhatsAppNumber((string) $cfg);
+            }
+
+            return null;
+        }
+
+        $env = env('WHATSAPP_SUPPORT_NUMBER');
+        if (filled($env)) {
+            return static::normalizeWhatsAppNumber((string) $env);
+        }
+
+        return null;
+    }
+
+    public static function whatsappSupportNumberRaw(): string
+    {
+        // Never expose environment values in UI input fields
+        $stored = static::getValue(self::KEY_WHATSAPP_SUPPORT_NUMBER);
+
+        return filled($stored) ? (string) $stored : '';
+    }
+
+    public static function whatsappDefaultMessageRaw(): string
+    {
+        // Never expose environment values in UI input fields
+        $stored = static::getValue(self::KEY_WHATSAPP_DEFAULT_MESSAGE);
+
+        return filled($stored) ? (string) $stored : '';
+    }
+
+    public static function whatsappSupportIsFromAdmin(): bool
+    {
+        return filled(static::getValue(self::KEY_WHATSAPP_SUPPORT_NUMBER));
+    }
+
+    public static function whatsappDefaultMessage(): string
+    {
+        $stored = static::getValue(self::KEY_WHATSAPP_DEFAULT_MESSAGE);
+        if (filled($stored)) {
+            return (string) $stored;
+        }
+
+        if (config()->has('services.whatsapp.default_message')) {
+            $cfg = config('services.whatsapp.default_message');
+            if (filled($cfg)) {
+                return (string) $cfg;
+            }
+        }
+
+        $env = env('WHATSAPP_DEFAULT_MESSAGE');
+        if (filled($env)) {
+            return (string) $env;
+        }
+
+        return "Hello SoundMix Support,\nI need help with SoundMix.";
+    }
+
+    public static function putWhatsAppSupport(?string $number, bool $enabled = true, ?string $message = null): void
+    {
+        static::putValue(self::KEY_WHATSAPP_SUPPORT_ENABLED, $enabled ? '1' : '0');
+
+        $norm = static::normalizeWhatsAppNumber($number);
+        if ($norm === null) {
+            static::query()->where('key', self::KEY_WHATSAPP_SUPPORT_NUMBER)->delete();
+            Cache::forget(self::cacheKey(self::KEY_WHATSAPP_SUPPORT_NUMBER));
+        } else {
+            static::putValue(self::KEY_WHATSAPP_SUPPORT_NUMBER, $norm);
+        }
+
+        $msg = is_string($message) ? trim($message) : '';
+        if ($msg === '') {
+            static::query()->where('key', self::KEY_WHATSAPP_DEFAULT_MESSAGE)->delete();
+            Cache::forget(self::cacheKey(self::KEY_WHATSAPP_DEFAULT_MESSAGE));
+        } else {
+            static::putValue(self::KEY_WHATSAPP_DEFAULT_MESSAGE, $msg);
+        }
     }
 
     /**

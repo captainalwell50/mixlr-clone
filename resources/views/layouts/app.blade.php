@@ -87,5 +87,16 @@
 
         @yield('content')
     </main>
+
+    @hasSection('whatsapp_widget')
+        @yield('whatsapp_widget')
+    @else
+        @php
+            $isAffiliate = request()->routeIs('affiliate.*') || request()->is('affiliate*');
+            $waContext = $isAffiliate ? 'affiliate' : (auth()->check() ? 'authenticated' : 'public');
+            $waPageTitle = trim($__env->yieldContent('title', ''));
+        @endphp
+        <x-whatsapp-support :context="$waContext" :pageLabel="$waPageTitle ?: null" />
+    @endif
 </body>
 </html>

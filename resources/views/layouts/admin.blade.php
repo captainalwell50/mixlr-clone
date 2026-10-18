@@ -442,5 +442,14 @@
             }
         });
     </script>
+
+    @hasSection('whatsapp_widget')
+        @yield('whatsapp_widget')
+    @else
+        <x-whatsapp-support
+            context="admin"
+            :pageLabel="trim($__env->yieldContent('title', 'Admin Console'))"
+        />
+    @endif
 </body>
 </html>

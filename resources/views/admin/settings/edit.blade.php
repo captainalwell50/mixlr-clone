@@ -491,8 +491,56 @@
 
             <p class="text-xs text-[var(--stage-muted)]">Leave blank and save to fall back to .env.</p>
 
+            <div class="pt-4 border-t border-[var(--stage-border)] space-y-4">
+                <div>
+                    <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--stage-muted)]">WhatsApp Support Widget</h3>
+                    <p class="mt-1 text-xs text-[var(--stage-muted)]">
+                        Enables a global one-click WhatsApp support button across public, listener, creator, and super admin pages, plus a compact action in Web Studio.
+                    </p>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" name="whatsapp_support_enabled" id="whatsapp_support_enabled" value="1"
+                        @checked($whatsappEnabled)
+                        class="rounded border-[var(--stage-border)] bg-transparent text-emerald-500 focus:ring-emerald-500">
+                    <label for="whatsapp_support_enabled" class="text-sm font-medium text-[var(--stage-cream)]">
+                        Enable WhatsApp Support Widget
+                    </label>
+                </div>
+
+                <p class="text-sm text-[var(--stage-cream)]">
+                    Number Source:
+                    <strong>{{ $whatsappNumberFromAdmin ? 'admin settings' : '.env' }}</strong>
+                </p>
+
+                <label class="block text-sm">
+                    <span class="text-[var(--stage-muted)]">WhatsApp Support Number</span>
+                    <input type="text" name="whatsapp_support_number" value="{{ $whatsappNumber }}"
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2 font-mono text-sm"
+                        placeholder="2348012345678">
+                    <span class="mt-1 block text-[11px] text-[var(--stage-muted)]">
+                        Use an international WhatsApp number, e.g. 2348012345678.
+                    </span>
+                </label>
+
+                @error('whatsapp_support_number')
+                    <p class="text-xs text-red-300">{{ $message }}</p>
+                @enderror
+
+                <label class="block text-sm">
+                    <span class="text-[var(--stage-muted)]">Default Support Message Greeting (Optional)</span>
+                    <textarea name="whatsapp_default_message" rows="2"
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2 text-sm"
+                        placeholder="Hello SoundMix Support,&#10;I need help with SoundMix.">{{ $whatsappDefaultMessage }}</textarea>
+                </label>
+
+                @error('whatsapp_default_message')
+                    <p class="text-xs text-red-300">{{ $message }}</p>
+                @enderror
+            </div>
+
             <div class="flex gap-3">
-                <button type="submit" class="console-btn console-btn-primary">Save contact</button>
+                <button type="submit" class="console-btn console-btn-primary">Save contact &amp; support</button>
             </div>
         </section>
     </form>

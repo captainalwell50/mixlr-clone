@@ -1,6 +1,18 @@
 import './bootstrap';
 import { bindScriptureStudio } from './scripture-studio';
 import { bindSongStudio } from './song-studio';
+import { bindNdiStudio } from './ndi-studio';
+import { decidePublisherReconnect } from './publisher-reconnect';
+import { mediaPlaylistState, nextPlaylistPlayback } from './playlist-transport';
+import {
+    decideReceivedLayout,
+    detectedSourceChannels,
+    effectiveProgramLayout,
+    programChannelCount,
+} from './studio-program-layout';
+import { bindStudioThemeToggle } from './studio-theme';
+
+bindStudioThemeToggle();
 
 const root = document.getElementById('studio-root');
 const whipUrl = root?.dataset.whipUrl;
@@ -13,7 +25,10 @@ const btnStart = document.getElementById('btn-start');
 const btnStop = document.getElementById('btn-stop'); // legacy
 const btnPause = document.getElementById('btn-pause');
 const btnEnd = document.getElementById('btn-end');
+const btnPublishRecording = document.getElementById('btn-publish-recording');
+const btnEditRecording = document.getElementById('btn-edit-recording');
 const btnCreateEvent = document.getElementById('btn-create-event');
+const btnUpgradeLive = document.getElementById('btn-upgrade-live');
 const btnAddFile = document.getElementById('btn-add-file');
 const eventTitleEl = document.getElementById('studio-event-title');
 const eventUrlEl = document.getElementById('event-url');
@@ -22,6 +37,8 @@ const sessionGoLiveUrl = root?.dataset.sessionGoLiveUrl;
 const sessionPauseUrl = root?.dataset.sessionPauseUrl;
 const sessionResumeUrl = root?.dataset.sessionResumeUrl;
 const sessionEndUrl = root?.dataset.sessionEndUrl;
+const sessionRecordingUrl = root?.dataset.sessionRecordingUrl;
+const sessionPublisherClaimUrl = root?.dataset.sessionPublisherClaimUrl;
 const sessionCreateEventUrl = root?.dataset.sessionCreateEventUrl;
 const sessionRenameEventUrl = root?.dataset.sessionRenameEventUrl;
 const streamTitleDefault = root?.dataset.streamTitle || 'Sound Mix Live';
@@ -57,6 +74,10 @@ const timerEl = document.getElementById('studio-timer');
 const shareChannelBtn = document.getElementById('btn-share-channel');
 const shareChannelMainBtn = document.getElementById('btn-share-channel-main');
 const copyChannelBtn = document.getElementById('btn-copy-channel');
+const copyEventBtn = document.getElementById('btn-copy-event');
+const shareEventBtn = document.getElementById('btn-share-event');
+const shareEventBlock = document.getElementById('share-event-block');
+const shareEventNote = document.getElementById('share-event-note');
 const channelUrlEl = document.getElementById('channel-url');
 const channelShareUrl = root?.dataset.channelUrl || channelUrlEl?.textContent?.trim() || '';
 const channelShareName = root?.dataset.channelName || 'Sound Mix Live';
@@ -78,24 +99,71 @@ const playlistCueBtn = document.getElementById('playlist-cue');
 const micMuteBtn = document.getElementById('mic-mute');
 const auxMuteBtn = document.getElementById('aux-mute');
 const playlistMuteBtn = document.getElementById('playlist-mute');
+const micSourceSummaryEl = document.getElementById('mic-source-summary');
+const auxSourceSummaryEl = document.getElementById('aux-source-summary');
+const playlistSourceSummaryEl = document.getElementById('playlist-source-summary');
+const masterSourceSummaryEl = document.getElementById('master-source-summary');
 
-/** Opus fullband max (bits/sec). */
-const OPUS_MAX_BITRATE = 510_000;
+/** Windows Chromium often leaves 100cqh at ~0 in flex wells; measure throw from the slot. */
+function syncMixerFaderTravel() {
+    document.querySelectorAll('.mixer-fader-slot').forEach((slot) => {
+        const fader = slot.querySelector('.mixer-fader');
+        if (!fader) {
+            return;
+        }
+        const travel = Math.max(72, Math.round(slot.clientHeight));
+        slot.style.setProperty('--fader-travel', `${travel}px`);
+        slot.closest('.mixer-fader-well')?.style.setProperty('--fader-travel', `${travel}px`);
+        fader.style.width = `${travel}px`;
+    });
+}
+
+function bindMixerFaderLayout() {
+    syncMixerFaderTravel();
+    requestAnimationFrame(() => requestAnimationFrame(syncMixerFaderTravel));
+    const wells = document.querySelectorAll('.mixer-fader-well');
+    if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(() => syncMixerFaderTravel());
+        wells.forEach((well) => observer.observe(well));
+    }
+    window.addEventListener('resize', syncMixerFaderTravel);
+}
+
+bindMixerFaderLayout();
+
+/** Stereo Opus send cap. Admin platform setting; 320 kbps until the page says otherwise. */
+const OPUS_SEND_RATES = new Set([128000, 160000, 192000, 256000, 320000, 510000]);
+
+function readOpusSendBitrate(value) {
+    const rate = Number(value);
+    return OPUS_SEND_RATES.has(rate) ? rate : 320000;
+}
+
+let opusSendBitrate = readOpusSendBitrate(root?.dataset.opusBitrate);
 const LAYOUT_STORAGE_KEY = 'studio-audio-layout';
 
 /** Raw interface capture — no browser AGC / NS / EC (desktop / USB interfaces). */
 const CLEAN_AUDIO = {
-    channelCount: { ideal: 2 },
     sampleRate: { ideal: 48000 },
     sampleSize: { ideal: 16 },
     echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false,
+    voiceIsolation: false,
     googEchoCancellation: false,
     googNoiseSuppression: false,
     googAutoGainControl: false,
     googHighpassFilter: false,
     googTypingNoiseDetection: false,
+};
+
+/** Stronger than CLEAN_AUDIO booleans — Chrome often ignores false and keeps APM on. */
+const STRICT_CLEAN_AUDIO = {
+    sampleRate: { ideal: 48000 },
+    echoCancellation: { exact: false },
+    noiseSuppression: { exact: false },
+    autoGainControl: { exact: false },
+    voiceIsolation: false,
 };
 
 /** Simpler constraints for phones — strict CLEAN_AUDIO often fails on Android. */
@@ -177,6 +245,10 @@ let liveStartedAt = 0;
 let timerInterval = 0;
 /** @type {'mixer' | null} */
 let publishMode = null;
+/** idle | connecting | publishing | recovering | replaced | stopped */
+let publisherPhase = 'idle';
+/** Claim id for the WHIP session this tab last published. */
+let publisherClaim = null;
 /** Auto-republish WHIP after publisher network drops while still on air. */
 let publisherReconnectTimer = null;
 let publisherDisconnectGraceTimer = null;
@@ -233,8 +305,34 @@ function updateTimer() {
     timerEl.textContent = isLive ? formatTimer(Date.now() - liveStartedAt) : '00:00:00';
 }
 
+function updateStudioWhatsAppHref(live) {
+    const btn = document.getElementById('btn-studio-whatsapp');
+    if (!btn) return;
+    const base = btn.dataset.waBase;
+    if (!base) return;
+    const org = btn.dataset.orgName || '';
+    const currentTitleEl = document.getElementById('studio-event-title');
+    const eventTitle = currentTitleEl ? currentTitleEl.textContent.trim() : (btn.dataset.eventTitle || '');
+    const status = live ? 'On Air' : (sessionPaused ? 'Paused' : 'Standby');
+
+    let text = "Hello SoundMix Support,\nI need help with Web Studio.";
+    const details = [];
+    if (org) details.push('Organisation: ' + org);
+    details.push('Broadcast status: ' + status);
+    if (eventTitle && eventTitle !== 'No event selected') details.push('Event: ' + eventTitle);
+    if (details.length > 0) {
+        text += "\n\n" + details.join("\n");
+    }
+    btn.href = base + '?text=' + encodeURIComponent(text);
+}
+
 function setOnAir(live) {
     isLive = live;
+    if (live) {
+        publisherPhase = 'publishing';
+    } else if (publisherPhase !== 'replaced') {
+        publisherPhase = 'stopped';
+    }
     if (!live) {
         clearPublisherReconnect();
     }
@@ -263,6 +361,7 @@ function setOnAir(live) {
         updateTimer();
     }
     refreshSessionButtons();
+    updateStudioWhatsAppHref(live);
 }
 
 function httpsStudioUrl() {
@@ -319,14 +418,255 @@ function setMicEnableVisible(show) {
     }
 }
 
-/** @returns {'mono' | 'stereo'} */
-function audioLayout() {
+/** @type {1 | 2} */
+let detectedChannels = 1;
+/** @type {1 | 2} */
+let micReceivedChannels = 1;
+/** @type {1 | 2} */
+let auxReceivedChannels = 1;
+/** @type {Record<'mic' | 'aux', { splitter: ChannelSplitterNode, left: AnalyserNode, right: AnalyserNode, timer: ReturnType<typeof setTimeout>|null } | null>} */
+const layoutProbes = { mic: null, aux: null };
+
+/** @returns {'auto' | 'mono' | 'stereo'} */
+function audioLayoutChoice() {
     const v = audioLayoutSelect?.value;
-    return v === 'stereo' ? 'stereo' : 'mono';
+    if (v === 'mono' || v === 'stereo' || v === 'auto') {
+        return v;
+    }
+
+    return 'auto';
+}
+
+/** @returns {'mono' | 'stereo'} */
+function effectiveLayout() {
+    return effectiveProgramLayout(audioLayoutChoice(), detectedChannels);
 }
 
 function isMono() {
-    return audioLayout() === 'mono';
+    return effectiveLayout() === 'mono';
+}
+
+function mixChannelCount() {
+    return programChannelCount(audioLayoutChoice(), detectedChannels);
+}
+
+/**
+ * Native channel count of a captured track (not capability max).
+ * @param {MediaStreamTrack | undefined} track
+ */
+function trackReceivedChannels(track) {
+    if (!track) {
+        return 0;
+    }
+    const n = Number(track.getSettings?.()?.channelCount || 0);
+    if (n >= 2) {
+        return 2;
+    }
+    if (n === 1) {
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * @param {'mic' | 'aux'} which
+ * @param {1 | 2} n
+ */
+function setSourceChannels(which, n) {
+    if (which === 'aux') {
+        auxReceivedChannels = n;
+    } else {
+        micReceivedChannels = n;
+    }
+    const next = detectedSourceChannels(micReceivedChannels, auxReceivedChannels);
+    if (next === detectedChannels) {
+        return;
+    }
+    detectedChannels = next;
+    applyMixLayout();
+}
+
+/**
+ * @param {'mic' | 'aux'} which
+ */
+function stopLayoutProbe(which) {
+    const probe = layoutProbes[which];
+    if (!probe) {
+        return;
+    }
+    if (probe.timer) {
+        clearTimeout(probe.timer);
+    }
+    try {
+        probe.splitter.disconnect();
+    } catch {
+        /* ignore */
+    }
+    try {
+        probe.left.disconnect();
+    } catch {
+        /* ignore */
+    }
+    try {
+        probe.right.disconnect();
+    } catch {
+        /* ignore */
+    }
+    layoutProbes[which] = null;
+}
+
+/**
+ * Listen to actual L/R PCM. Device channelCount often says 2 for a 2-in interface
+ * with only one mic plugged in.
+ * @param {MediaStreamAudioSourceNode} sourceNode
+ * @param {'mic' | 'aux'} which
+ */
+function startLayoutProbe(sourceNode, which) {
+    stopLayoutProbe(which);
+    if (!audioCtx || audioLayoutChoice() !== 'auto') {
+        return;
+    }
+    if ((sourceNode.channelCount || 1) < 2) {
+        setSourceChannels(which, 1);
+        return;
+    }
+    const splitter = audioCtx.createChannelSplitter(2);
+    const left = audioCtx.createAnalyser();
+    const right = audioCtx.createAnalyser();
+    left.fftSize = 2048;
+    right.fftSize = 2048;
+    left.smoothingTimeConstant = 0;
+    right.smoothingTimeConstant = 0;
+    sourceNode.connect(splitter);
+    splitter.connect(left, 0);
+    splitter.connect(right, 1);
+    const leftTd = new Float32Array(left.fftSize);
+    const rightTd = new Float32Array(right.fftSize);
+    /** @type {{ splitter: ChannelSplitterNode, left: AnalyserNode, right: AnalyserNode, timer: ReturnType<typeof setTimeout>|null }} */
+    const probe = { splitter, left, right, timer: null };
+    layoutProbes[which] = probe;
+    let attempts = 0;
+    let stereoHits = 0;
+    const tick = () => {
+        if (layoutProbes[which] !== probe) {
+            return;
+        }
+        attempts += 1;
+        try {
+            left.getFloatTimeDomainData(leftTd);
+            right.getFloatTimeDomainData(rightTd);
+        } catch {
+            return;
+        }
+        const decision = decideReceivedLayout(leftTd, rightTd);
+        if (decision === 2) {
+            stereoHits += 1;
+            if (stereoHits >= 2) {
+                setSourceChannels(which, 2);
+                stopLayoutProbe(which);
+                return;
+            }
+        } else if (decision === 1) {
+            stereoHits = 0;
+            setSourceChannels(which, 1);
+            if (attempts >= 8) {
+                stopLayoutProbe(which);
+                return;
+            }
+        }
+        if (attempts >= 24) {
+            stopLayoutProbe(which);
+            return;
+        }
+        probe.timer = setTimeout(tick, 180);
+    };
+    probe.timer = setTimeout(tick, 120);
+}
+
+/**
+ * @param {MediaStream | null | undefined} stream
+ * @param {MediaStreamAudioSourceNode | null | undefined} sourceNode
+ * @param {'mic' | 'aux'} [which]
+ */
+function noteReceivedChannels(stream, sourceNode, which = 'mic') {
+    const fromTrack = trackReceivedChannels(stream?.getAudioTracks?.()?.[0]);
+    if (fromTrack === 1 || (sourceNode?.channelCount || 0) === 1) {
+        setSourceChannels(which, 1);
+        return;
+    }
+    if (audioLayoutChoice() === 'auto' && sourceNode) {
+        setSourceChannels(which, 1);
+        startLayoutProbe(sourceNode, which);
+        return;
+    }
+    if (fromTrack === 2) {
+        setSourceChannels(which, 2);
+    }
+}
+
+function applyMixLayout() {
+    const count = mixChannelCount();
+    try {
+        if (mixDest) {
+            mixDest.channelCount = count;
+            mixDest.channelCountMode = 'explicit';
+        }
+        if (cueDest) {
+            cueDest.channelCount = count;
+        }
+    } catch {
+        /* optional */
+    }
+}
+
+function withCaptureChannels(base) {
+    const choice = audioLayoutChoice();
+    if (choice === 'auto') {
+        const next = { ...base };
+        delete next.channelCount;
+
+        return next;
+    }
+
+    return { ...base, channelCount: { ideal: choice === 'mono' ? 1 : 2 } };
+}
+
+function isCommunicationsLabel(label) {
+    return /communications|hands-?free|headset earphone/i.test(label || '');
+}
+
+/**
+ * Windows lists "Communications" as default — that path is 16 kHz AGC/NS (phone audio).
+ * @param {MediaDeviceInfo[]} inputs
+ * @param {string} previous
+ */
+function preferredAudioInputId(inputs, previous) {
+    if (previous && inputs.some((d) => d.deviceId === previous)) {
+        return previous;
+    }
+    const music = inputs.find((d) => d.label && !isCommunicationsLabel(d.label));
+
+    return (music || inputs[0])?.deviceId || '';
+}
+
+/**
+ * Tell Chrome this is music, not voice — otherwise it picks G.722 / SILK and crushes highs.
+ * @param {MediaStreamTrack | null | undefined} track
+ */
+function markMusicTrack(track) {
+    if (track && 'contentHint' in track) {
+        track.contentHint = 'music';
+    }
+}
+
+/**
+ * @param {MediaStream} stream
+ */
+function markMusicTracks(stream) {
+    for (const track of stream.getAudioTracks()) {
+        markMusicTrack(track);
+    }
 }
 
 function faderGain(el) {
@@ -413,6 +753,38 @@ function setToggle(btn, on) {
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 
+function updateStripSummaries() {
+    if (micSourceSummaryEl) {
+        const opt = audioSelect?.selectedOptions?.[0];
+        const text = opt?.textContent?.trim() || '';
+        const value = audioSelect?.value || '';
+        const textOut = value && text ? text : 'Default microphone';
+        micSourceSummaryEl.textContent = textOut;
+        micSourceSummaryEl.title = textOut;
+    }
+    if (auxSourceSummaryEl) {
+        const opt = auxSelect?.selectedOptions?.[0];
+        const text = opt?.textContent?.trim() || '';
+        const value = auxSelect?.value || '';
+        const textOut = value && text ? text : 'No source selected';
+        auxSourceSummaryEl.textContent = textOut;
+        auxSourceSummaryEl.title = textOut;
+    }
+    if (playlistSourceSummaryEl) {
+        const n = fileChannels.size;
+        playlistSourceSummaryEl.textContent = n === 0 ? 'Queue empty' : `${n} track${n === 1 ? '' : 's'} queued`;
+    }
+    if (masterSourceSummaryEl) {
+        const choice = audioLayoutChoice();
+        const layoutLabel = choice === 'mono' ? 'Mono' : choice === 'stereo' ? 'Stereo' : 'Auto';
+        const outOpt = outputSelect?.selectedOptions?.[0];
+        const outLabel = (outputSelect?.value && outOpt?.textContent?.trim()) ? outOpt.textContent.trim() : 'Default output';
+        const textOut = `${layoutLabel} · ${outLabel}`;
+        masterSourceSummaryEl.textContent = textOut;
+        masterSourceSummaryEl.title = textOut;
+    }
+}
+
 function updatePlaylistMeta() {
     const n = fileChannels.size;
     if (playlistCountEl) {
@@ -426,6 +798,34 @@ function updatePlaylistMeta() {
     if (durationEl) {
         durationEl.textContent = formatTimer(total * 1000);
     }
+    if (channelsEl) {
+        let emptyEl = document.getElementById('playlist-empty-state');
+        if (n === 0) {
+            if (!emptyEl) {
+                emptyEl = document.createElement('div');
+                emptyEl.id = 'playlist-empty-state';
+                emptyEl.className = 'mixer-hint studio-queue-empty';
+                emptyEl.innerHTML = `
+                    <span class="studio-queue-empty-icon" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 18V5l12-2v13"></path>
+                            <circle cx="6" cy="18" r="3"></circle>
+                            <circle cx="18" cy="16" r="3"></circle>
+                        </svg>
+                    </span>
+                    <div class="studio-queue-empty-copy">
+                        <p class="studio-queue-empty-title">Your session queue is empty.</p>
+                        <p class="studio-queue-empty-sub">Add tracks from your library to play them during the broadcast.</p>
+                    </div>
+                `;
+                channelsEl.appendChild(emptyEl);
+            }
+            emptyEl.hidden = false;
+        } else if (emptyEl) {
+            emptyEl.hidden = true;
+        }
+    }
+    updateStripSummaries();
 }
 
 try {
@@ -436,25 +836,38 @@ try {
 
 if (audioLayoutSelect) {
     const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
-    if (saved === 'mono' || saved === 'stereo') {
+    if (saved === 'auto' || saved === 'mono' || saved === 'stereo') {
         audioLayoutSelect.value = saved;
     }
     audioLayoutSelect.addEventListener('change', () => {
-        localStorage.setItem(LAYOUT_STORAGE_KEY, audioLayout());
+        localStorage.setItem(LAYOUT_STORAGE_KEY, audioLayoutChoice());
+        applyMixLayout();
+        updateStripSummaries();
         if (isLive) {
             setStatus('Output layout changed — End broadcast, then Go on air again to apply.');
+        } else {
+            if (micStream) {
+                void attachMicrophoneToMixer();
+            }
+            if (auxStream) {
+                void attachAuxToMixer();
+            }
         }
     });
 }
 
-async function copyChannelLink() {
-    const text = activeShareUrl();
+async function copyChannelLink(targetUrl, label = '') {
+    const text = targetUrl || activeShareUrl();
     if (!text) {
         return;
     }
     try {
         await navigator.clipboard.writeText(text);
-        setStatus(currentEvent?.url ? 'Event link copied.' : 'Channel link copied.');
+        if (label) {
+            setStatus(label);
+        } else {
+            setStatus(currentEvent?.url ? 'Event link copied.' : 'Channel link copied.');
+        }
     } catch {
         setStatus('Could not copy link.');
     }
@@ -488,8 +901,10 @@ function applyEventToUi(event) {
     const previousGalleryEventId = galleryScopedEventId();
     currentEvent = event || null;
     sessionPaused = event?.status === 'paused';
+    const nextTitle = event?.title || 'No event selected';
     if (eventTitleEl) {
-        eventTitleEl.textContent = event?.title || streamTitleDefault;
+        eventTitleEl.textContent = nextTitle;
+        eventTitleEl.title = nextTitle;
     }
     if (eventTitleInput) {
         eventTitleInput.value = event?.title || '';
@@ -497,16 +912,27 @@ function applyEventToUi(event) {
     if (eventRenameWrap) {
         eventRenameWrap.hidden = !event;
     }
+    const hasActiveEventUrl = Boolean(event?.url);
     if (eventUrlEl) {
-        if (event?.url) {
-            eventUrlEl.textContent = event.url;
-            eventUrlEl.title = event.url;
-        } else if (!event && channelShareUrl) {
-            eventUrlEl.textContent = channelShareUrl;
-            eventUrlEl.title = channelShareUrl;
-        }
+        const nextUrl = event?.url || channelShareUrl || '';
+        eventUrlEl.textContent = nextUrl;
+        eventUrlEl.title = nextUrl;
+    }
+    if (shareEventBlock) {
+        shareEventBlock.hidden = !hasActiveEventUrl;
+    }
+    if (shareChannelMainBtn) {
+        shareChannelMainBtn.hidden = hasActiveEventUrl;
+    }
+    if (shareEventNote) {
+        shareEventNote.hidden = hasActiveEventUrl;
+    }
+    if (copyChannelBtn) {
+        copyChannelBtn.classList.toggle('studio-btn--primary', !hasActiveEventUrl);
+        copyChannelBtn.classList.toggle('studio-btn--secondary', hasActiveEventUrl);
     }
     refreshSessionButtons();
+    updateStudioWhatsAppHref(isLive);
     const nextGalleryEventId = galleryScopedEventId();
     if (previousGalleryEventId !== nextGalleryEventId) {
         void refreshStudioGallery();
@@ -546,6 +972,18 @@ async function refreshStudioCsrf() {
         if (data.csrf) {
             applyCsrf(data.csrf);
         }
+        if (data.opus_send_bitrate != null) {
+            opusSendBitrate = readOpusSendBitrate(data.opus_send_bitrate);
+        }
+        const at = Number(data.reload_at || 0);
+        const loadedAt = Number(root?.dataset.studioReloadAt || 0);
+        if (at > loadedAt) {
+            const mode = (modeEl?.textContent || '').trim();
+            if (/ON AIR|RECONNECT/i.test(mode) || isLive) {
+                sessionStorage.setItem('sml-studio-resume', '1');
+            }
+            window.location.reload();
+        }
     } catch {
         // Keep the page token; End may still succeed if the session is valid.
     }
@@ -554,6 +992,22 @@ async function refreshStudioCsrf() {
 if (sessionShowUrl) {
     void refreshStudioCsrf();
     window.setInterval(refreshStudioCsrf, 10 * 60 * 1000);
+}
+
+function maybeResumeAfterRemoteReload() {
+    if (sessionStorage.getItem('sml-studio-resume') !== '1') {
+        return;
+    }
+    sessionStorage.removeItem('sml-studio-resume');
+    if (!broadcastAllowed || !btnStart) {
+        return;
+    }
+    setStatus('Studio was refreshed from Sound Mix — reconnecting…');
+    window.setTimeout(() => {
+        if (!isLive) {
+            btnStart.click();
+        }
+    }, 900);
 }
 
 async function sessionPatch(url, body = {}) {
@@ -610,47 +1064,72 @@ eventTitleInput?.addEventListener('keydown', (ev) => {
     }
 });
 
+function setStartButtonLabel(label) {
+    if (!btnStart) {
+        return;
+    }
+    const labelSpan = btnStart.querySelector('.mixer-btn-start-label');
+    if (labelSpan) {
+        labelSpan.textContent = label;
+    } else {
+        btnStart.textContent = label;
+    }
+}
+
 function refreshSessionButtons() {
     const live = isLive;
     const paused = sessionPaused && !live;
+    const replaced = publisherPhase === 'replaced';
     // Server still has a live event after refresh / WHIP drop — reconnect before grace ends.
-    const needsReconnect = !live && !paused && currentEvent?.status === 'live';
+    const needsReconnect = !live && !paused && !replaced && currentEvent?.status === 'live';
     if (btnCreateEvent) {
-        btnCreateEvent.hidden = live || paused || needsReconnect;
-        btnCreateEvent.disabled = !broadcastAllowed || live || paused || needsReconnect;
+        btnCreateEvent.hidden = live || paused || needsReconnect || replaced;
+        btnCreateEvent.disabled = !broadcastAllowed || live || paused || needsReconnect || replaced;
     }
     if (btnPause) {
         btnPause.hidden = !live;
         btnPause.disabled = !live;
     }
     if (btnEnd) {
-        btnEnd.hidden = !(live || paused || needsReconnect);
-        btnEnd.disabled = !(live || paused || needsReconnect);
+        btnEnd.hidden = replaced || !(live || paused || needsReconnect);
+        btnEnd.disabled = replaced || !(live || paused || needsReconnect);
+    }
+    const expired = !broadcastAllowed;
+    if (btnUpgradeLive) {
+        btnUpgradeLive.hidden = !expired || live;
     }
     if (btnStart) {
-        btnStart.hidden = false;
-        if (live) {
-            btnStart.textContent = 'On air';
+        if (expired && !live) {
+            btnStart.hidden = true;
             btnStart.disabled = true;
-        } else if (paused) {
-            btnStart.textContent = 'Resume';
-            btnStart.disabled = !broadcastAllowed;
-        } else if (needsReconnect) {
-            btnStart.textContent = 'Reconnect';
-            btnStart.disabled = !broadcastAllowed;
         } else {
-            btnStart.textContent = 'Go live';
-            btnStart.disabled = !broadcastAllowed;
+            btnStart.hidden = false;
+            if (live) {
+                setStartButtonLabel('On air');
+                btnStart.disabled = true;
+            } else if (replaced) {
+                setStartButtonLabel('Take Over Broadcast');
+                btnStart.disabled = !broadcastAllowed;
+            } else if (paused) {
+                setStartButtonLabel('Resume');
+                btnStart.disabled = !broadcastAllowed;
+            } else if (needsReconnect) {
+                setStartButtonLabel('Reconnect');
+                btnStart.disabled = !broadcastAllowed;
+            } else {
+                setStartButtonLabel('Go live');
+                btnStart.disabled = !broadcastAllowed;
+            }
         }
     }
     if (airLabel) {
-        airLabel.textContent = live ? 'ON THE AIR' : paused ? 'PAUSED' : needsReconnect ? 'RECONNECT' : 'STANDBY';
+        airLabel.textContent = live ? 'ON THE AIR' : replaced ? 'REPLACED' : paused ? 'PAUSED' : needsReconnect ? 'RECONNECT' : 'STANDBY';
     }
     if (modeEl) {
-        modeEl.textContent = live ? 'On the air' : paused ? 'Paused' : needsReconnect ? 'Reconnect' : 'Standby';
+        modeEl.textContent = live ? 'On the air' : replaced ? 'Replaced' : paused ? 'Paused' : needsReconnect ? 'Reconnect' : 'Standby';
     }
     if (modeMobileEl) {
-        modeMobileEl.textContent = live ? 'ON AIR' : paused ? 'PAUSED' : needsReconnect ? 'RECONNECT' : 'STANDBY';
+        modeMobileEl.textContent = live ? 'ON AIR' : replaced ? 'REPLACED' : paused ? 'PAUSED' : needsReconnect ? 'RECONNECT' : 'STANDBY';
     }
     stageEl?.classList.toggle('is-on-air', live);
     stageEl?.classList.toggle('is-paused', paused);
@@ -684,8 +1163,14 @@ shareChannelBtn?.addEventListener('click', () => {
 shareChannelMainBtn?.addEventListener('click', () => {
     void shareChannelLink();
 });
+shareEventBtn?.addEventListener('click', () => {
+    void shareChannelLink();
+});
+copyEventBtn?.addEventListener('click', () => {
+    void copyChannelLink(currentEvent?.url || eventUrlEl?.textContent?.trim(), 'Event link copied.');
+});
 copyChannelBtn?.addEventListener('click', () => {
-    void copyChannelLink();
+    void copyChannelLink(channelShareUrl || activeShareUrl(), 'Channel link copied.');
 });
 
 document.getElementById('btn-refresh-studio')?.addEventListener('click', () => {
@@ -740,6 +1225,7 @@ playlistCueBtn?.addEventListener('click', async () => {
 });
 
 outputSelect?.addEventListener('change', () => {
+    updateStripSummaries();
     void syncCuePlayback();
 });
 
@@ -752,11 +1238,16 @@ function stopMeter() {
         if (el) {
             el.style.width = '0%';
             el.style.height = '100%';
+            el.parentElement?.classList.remove('is-clipping');
+            const wellFill = el.closest('.mixer-strip')?.querySelector('.mixer-well-meter-fill');
+            if (wellFill) {
+                wellFill.style.height = '0%';
+            }
         }
     }
     if (meterLabel) {
-        meterLabel.textContent = '—';
-        meterLabel.classList.remove('is-hot');
+        meterLabel.textContent = 'READY';
+        meterLabel.classList.remove('is-hot', 'is-clipping');
     }
 }
 
@@ -779,6 +1270,14 @@ function fillMeter(el, rms) {
     const pct = Math.min(100, Math.round(rms * 220));
     el.style.width = `${pct}%`;
     el.style.height = '100%';
+    const container = el.parentElement;
+    if (container) {
+        container.classList.toggle('is-clipping', pct >= 98);
+    }
+    const wellFill = el.closest('.mixer-strip')?.querySelector('.mixer-well-meter-fill');
+    if (wellFill) {
+        wellFill.style.height = `${pct}%`;
+    }
 }
 
 function rmsFromAnalyser(node) {
@@ -807,9 +1306,11 @@ function startMeters() {
         fillMeter(playlistMeterEl, plRms);
         fillMeter(meterEl, masterRms);
         if (meterLabel) {
+            const clip = masterRms * 220 >= 98;
             const hot = masterRms > 0.02;
-            meterLabel.textContent = hot ? 'SIGNAL' : '—';
-            meterLabel.classList.toggle('is-hot', hot);
+            meterLabel.textContent = clip ? 'CLIP' : hot ? 'SIGNAL' : 'READY';
+            meterLabel.classList.toggle('is-clipping', clip);
+            meterLabel.classList.toggle('is-hot', hot && !clip);
         }
         meterRaf = requestAnimationFrame(tick);
     };
@@ -887,7 +1388,8 @@ function preferHighQualityOpus(sdp) {
     }
 
     // minptime=20 + FEC + no DTX: fewer packet-edge gaps that listeners hear as stutters.
-    const fmtpValue = `minptime=20;useinbandfec=1;usedtx=0;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
+    const stereo = isMono() ? 0 : 1;
+    const fmtpValue = `minptime=20;useinbandfec=1;usedtx=0;stereo=${stereo};sprop-stereo=${stereo};maxaveragebitrate=${opusSendBitrate};maxplaybackrate=48000`;
 
     for (const pt of opusPts) {
         const fmtpRe = new RegExp(`^a=fmtp:${pt} .*`, 'im');
@@ -900,6 +1402,105 @@ function preferHighQualityOpus(sdp) {
     }
 
     return out;
+}
+
+/**
+ * ICE gathering can put G.722/PCMU back on the m-line after we munge the offer.
+ * Always strip again immediately before WHIP POST / setRemoteDescription.
+ * @param {string} sdp
+ */
+function whipAudioSdp(sdp, kind = 'offer') {
+    const out = preferHighQualityOpus(sdp || '');
+    const fail = kind === 'answer'
+        ? 'Server answered without Opus (phone codec). End broadcast, refresh Studio, then Go on air.'
+        : 'Browser did not offer Opus. Try Chrome/Edge, or reload Studio.';
+    if (!/opus\/48000/i.test(out)) {
+        throw new Error(fail);
+    }
+    const mLine = out.match(/^m=audio .+$/im)?.[0] || '';
+    const pts = mLine.split(/\s+/).slice(3);
+    const opusPts = new Set(
+        [...out.matchAll(/^a=rtpmap:(\d+) opus\/48000/gim)].map((match) => match[1]),
+    );
+    const phone = pts.find((pt) => {
+        const line = out.match(new RegExp(`^a=rtpmap:${pt} (\\S+)`, 'im'));
+        return line && /^(G722|PCMU|PCMA)\b/i.test(line[1]);
+    });
+    if (phone) {
+        throw new Error(fail);
+    }
+    if (pts.length > 0 && pts.every((pt) => !opusPts.has(pt))) {
+        throw new Error(fail);
+    }
+
+    return out;
+}
+
+function iceCandidateIp(line) {
+    return line.trim().split(/\s+/)[4] || '';
+}
+
+function iceCandidateProtocol(line) {
+    return (line.trim().split(/\s+/)[2] || '').toLowerCase();
+}
+
+function isUnusableIceIp(ip) {
+    if (!ip) {
+        return true;
+    }
+    if (
+        ip === '20.120.113.129'
+        || ip === '127.0.0.1'
+        || ip === '0.0.0.0'
+        || ip === '::1'
+        || ip === '::'
+    ) {
+        return true;
+    }
+    if (/^(10\.|192\.168\.|169\.254\.)/.test(ip)) {
+        return true;
+    }
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Drop loopback/docker/stale-VM ICE hosts so media hits the current Azure IP.
+ * @param {string} sdp
+ * @param {{ preferTcp?: boolean }} [opts]
+ */
+function sanitizeRemoteIceSdp(sdp, opts = {}) {
+    const preferTcp = Boolean(opts.preferTcp);
+    const nl = sdp.includes('\r\n') ? '\r\n' : '\n';
+    const lines = sdp.split(/\r?\n/);
+    const usable = lines.filter((line) => {
+        if (!/^a=candidate:/i.test(line)) {
+            return true;
+        }
+        return !isUnusableIceIp(iceCandidateIp(line));
+    });
+    if (!usable.some((line) => /^a=candidate:/i.test(line))) {
+        return sdp;
+    }
+    if (preferTcp && usable.some((line) => /^a=candidate:/i.test(line) && iceCandidateProtocol(line) === 'tcp')) {
+        return usable
+            .filter((line) => !/^a=candidate:/i.test(line) || iceCandidateProtocol(line) === 'tcp')
+            .join(nl);
+    }
+
+    return usable.join(nl);
+}
+
+function whipAnswerSdp(sdp) {
+    const stripped = stripNonOpusAudioCodecs(sdp || '');
+    if (!/opus\/48000/i.test(stripped)) {
+        throw new Error('Server answered without Opus (phone codec). End broadcast, refresh Studio, then Go on air.');
+    }
+
+    return sanitizeRemoteIceSdp(stripped);
 }
 
 /**
@@ -916,7 +1517,7 @@ async function applyMaxAudioBitrate(peer) {
                 params.encodings = [{}];
             }
             for (const encoding of params.encodings) {
-                encoding.maxBitrate = OPUS_MAX_BITRATE;
+                encoding.maxBitrate = opusSendBitrate;
                 encoding.priority = 'high';
                 encoding.networkPriority = 'high';
             }
@@ -948,27 +1549,21 @@ async function ensureMixer() {
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
+        applyMixLayout();
         if (!meterRaf) {
             startMeters();
         }
         return;
     }
     if (!audioCtx) {
-        audioCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+        audioCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'playback' });
     } else if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
     }
 
     mixDest = audioCtx.createMediaStreamDestination();
     cueDest = audioCtx.createMediaStreamDestination();
-    try {
-        mixDest.channelCount = 2;
-        mixDest.channelCountMode = 'explicit';
-        mixDest.channelInterpretation = 'discrete';
-        cueDest.channelCount = 2;
-    } catch {
-        /* optional */
-    }
+    applyMixLayout();
 
     masterGain = audioCtx.createGain();
     cueMasterGain = audioCtx.createGain();
@@ -1019,39 +1614,63 @@ async function ensureMixer() {
 }
 
 /**
+ * @param {MediaTrackConstraints | boolean} audio
+ * @param {string} [deviceId]
+ * @returns {MediaTrackConstraints | boolean}
+ */
+function withCaptureDevice(audio, deviceId = '') {
+    if (!deviceId || audio === true) {
+        return audio;
+    }
+
+    return { ...audio, deviceId: { exact: deviceId } };
+}
+
+/**
  * @param {string} [deviceId]
  */
 async function openDevice(deviceId = '') {
-    const base = audioCaptureConstraints();
-    if (deviceId) {
+    /** @type {Array<MediaTrackConstraints | boolean>} */
+    const attempts = [];
+    if (isMobileUa()) {
+        attempts.push(withCaptureDevice(audioCaptureConstraints(), deviceId));
+        if (deviceId) {
+            attempts.push({ ...MOBILE_AUDIO, deviceId: { ideal: deviceId } });
+        }
+        attempts.push(true);
+    } else {
+        attempts.push(withCaptureDevice(withCaptureChannels(STRICT_CLEAN_AUDIO), deviceId));
+        attempts.push(withCaptureDevice(withCaptureChannels(CLEAN_AUDIO), deviceId));
+        if (deviceId) {
+            attempts.push({ ...withCaptureChannels(CLEAN_AUDIO), deviceId: { ideal: deviceId } });
+        }
+        attempts.push(withCaptureChannels(CLEAN_AUDIO));
+    }
+
+    let lastError = null;
+    for (const audio of attempts) {
         try {
-            return await navigator.mediaDevices.getUserMedia({
-                audio: { ...base, deviceId: { exact: deviceId } },
-                video: false,
-            });
-        } catch {
-            try {
-                return await navigator.mediaDevices.getUserMedia({
-                    audio: { ...base, deviceId: { ideal: deviceId } },
-                    video: false,
-                });
-            } catch {
-                /* fall through */
-            }
+            const stream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+            markMusicTracks(stream);
+
+            return stream;
+        } catch (e) {
+            lastError = e;
         }
     }
-    try {
-        return await navigator.mediaDevices.getUserMedia({ audio: base, video: false });
-    } catch (first) {
-        // Last resort on phones: bare audio track.
-        if (isMobileUa()) {
-            return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        }
-        throw first;
+    if (isMobileUa()) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        markMusicTracks(stream);
+
+        return stream;
     }
+    throw lastError instanceof Error
+        ? lastError
+        : new Error('Microphone permission or device access failed.');
 }
 
 function disconnectMicGraph() {
+    stopLayoutProbe('mic');
     try {
         micSource?.disconnect();
         micSplitter?.disconnect();
@@ -1067,6 +1686,7 @@ function disconnectMicGraph() {
 }
 
 function disconnectAuxGraph() {
+    stopLayoutProbe('aux');
     try {
         auxSource?.disconnect();
         auxSplitter?.disconnect();
@@ -1105,7 +1725,8 @@ function stopAuxTracks() {
  * @param {'mic' | 'aux'} which
  */
 function routeInputToGain(source, destGain, which) {
-    if (!isMono()) {
+    const channels = source.channelCount || 1;
+    if (audioLayoutChoice() !== 'mono' || channels < 2) {
         source.connect(destGain);
         return;
     }
@@ -1136,6 +1757,7 @@ async function attachMicrophoneToMixer() {
     stopMicTracks();
     micStream = await openDevice(audioSelect?.value || '');
     micSource = audioCtx.createMediaStreamSource(micStream);
+    noteReceivedChannels(micStream, micSource, 'mic');
     routeInputToGain(micSource, micGain, 'mic');
     applyMicGain();
 }
@@ -1146,11 +1768,13 @@ async function attachAuxToMixer() {
     stopAuxTracks();
     const id = auxSelect?.value || '';
     if (!id) {
+        setSourceChannels('aux', 1);
         applyAuxGain();
         return;
     }
     auxStream = await openDevice(id);
     auxSource = audioCtx.createMediaStreamSource(auxStream);
+    noteReceivedChannels(auxStream, auxSource, 'aux');
     routeInputToGain(auxSource, auxGain, 'aux');
     applyAuxGain();
 }
@@ -1210,8 +1834,9 @@ async function loadDevices() {
                     opt.textContent = d.label || `Microphone ${i + 1}`;
                     audioSelect.appendChild(opt);
                 }
-                if (previous && [...audioSelect.options].some((o) => o.value === previous)) {
-                    audioSelect.value = previous;
+                const preferred = preferredAudioInputId(inputs, previous);
+                if (preferred && [...audioSelect.options].some((o) => o.value === preferred)) {
+                    audioSelect.value = preferred;
                 }
             }
         }
@@ -1253,9 +1878,11 @@ async function loadDevices() {
         }
 
         setMicEnableVisible(!listed);
+        updateStripSummaries();
     } catch {
         setStatus('Could not list audio devices.');
         setMicEnableVisible(true);
+        updateStripSummaries();
     }
 }
 
@@ -1278,6 +1905,7 @@ audioSelect?.addEventListener('focus', () => {
     }
 });
 audioSelect?.addEventListener('change', async () => {
+    updateStripSummaries();
     if (!audioSelect.value && !micPrimed) {
         await ensureMicListed();
         return;
@@ -1304,6 +1932,7 @@ auxSelect?.addEventListener('focus', () => {
     }
 });
 auxSelect?.addEventListener('change', async () => {
+    updateStripSummaries();
     if (!auxSelect.value && !micPrimed) {
         await ensureMicListed();
         return;
@@ -1334,21 +1963,122 @@ function wireFileChannelAudio(channel) {
     channel.gain.connect(playlistGain);
 }
 
-function setFileChannelReady(channel, ready, detail = '') {
-    channel.ready = ready;
+function playlistPlayerSnapshot(channel) {
+    const audio = channel.audio;
+
+    return {
+        error: Boolean(audio.error),
+        ended: audio.ended,
+        paused: audio.paused,
+        currentTime: audio.currentTime || 0,
+        readyState: audio.readyState,
+        src: audio.currentSrc || audio.src || '',
+        wasPlayingBeforeBroadcastPause: channel.wasPlayingBeforeBroadcastPause === true,
+    };
+}
+
+function formatPlaylistClock(seconds) {
+    const s = Number(seconds);
+    const safe = Number.isFinite(s) && s > 0 ? s : 0;
+
+    return `${Math.floor(safe / 60)}:${String(Math.floor(safe % 60)).padStart(2, '0')}`;
+}
+
+const playlistStateLabel = {
+    idle: 'Ready',
+    loading: 'Loading…',
+    playing: 'PLAYING',
+    paused: 'Paused',
+    ended: 'Ended',
+    error: 'Failed to load',
+};
+
+function renderPlaylistTransport(channel) {
+    const state = mediaPlaylistState(playlistPlayerSnapshot(channel));
+    channel.playbackState = state;
     const statusEl = channel.card.querySelector('[data-ready-status]');
     const playBtn = channel.card.querySelector('[data-play]');
+    const pauseBtn = channel.card.querySelector('[data-pause]');
     const restartBtn = channel.card.querySelector('[data-restart]');
+    const metaEl = channel.card.querySelector('[data-meta]');
     if (statusEl) {
-        statusEl.textContent = ready ? (detail || 'Ready') : (detail || 'Loading…');
-        statusEl.classList.toggle('is-ready', ready);
-        statusEl.classList.toggle('is-loading', !ready);
+        statusEl.textContent = playlistStateLabel[state] || 'Ready';
+        statusEl.classList.toggle('is-loading', state === 'loading');
+        statusEl.classList.toggle('is-ready', state === 'idle' || state === 'paused');
+        statusEl.classList.toggle('is-playing', state === 'playing');
+        statusEl.classList.toggle('is-ended', state === 'ended');
     }
+    channel.card.classList.toggle('is-playing', state === 'playing');
+    channel.card.classList.toggle('is-error', state === 'error');
+    const blocked = state === 'loading' || state === 'error' || !channel.ready;
     if (playBtn) {
-        playBtn.disabled = !ready;
+        playBtn.disabled = blocked;
+        playBtn.classList.toggle('is-active', state === 'playing');
+        playBtn.setAttribute('aria-pressed', state === 'playing' ? 'true' : 'false');
+    }
+    if (pauseBtn) {
+        pauseBtn.classList.toggle('is-active', state === 'paused');
     }
     if (restartBtn) {
-        restartBtn.disabled = !ready;
+        restartBtn.disabled = blocked;
+    }
+    if (metaEl) {
+        const total = formatPlaylistClock(channel.duration || channel.audio.duration);
+        const elapsed = formatPlaylistClock(channel.audio.currentTime);
+        const clock = channel.duration > 0 || channel.audio.duration > 0
+            ? `${elapsed} / ${total}`
+            : '';
+        metaEl.textContent = [clock, channel.sizeLabel].filter(Boolean).join(' · ');
+    }
+}
+
+function setFileChannelReady(channel, ready, detail = '') {
+    channel.ready = ready;
+    if (!ready) {
+        const statusEl = channel.card.querySelector('[data-ready-status]');
+        const playBtn = channel.card.querySelector('[data-play]');
+        const restartBtn = channel.card.querySelector('[data-restart]');
+        if (statusEl) {
+            statusEl.textContent = detail || 'Loading…';
+            statusEl.classList.add('is-loading');
+            statusEl.classList.remove('is-ready', 'is-playing', 'is-ended');
+        }
+        if (playBtn) {
+            playBtn.disabled = true;
+        }
+        if (restartBtn) {
+            restartBtn.disabled = true;
+        }
+        channel.playbackState = detail === 'Failed to load' ? 'error' : 'loading';
+
+        return;
+    }
+    renderPlaylistTransport(channel);
+}
+
+/**
+ * Broadcast pause remembers who was actually playing. Resume starts only those.
+ * Go Live and WHIP reconnect do not come through here.
+ */
+async function applyPlaylistBroadcast(event) {
+    for (const channel of fileChannels.values()) {
+        const decision = nextPlaylistPlayback(event, playlistPlayerSnapshot(channel));
+        if (event === 'broadcast-pause') {
+            channel.wasPlayingBeforeBroadcastPause = decision.wasPlayingBeforeBroadcastPause === true;
+        }
+        if (decision.action === 'pause') {
+            channel.audio.pause();
+        } else if (decision.action === 'play') {
+            channel.wasPlayingBeforeBroadcastPause = false;
+            try {
+                await channel.audio.play();
+            } catch (e) {
+                setStatus(e instanceof Error ? e.message : 'Could not resume playlist.');
+            }
+        } else if (event === 'broadcast-resume') {
+            channel.wasPlayingBeforeBroadcastPause = false;
+        }
+        renderPlaylistTransport(channel);
     }
 }
 
@@ -1406,6 +2136,9 @@ function addPlaylistTrack(opts) {
     audio.preload = 'auto';
     audio.muted = false;
     audio.volume = 1;
+    if (!objectUrl) {
+        audio.crossOrigin = 'anonymous';
+    }
     audio.src = src;
 
     const card = document.createElement('div');
@@ -1442,7 +2175,10 @@ function addPlaylistTrack(opts) {
         gain: null,
         card,
         duration: Number(opts.duration) > 0 ? Number(opts.duration) : 0,
+        sizeLabel,
         ready: false,
+        playbackState: 'loading',
+        wasPlayingBeforeBroadcastPause: false,
     };
     fileChannels.set(id, channel);
     updatePlaylistMeta();
@@ -1453,11 +2189,6 @@ function addPlaylistTrack(opts) {
             return;
         }
         channel.duration = Number.isFinite(audio.duration) ? audio.duration : channel.duration;
-        const dur = formatTrackDuration(channel.duration);
-        const metaEl = card.querySelector('[data-meta]');
-        if (metaEl) {
-            metaEl.textContent = [dur, sizeLabel].filter(Boolean).join(' · ') || 'Ready';
-        }
         card.classList.remove('is-loading');
         card.classList.add('is-ready');
         setFileChannelReady(channel, true, 'Ready');
@@ -1481,6 +2212,27 @@ function addPlaylistTrack(opts) {
         card.classList.add('is-error');
         setStatus(`Could not load “${name}”. Try another file (mp3/wav/m4a).`);
     });
+    audio.addEventListener('play', () => {
+        renderPlaylistTransport(channel);
+    });
+    audio.addEventListener('playing', () => {
+        renderPlaylistTransport(channel);
+    });
+    audio.addEventListener('pause', () => {
+        renderPlaylistTransport(channel);
+    });
+    audio.addEventListener('ended', () => {
+        const endedPlayback = nextPlaylistPlayback('ended', playlistPlayerSnapshot(channel));
+        renderPlaylistTransport(channel);
+        if (endedPlayback.action === 'ended') {
+            setStatus(`“${name}” ended.`);
+        }
+    });
+    audio.addEventListener('timeupdate', () => {
+        if (channel.playbackState === 'playing' || channel.playbackState === 'paused' || channel.playbackState === 'ended') {
+            renderPlaylistTransport(channel);
+        }
+    });
 
     void audio.load();
 
@@ -1500,7 +2252,11 @@ function addPlaylistTrack(opts) {
         try {
             await ensureMixer();
             wireFileChannelAudio(channel);
+            if (channel.audio.ended) {
+                channel.audio.currentTime = 0;
+            }
             await channel.audio.play();
+            renderPlaylistTransport(channel);
             setStatus(
                 playlistCueOn
                     ? `Playing “${name}” in the mix (cue on).`
@@ -1513,6 +2269,9 @@ function addPlaylistTrack(opts) {
 
     card.querySelector('[data-pause]')?.addEventListener('click', () => {
         channel.audio.pause();
+        channel.wasPlayingBeforeBroadcastPause = false;
+        renderPlaylistTransport(channel);
+        setStatus(`“${name}” paused.`);
     });
 
     card.querySelector('[data-restart]')?.addEventListener('click', async () => {
@@ -1535,6 +2294,7 @@ function addPlaylistTrack(opts) {
 
 function queueLibraryAsset(asset) {
     if (!asset?.url) {
+        setLibraryStatus('Could not queue — this file has no playback link. Try Upload again.');
         return;
     }
     addPlaylistTrack({
@@ -1545,7 +2305,7 @@ function queueLibraryAsset(asset) {
         assetId: asset.id,
         duration: asset.duration_seconds || 0,
     });
-    setStatus(`Queued “${asset.title || asset.original_filename}” in the session playlist.`);
+    setLibraryStatus(`Queued “${asset.title || asset.original_filename}”. Wait for Ready, then Play.`);
 }
 
 /**
@@ -1576,11 +2336,11 @@ function probeAudioDuration(file) {
 }
 
 btnAddFile?.addEventListener('click', () => {
-    fileInput?.click();
+    openLibraryFilePicker();
 });
 
 document.getElementById('btn-upload-library')?.addEventListener('click', () => {
-    fileInput?.click();
+    openLibraryFilePicker();
 });
 
 fileInput?.addEventListener('change', () => {
@@ -1590,13 +2350,72 @@ fileInput?.addEventListener('change', () => {
 });
 
 /**
+ * MediaMTX often returns Location: http://127.0.0.1:8889/live/... or /live/...
+ * (Caddy stripped /rtc). Reconnect DELETE then fails with "Failed to fetch".
+ * @param {string|null} loc
+ * @param {string} baseUrl
+ */
+function resolveMediaProxyUrl(loc, baseUrl) {
+    if (!loc) {
+        return null;
+    }
+    const base = new URL(baseUrl);
+    let abs;
+    try {
+        abs = new URL(loc, base);
+    } catch {
+        return loc;
+    }
+    const privateHost = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|localhost$|0\.0\.0\.0$)/i.test(abs.hostname);
+    const mtxPort = abs.port === '8889' || abs.port === '8888';
+    if (privateHost || mtxPort) {
+        const path = `${abs.pathname}${abs.search}${abs.hash}`;
+        const prefixed = path.startsWith('/rtc/') || path.startsWith('/hls/')
+            ? path
+            : (path.startsWith('/live/') ? `/rtc${path}` : path);
+
+        return `${base.origin}${prefixed}`;
+    }
+    if (
+        abs.origin === base.origin
+        && abs.pathname.startsWith('/live/')
+        && /\/rtc(\/|$)/.test(base.pathname)
+    ) {
+        abs.pathname = `/rtc${abs.pathname}`;
+    }
+
+    return abs.href;
+}
+
+/**
  * @param {MediaStream} stream
  */
 async function publishWhip(stream) {
+    await refreshStudioCsrf();
     const track = stream.getAudioTracks()[0];
     if (!track) {
         throw new Error('No audio track. Check the microphone.');
     }
+    markMusicTrack(track);
+
+    // Record ownership before the WHIP POST. MediaMTX closes the previous
+    // publisher as soon as this POST succeeds, and that client checks the
+    // claim when its ICE connection fails. Claiming afterwards loses the race
+    // to not_ready and the two clients replace each other.
+    await claimPublisherOwnership();
+    try {
+        await publishWhipOffer(stream, track);
+    } catch (error) {
+        await releasePublisherClaim();
+        throw error;
+    }
+}
+
+/**
+ * @param {MediaStream} stream
+ * @param {MediaStreamTrack} track
+ */
+async function publishWhipOffer(stream, track) {
 
     pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -1604,16 +2423,10 @@ async function publishWhip(stream) {
     silenceRemoteAudio(pc);
     bindPublisherPeerWatch(pc);
 
-    try {
-        await track.applyConstraints(audioCaptureConstraints());
-    } catch {
-        /* optional */
-    }
-
     const transceiver = pc.addTransceiver(track, {
         direction: 'sendonly',
         streams: [stream],
-        sendEncodings: [{ maxBitrate: OPUS_MAX_BITRATE, priority: 'high', networkPriority: 'high' }],
+        sendEncodings: [{ maxBitrate: opusSendBitrate, priority: 'high', networkPriority: 'high' }],
     });
 
     if (!transceiver.sender) {
@@ -1624,10 +2437,7 @@ async function publishWhip(stream) {
     await applyMaxAudioBitrate(pc);
 
     const offer = await pc.createOffer();
-    const highQualitySdp = preferHighQualityOpus(offer.sdp || '');
-    if (!/opus\/48000/i.test(highQualitySdp)) {
-        throw new Error('Browser did not offer Opus. Try Chrome/Edge, or reload Studio.');
-    }
+    const highQualitySdp = whipAudioSdp(offer.sdp || '');
     await pc.setLocalDescription({ type: 'offer', sdp: highQualitySdp });
     await applyMaxAudioBitrate(pc);
 
@@ -1646,10 +2456,13 @@ async function publishWhip(stream) {
         setTimeout(resolve, 2000);
     });
 
+    // ICE candidates rewrite SDP and can restore G.722 as the preferred audio codec.
+    const offerSdp = whipAudioSdp(pc.localDescription?.sdp || highQualitySdp);
+
     const res = await fetch(whipUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/sdp' },
-        body: pc.localDescription?.sdp ?? '',
+        body: offerSdp,
     });
 
     if (!res.ok) {
@@ -1658,15 +2471,122 @@ async function publishWhip(stream) {
     }
 
     const loc = res.headers.get('Location');
-    whipResourceUrl = loc ? new URL(loc, whipUrl).href : null;
+    whipResourceUrl = resolveMediaProxyUrl(loc, whipUrl);
 
-    const answerSdp = await res.text();
-    if (/G722|PCMU|PCMA/i.test(answerSdp) && !/opus\/48000/i.test(answerSdp)) {
-        throw new Error('Server answered without Opus (phone codec). End broadcast and Go on air again after refresh.');
-    }
+    const answerSdp = whipAnswerSdp(await res.text());
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     silenceRemoteAudio(pc);
     await applyMaxAudioBitrate(pc);
+    scheduleOutboundCodecWatch(pc);
+}
+
+/**
+ * @param {RTCPeerConnection} peer
+ */
+function scheduleOutboundCodecWatch(peer) {
+    window.setTimeout(async () => {
+        if (peer !== pc || !isLive) {
+            return;
+        }
+        try {
+            const stats = await peer.getStats();
+            const codecIds = new Set();
+            for (const report of stats.values()) {
+                if (
+                    report.type === 'outbound-rtp'
+                    && (report.kind === 'audio' || report.mediaType === 'audio')
+                    && report.codecId
+                ) {
+                    codecIds.add(report.codecId);
+                }
+            }
+            let mime = '';
+            for (const report of stats.values()) {
+                if (report.type === 'codec' && codecIds.has(report.id)) {
+                    mime = String(report.mimeType || '');
+                }
+            }
+            if (mime && /G722|PCMU|PCMA/i.test(mime)) {
+                setStatus('Broadcast negotiated a phone codec. Reconnecting as Opus…');
+                schedulePublisherReconnect('Phone codec detected — republishing as Opus…');
+            }
+        } catch {
+            /* stats not ready */
+        }
+    }, 1500);
+}
+
+const replacedNotice = 'This stream is now being published from another device or session.';
+
+async function claimPublisherOwnership() {
+    if (!sessionPublisherClaimUrl || !crypto.randomUUID) {
+        return;
+    }
+    publisherClaim = crypto.randomUUID();
+    publisherPhase = 'publishing';
+    try {
+        await sessionPost(sessionPublisherClaimUrl, {
+            claim: publisherClaim,
+            intent: 'claim',
+        });
+    } catch {
+        /* A failed claim does not prove someone else owns the stream. */
+    }
+}
+
+async function releasePublisherClaim() {
+    if (!sessionPublisherClaimUrl || !publisherClaim) {
+        return;
+    }
+    const claim = publisherClaim;
+    publisherClaim = null;
+    try {
+        await sessionPost(sessionPublisherClaimUrl, {
+            claim,
+            intent: 'release',
+        });
+    } catch {
+        /* The previous publisher can still recover if this claim never stuck. */
+    }
+}
+
+async function publisherWasReplaced() {
+    if (!sessionPublisherClaimUrl || !publisherClaim) {
+        return false;
+    }
+    try {
+        const data = await sessionPost(sessionPublisherClaimUrl, {
+            claim: publisherClaim,
+            intent: 'check',
+        });
+        return decidePublisherReconnect({
+            owns: data.owns === true,
+            replaced: data.replaced === true,
+        }) === 'replaced';
+    } catch {
+        return decidePublisherReconnect({ checkFailed: true }) === 'replaced';
+    }
+}
+
+function markPublisherReplaced() {
+    publisherPhase = 'replaced';
+    publishMode = null;
+    clearPublisherReconnect();
+    if (pc) {
+        pc.onconnectionstatechange = null;
+        try {
+            pc.close();
+        } catch {
+            /* already closed */
+        }
+        pc = null;
+    }
+    whipResourceUrl = null;
+    setOnAir(false);
+    if (heroHint) {
+        heroHint.textContent = replacedNotice;
+    }
+    setStatus(replacedNotice);
 }
 
 function clearPublisherReconnect() {
@@ -1720,6 +2640,9 @@ function bindPublisherPeerWatch(peer) {
 }
 
 function schedulePublisherReconnect(message) {
+    if (publisherPhase === 'replaced' || publisherPhase === 'stopped') {
+        return;
+    }
     if (!isLive || publishMode !== 'mixer' || publisherRepublishing) {
         return;
     }
@@ -1736,6 +2659,9 @@ function schedulePublisherReconnect(message) {
 }
 
 async function republishWhipWhileLive() {
+    if (publisherPhase === 'replaced' || publisherPhase === 'stopped') {
+        return;
+    }
     if (!isLive || publishMode !== 'mixer' || publisherRepublishing) {
         return;
     }
@@ -1744,8 +2670,13 @@ async function republishWhipWhileLive() {
         return;
     }
     publisherRepublishing = true;
+    publisherPhase = 'recovering';
     setStatus('Reconnecting broadcast…');
     try {
+        if (await publisherWasReplaced()) {
+            markPublisherReplaced();
+            return;
+        }
         if (whipResourceUrl) {
             try {
                 await fetch(whipResourceUrl, { method: 'DELETE' });
@@ -1824,6 +2755,30 @@ document.getElementById('btn-enable-mic')?.addEventListener('click', async () =>
     await primeMicrophone({ interactive: true });
 });
 
+const dockTabs = document.querySelectorAll('[data-dock-tab]');
+const dockPanels = document.querySelectorAll('[data-dock-panel]');
+let activeDockTab = 'library';
+
+function setDockTab(tabName) {
+    activeDockTab = tabName || 'library';
+    dockTabs.forEach((btn) => {
+        const active = btn.dataset.dockTab === activeDockTab;
+        btn.classList.toggle('is-active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    dockPanels.forEach((panel) => {
+        const active = panel.dataset.dockPanel === activeDockTab;
+        panel.classList.toggle('is-active', active);
+        panel.hidden = !active;
+    });
+}
+
+dockTabs.forEach((btn) => {
+    btn.addEventListener('click', () => {
+        setDockTab(btn.dataset.dockTab || 'library');
+    });
+});
+
 const mobileTabs = document.querySelectorAll('.mixer-mobile-tab');
 const mobilePanes = document.querySelectorAll('[data-mobile-pane]');
 
@@ -1831,11 +2786,21 @@ function setMobilePane(pane) {
     mobileTabs.forEach((tab) => {
         tab.classList.toggle('is-active', tab.dataset.mobilePane === pane);
     });
+    if (pane === 'library') {
+        setDockTab('library');
+    } else if (pane === 'tools' && activeDockTab === 'library') {
+        setDockTab('board');
+    }
     mobilePanes.forEach((el) => {
-        const match = el.dataset.mobilePane === pane;
+        const match = el.dataset.mobilePane === pane
+            || (pane === 'library' && el.classList.contains('studio-dock'))
+            || (pane === 'tools' && el.classList.contains('studio-dock'));
         el.classList.toggle('is-mobile-active', match);
     });
     stageEl?.setAttribute('data-mobile-pane', pane);
+    if (pane === 'mix') {
+        requestAnimationFrame(() => syncMixerFaderTravel());
+    }
 }
 
 mobileTabs.forEach((tab) => {
@@ -1843,9 +2808,12 @@ mobileTabs.forEach((tab) => {
         setMobilePane(tab.dataset.mobilePane || 'mix');
     });
 });
+setDockTab('library');
 setMobilePane('mix');
+updatePlaylistMeta();
 
 void primeMicrophone({ interactive: false });
+maybeResumeAfterRemoteReload();
 
 if (navigator.mediaDevices && 'addEventListener' in navigator.mediaDevices) {
     navigator.mediaDevices.addEventListener('devicechange', loadDevices);
@@ -1882,7 +2850,7 @@ btnCreateEvent?.addEventListener('click', async () => {
 
 btnStart?.addEventListener('click', async () => {
     if (!broadcastAllowed) {
-        setStatus('An active subscription is required to go on air.');
+        setStatus('Free access has ended. Upgrade to go live.');
         if (billingUrl) {
             window.location.href = billingUrl;
         }
@@ -1897,14 +2865,20 @@ btnStart?.addEventListener('click', async () => {
         return;
     }
     btnStart.disabled = true;
+    const takingOver = publisherPhase === 'replaced';
+    if (takingOver) {
+        publisherPhase = 'connecting';
+    }
     const resuming = sessionPaused;
-    const reconnecting = !resuming && currentEvent?.status === 'live';
+    const reconnecting = !takingOver && !resuming && currentEvent?.status === 'live';
     setStatus(
-        resuming
-            ? 'Resuming event…'
-            : reconnecting
-                ? 'Reconnecting broadcast…'
-                : 'Starting event & going live…',
+        takingOver
+            ? 'Taking over the broadcast…'
+            : resuming
+                ? 'Resuming event…'
+                : reconnecting
+                    ? 'Reconnecting broadcast…'
+                    : 'Starting event & going live…',
     );
 
     try {
@@ -1931,6 +2905,9 @@ btnStart?.addEventListener('click', async () => {
         await attachAuxToMixer();
         for (const channel of fileChannels.values()) {
             wireFileChannelAudio(channel);
+        }
+        if (resuming) {
+            await applyPlaylistBroadcast('broadcast-resume');
         }
         await syncCuePlayback();
         await publishWhip(mixDest.stream);
@@ -1960,6 +2937,7 @@ btnPause?.addEventListener('click', async () => {
             applyEventToUi(data.event);
         }
         sessionPaused = true;
+        await applyPlaylistBroadcast('broadcast-pause');
         await teardownPublisher({ keepEvent: true });
         setOnAir(false);
         setStatus('Paused. Resume to continue this event, or End live to close it.');
@@ -1974,11 +2952,14 @@ btnEnd?.addEventListener('click', async () => {
         return;
     }
     btnEnd.disabled = true;
+    showRecordingActions(null);
     setStatus('Ending event…');
+    setOnAir(false);
     try {
+        // Drop the publisher first so listeners go offline immediately.
+        await teardownPublisher({ keepEvent: false });
         const data = await sessionPost(sessionEndUrl);
         const ended = data.event || currentEvent;
-        await teardownPublisher({ keepEvent: false });
         sessionPaused = false;
         currentEvent = null;
         applyEventToUi(null);
@@ -1987,26 +2968,102 @@ btnEnd?.addEventListener('click', async () => {
             // Keep id so auto-upload still attaches to the ended event.
             currentEvent = { ...ended, status: 'ended' };
         }
+        let saved = null;
         if (pendingLocalRecording) {
-            setStatus('Event ended — uploading recording…');
-            const uploaded = await uploadLocalRecording();
-            if (!uploaded) {
-                setStatus(
-                    ended?.url
-                        ? `Event ended. Upload failed — retry Upload, or open ${ended.url}`
-                        : 'Event ended. Upload failed — retry Upload when ready.',
-                );
-            }
+            setStatus('Event ended — saving the full recording…');
+            saved = await uploadLocalRecording();
+        } else if (ended?.id) {
+            setStatus('Event ended — saving the full recording…');
+            saved = await waitForSavedRecording(ended.id);
+        }
+        showRecordingActions(saved);
+        if (saved) {
+            setStatus('Recording saved. Publish it, or edit it first to trim what you don’t want.');
         } else {
-            setStatus(
-                ended?.url
-                    ? `Event ended — ${ended.url}`
-                    : 'Event ended.',
-            );
+            setStatus('Event ended. The recording is still saving — Publish and Edit will light up when it is ready.');
         }
     } catch (e) {
         setStatus(e instanceof Error ? e.message : 'Could not end event.');
         refreshSessionButtons();
+    }
+});
+
+function showRecordingActions(recording) {
+    if (!btnPublishRecording || !btnEditRecording) {
+        return;
+    }
+    btnPublishRecording.hidden = false;
+    btnEditRecording.hidden = false;
+    if (!recording) {
+        btnPublishRecording.disabled = true;
+        btnPublishRecording.textContent = 'Saving…';
+        btnEditRecording.removeAttribute('href');
+        btnEditRecording.setAttribute('aria-disabled', 'true');
+        return;
+    }
+    btnPublishRecording.disabled = false;
+    btnPublishRecording.textContent = recording.published ? 'Published' : 'Publish podcast';
+    btnPublishRecording.dataset.publishUrl = recording.publish_url || '';
+    if (recording.edit_url) {
+        btnEditRecording.href = recording.edit_url;
+        btnEditRecording.removeAttribute('aria-disabled');
+    }
+}
+
+async function waitForSavedRecording(eventId) {
+    if (!sessionRecordingUrl) {
+        return null;
+    }
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+        try {
+            const res = await fetch(sessionRecordingUrl, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': currentCsrf(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ event_id: eventId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.recording) {
+                return data.recording;
+            }
+        } catch {
+            /* keep waiting while the recording is assembled */
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    return null;
+}
+
+btnPublishRecording?.addEventListener('click', async () => {
+    const url = btnPublishRecording.dataset.publishUrl;
+    if (!url || btnPublishRecording.disabled) {
+        return;
+    }
+    btnPublishRecording.disabled = true;
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRF-TOKEN': currentCsrf(),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: new URLSearchParams({ published: '1' }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data.message || 'Could not publish.');
+        }
+        btnPublishRecording.textContent = 'Published';
+        setStatus('Published to the podcast list.');
+    } catch (e) {
+        btnPublishRecording.disabled = false;
+        setStatus(e instanceof Error ? e.message : 'Could not publish.');
     }
 });
 
@@ -2064,15 +3121,77 @@ async function teardownLive() {
 const libraryListEl = document.getElementById('library-list');
 const librarySearchEl = document.getElementById('library-search');
 const libraryDestinationEl = document.getElementById('library-destination');
+const libraryDestinationHintEl = document.getElementById('library-destination-hint');
+const libraryStatusEl = document.getElementById('library-status');
 const btnDriveConnect = document.getElementById('btn-drive-connect');
 const btnDriveBrowse = document.getElementById('btn-drive-browse');
 const libraryListUrl = root?.dataset.libraryListUrl;
 const libraryUploadUrl = root?.dataset.libraryUploadUrl;
 const libraryImportDriveUrl = root?.dataset.libraryImportDriveUrl;
+const objectStorageEnabled = root?.dataset.objectStorageEnabled === '1';
 /** @type {Array<Record<string, any>>} */
 let libraryAssets = [];
 let librarySearchTimer = 0;
 let libraryDrive = { connected: false, connect_url: null, email: null };
+
+function defaultLibraryDestination() {
+    return objectStorageEnabled ? 'platform' : 'local';
+}
+
+function setLibraryStatus(message, { upgrade = false } = {}) {
+    if (libraryStatusEl) {
+        libraryStatusEl.textContent = message;
+        if (upgrade && billingUrl) {
+            libraryStatusEl.append(' ');
+            const link = document.createElement('a');
+            link.href = billingUrl;
+            link.className = 'mixer-library-upgrade';
+            link.textContent = 'Upgrade';
+            libraryStatusEl.append(link);
+        }
+    }
+    setStatus(message);
+}
+
+function libraryDestinationHint() {
+    const dest = libraryDestinationEl?.value || defaultLibraryDestination();
+    if (dest === 'drive') {
+        return libraryDrive.connected
+            ? 'Google Drive — saved to your Drive (does not use plan storage).'
+            : 'Google Drive — connect Drive first, or choose Server disk / Platform.';
+    }
+    if (dest === 'platform') {
+        return objectStorageEnabled
+            ? 'Platform — Sound Mix cloud storage. Uses your plan storage quota.'
+            : 'Platform cloud is not enabled yet — this upload will be saved on the server disk.';
+    }
+    return 'Server disk — stored on this broadcast server. Uses your plan storage quota.';
+}
+
+function updateLibraryDestinationHint() {
+    if (libraryDestinationHintEl) {
+        libraryDestinationHintEl.textContent = libraryDestinationHint();
+    }
+}
+
+function ensureLibraryDestinationReady() {
+    const dest = libraryDestinationEl?.value || defaultLibraryDestination();
+    if (dest === 'drive' && !libraryDrive.connected) {
+        setLibraryStatus('Connect Google Drive first, or choose Server disk / Platform.');
+        if (btnDriveConnect && libraryDrive.connect_url) {
+            btnDriveConnect.hidden = false;
+        }
+        return false;
+    }
+    return true;
+}
+
+function openLibraryFilePicker() {
+    if (!ensureLibraryDestinationReady()) {
+        return;
+    }
+    fileInput?.click();
+}
 
 const btnAddGallery = document.getElementById('btn-add-gallery');
 const galleryInput = document.getElementById('gallery-input');
@@ -2145,7 +3264,51 @@ function filteredLibraryAssets() {
     });
 }
 
+function cleanLibraryDisplayTitle(raw) {
+    const str = String(raw || '').trim();
+    if (!str) {
+        return 'Audio';
+    }
+    return str
+        .replace(/\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4)$/i, '')
+        .replace(/[_]+/g, ' ')
+        .trim() || str;
+}
+
+document.addEventListener('click', (ev) => {
+    const target = ev.target instanceof Element ? ev.target : null;
+    document.querySelectorAll('details.studio-overflow-menu[open]').forEach((menu) => {
+        if (!target || !menu.contains(target)) {
+            menu.removeAttribute('open');
+        }
+    });
+});
+
+// Library artwork is intentionally neutral when tracks do not provide real artwork.
+// Keep the placeholder deterministic and product-branded rather than inventing album art.
+
+function updateLibraryStorageSummary() {
+    const summaryEl = document.getElementById('library-storage-summary');
+    if (!summaryEl) {
+        return;
+    }
+    if (!libraryAssets.length) {
+        summaryEl.textContent = '';
+        summaryEl.hidden = true;
+        return;
+    }
+    let totalBytes = 0;
+    for (const a of libraryAssets) {
+        totalBytes += Number(a.size_bytes) || 0;
+    }
+    const count = libraryAssets.length;
+    const countLabel = `${count} saved track${count === 1 ? '' : 's'}`;
+    summaryEl.textContent = totalBytes > 0 ? `${countLabel} · ${formatBytes(totalBytes)} used` : countLabel;
+    summaryEl.hidden = false;
+}
+
 function renderLibraryList(assets = filteredLibraryAssets()) {
+    updateLibraryStorageSummary();
     if (!libraryListEl) {
         return;
     }
@@ -2160,26 +3323,51 @@ function renderLibraryList(assets = filteredLibraryAssets()) {
         return;
     }
 
-    for (const asset of assets) {
+    for (const [idx, asset] of assets.entries()) {
         const row = document.createElement('div');
         row.className = 'mixer-library-row';
         row.setAttribute('role', 'listitem');
         row.dataset.id = String(asset.id);
 
+        const rawTitle = asset.title || asset.original_filename || 'Audio';
+        const displayTitle = cleanLibraryDisplayTitle(rawTitle);
         const dur = formatTrackDuration(asset.duration_seconds);
         const meta = [dur, formatBytes(asset.size_bytes)].filter(Boolean).join(' · ');
 
         row.innerHTML = `
+            <span class="mixer-library-thumb" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 18V5l12-2v13"></path>
+                    <circle cx="6" cy="18" r="3"></circle>
+                    <circle cx="18" cy="16" r="3"></circle>
+                </svg>
+            </span>
             <div class="mixer-library-copy">
                 <p class="mixer-library-title"></p>
                 <p class="mixer-library-meta"></p>
             </div>
             <div class="mixer-library-actions">
-                <button type="button" data-queue>Queue</button>
-                <button type="button" data-delete>Delete</button>
+                <button type="button" class="studio-library-play-btn" data-preview-queue aria-label="Queue track" title="Add to session queue">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <polygon points="6 4 20 12 6 20 6 4"></polygon>
+                    </svg>
+                </button>
+                <button type="button" class="studio-btn studio-btn--queue" data-queue>+ Queue</button>
+                <details class="studio-overflow-menu">
+                    <summary class="studio-overflow-trigger" aria-label="More track actions">•••</summary>
+                    <div class="studio-overflow-popover">
+                        <button type="button" class="studio-overflow-item is-danger" data-delete>Delete</button>
+                    </div>
+                </details>
             </div>
         `;
-        row.querySelector('.mixer-library-title').textContent = asset.title || asset.original_filename || 'Audio';
+        const titleEl = row.querySelector('.mixer-library-title');
+        if (titleEl) {
+            titleEl.textContent = displayTitle;
+            titleEl.title = asset.original_filename && asset.original_filename !== displayTitle
+                ? `${displayTitle} (${asset.original_filename})`
+                : rawTitle;
+        }
         const provider =
             asset.storage_provider === 'drive'
                 ? 'Drive'
@@ -2188,12 +3376,17 @@ function renderLibraryList(assets = filteredLibraryAssets()) {
                   : 'Server';
         row.querySelector('.mixer-library-meta').textContent = `${meta} · ${provider}`;
 
+        row.querySelector('[data-preview-queue]')?.addEventListener('click', () => {
+            queueLibraryAsset(asset);
+        });
         row.querySelector('[data-queue]')?.addEventListener('click', () => {
             queueLibraryAsset(asset);
         });
-        row.querySelector('[data-delete]')?.addEventListener('click', async () => {
+        row.querySelector('[data-delete]')?.addEventListener('click', async (ev) => {
+            const details = ev.currentTarget instanceof Element ? ev.currentTarget.closest('details') : null;
+            details?.removeAttribute('open');
             if (!asset.delete_url) {
-                setStatus('Could not delete — missing permission link.');
+                setLibraryStatus('Could not delete — missing permission link.');
                 return;
             }
             if (!window.confirm(`Delete “${asset.title || asset.original_filename}” from the library?`)) {
@@ -2213,9 +3406,9 @@ function renderLibraryList(assets = filteredLibraryAssets()) {
                 }
                 libraryAssets = libraryAssets.filter((a) => a.id !== asset.id);
                 renderLibraryList();
-                setStatus('Removed from audio library.');
+                setLibraryStatus('Removed from audio library.');
             } catch {
-                setStatus('Could not delete from library.');
+                setLibraryStatus('Could not delete from library.');
             }
         });
 
@@ -2268,13 +3461,14 @@ function updateDriveUi() {
         };
     }
     if (libraryDestinationEl && libraryDrive.connected === false && libraryDestinationEl.value === 'drive') {
-        libraryDestinationEl.value = 'platform';
+        libraryDestinationEl.value = defaultLibraryDestination();
     }
+    updateLibraryDestinationHint();
 }
 
 async function importDriveFilePrompt() {
     if (!libraryImportDriveUrl || !libraryDrive.connected) {
-        setStatus('Connect Google Drive first.');
+        setLibraryStatus('Connect Google Drive first.');
         return;
     }
     const fileId = window.prompt('Paste a Google Drive file ID from your “Sound Mix Live” folder:');
@@ -2300,10 +3494,10 @@ async function importDriveFilePrompt() {
         if (data.asset) {
             libraryAssets = [data.asset, ...libraryAssets.filter((a) => a.id !== data.asset.id)];
             renderLibraryList();
-            setStatus('Imported from Google Drive.');
+            setLibraryStatus('Imported from Google Drive.');
         }
     } catch (e) {
-        setStatus(e instanceof Error ? e.message : 'Could not import from Drive.');
+                setLibraryStatus(e instanceof Error ? e.message : 'Could not import from Drive.');
     }
 }
 
@@ -2313,7 +3507,10 @@ async function importDriveFilePrompt() {
  */
 async function uploadFilesToLibrary(files, queueAfterUpload) {
     if (!libraryUploadUrl) {
-        setStatus('Audio library upload is not available on this Studio link.');
+        setLibraryStatus('Audio library upload is not available on this Studio link.');
+        return;
+    }
+    if (!ensureLibraryDestinationReady()) {
         return;
     }
 
@@ -2321,19 +3518,31 @@ async function uploadFilesToLibrary(files, queueAfterUpload) {
         (file) => file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4)$/i.test(file.name),
     );
     if (!audioFiles.length) {
-        setStatus('Choose an audio file (mp3, wav, m4a, …).');
+        setLibraryStatus('Choose an audio file (mp3, wav, m4a, …).');
         return;
     }
 
-    setStatus(`Saving ${audioFiles.length} sound${audioFiles.length === 1 ? '' : 's'} to the library…`);
+    setLibraryStatus(`Saving ${audioFiles.length} sound${audioFiles.length === 1 ? '' : 's'} to the library…`);
 
     for (const file of audioFiles) {
+        const title = file.name.replace(/\.[^.]+$/, '') || file.name;
+        const objectUrl = queueAfterUpload ? URL.createObjectURL(file) : null;
+        let queuedChannel = null;
+        if (queueAfterUpload && objectUrl) {
+            queuedChannel = addPlaylistTrack({
+                name: title,
+                src: objectUrl,
+                objectUrl,
+                sizeLabel: formatBytes(file.size),
+            });
+            setLibraryStatus(`Queued “${title}” — saving to library…`);
+        }
         try {
             const duration = await probeAudioDuration(file);
             const body = new FormData();
             body.append('audio', file);
-            body.append('title', file.name.replace(/\.[^.]+$/, '') || file.name);
-            body.append('destination', libraryDestinationEl?.value || 'platform');
+            body.append('title', title);
+            body.append('destination', libraryDestinationEl?.value || defaultLibraryDestination());
             if (duration != null) {
                 body.append('duration_seconds', String(Math.round(duration)));
             }
@@ -2356,6 +3565,7 @@ async function uploadFilesToLibrary(files, queueAfterUpload) {
                         err?.message ||
                         err?.errors?.storage?.[0] ||
                         err?.errors?.audio?.[0] ||
+                        err?.errors?.destination?.[0] ||
                         msg;
                 } catch {
                     if (/POST data is too large|Content Too Large|413/i.test(raw) || res.status === 413) {
@@ -2370,23 +3580,34 @@ async function uploadFilesToLibrary(files, queueAfterUpload) {
             const asset = data.asset;
             if (asset) {
                 libraryAssets = [asset, ...libraryAssets.filter((a) => a.id !== asset.id)];
-                if (queueAfterUpload) {
+                if (queuedChannel) {
+                    queuedChannel.assetId = asset.id;
+                } else if (queueAfterUpload) {
                     queueLibraryAsset(asset);
                 }
             }
+            if (data.notice) {
+                setLibraryStatus(data.notice);
+            }
         } catch (e) {
-            setStatus(e instanceof Error ? e.message : `Could not upload “${file.name}”.`);
+            const msg = e instanceof Error ? e.message : `Could not upload “${file.name}”.`;
+            setLibraryStatus(msg, {
+                upgrade: /upgrade to a higher plan/i.test(msg),
+            });
             return;
         }
     }
 
     renderLibraryList();
-    setStatus(
+    setLibraryStatus(
         queueAfterUpload
             ? 'Saved to library and queued. Wait for Ready, then Play.'
             : 'Saved to audio library.',
     );
 }
+
+libraryDestinationEl?.addEventListener('change', updateLibraryDestinationHint);
+updateLibraryDestinationHint();
 
 librarySearchEl?.addEventListener('input', () => {
     window.clearTimeout(librarySearchTimer);
@@ -2755,15 +3976,15 @@ function downloadLocalRecording() {
 }
 
 /**
- * @returns {Promise<boolean>}
+ * @returns {Promise<object|null>}
  */
 async function uploadLocalRecording() {
     if (!pendingLocalRecording) {
-        return false;
+        return null;
     }
     if (!recordingUploadUrl) {
         setStatus('Upload link missing — reopen Studio from your dashboard.');
-        return false;
+        return null;
     }
     if (btnUploadRecording) {
         btnUploadRecording.disabled = true;
@@ -2800,15 +4021,11 @@ async function uploadLocalRecording() {
             localRecordingTitleInput.value = '';
         }
         refreshLocalRecordingUi();
-        setStatus(
-            currentEvent?.url
-                ? 'Recording uploaded to this event.'
-                : 'Recording uploaded.',
-        );
-        return true;
+        setStatus('Recording saved. It stays off the podcast list until you publish it.');
+        return data.recording || null;
     } catch (e) {
         setStatus(e instanceof Error ? e.message : 'Could not upload recording.');
-        return false;
+        return null;
     } finally {
         if (btnUploadRecording) {
             btnUploadRecording.disabled = false;
@@ -2823,7 +4040,10 @@ btnUploadRecording?.addEventListener('click', async () => {
 refreshSessionButtons();
 bindScriptureStudio(root);
 bindSongStudio(root);
-if (currentEvent?.status === 'live' && !isLive) {
+bindNdiStudio(root);
+if (!broadcastAllowed && !isLive) {
+    setStatus('Free access has ended. Upgrade to go live.');
+} else if (currentEvent?.status === 'live' && !isLive) {
     setStatus('Page refreshed — hit Reconnect to keep this live event on air.');
 } else if (sessionPaused) {
     setStatus('Paused. Resume to continue this event, or End live to close it.');
