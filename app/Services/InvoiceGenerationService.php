@@ -71,13 +71,16 @@ class InvoiceGenerationService
         [$start, $end] = $this->calculatePeriod($subscription, $plan, $startDate);
 
         return DB::transaction(function () use ($subscription, $plan, $start, $end) {
-            // Find any existing invoice for this exact subscription period
+            // Find any existing active/authoritative invoice for this subscription period
             $existing = Invoice::query()
                 ->where('subscription_id', $subscription->id)
                 ->whereDate('billing_period_start', $start)
                 ->whereDate('billing_period_end', $end)
+                ->whereNotIn('status', [InvoiceStatus::Void->value, InvoiceStatus::Cancelled->value])
                 ->lockForUpdate()
                 ->first();
+
+            $supersededOldInvoice = null;
 
             if ($existing !== null) {
                 // If invoice is already paid or terminal, reuse it
@@ -90,19 +93,17 @@ class InvoiceGenerationService
                     return $existing;
                 }
 
-                // Section 10: Creator changed plan during open unpaid invoice
-                // Void obsolete invoice for old plan and preserve audit history
+                // Plan change during open unpaid invoice:
+                // Void obsolete invoice for old plan while PRESERVING billing period dates, plan, lines & amounts
                 $existing->void("Superseded by plan change to {$plan->name}");
                 $meta = $existing->metadata ?? [];
+                $meta['void_reason'] = 'plan_change';
                 $meta['superseded_by_plan_id'] = $plan->id;
                 $meta['superseded_by_plan_name'] = $plan->name;
-                $meta['superseded_billing_period_start'] = $existing->billing_period_start?->toDateString();
-                $meta['superseded_billing_period_end'] = $existing->billing_period_end?->toDateString();
                 $existing->metadata = $meta;
-                // Clear period dates on voided record so unique constraint is released for replacement invoice
-                $existing->billing_period_start = null;
-                $existing->billing_period_end = null;
                 $existing->save();
+
+                $supersededOldInvoice = $existing;
             }
 
             try {
@@ -125,7 +126,15 @@ class InvoiceGenerationService
                     'status' => InvoiceStatus::Draft->value,
                     'due_at' => $dueAt,
                     'due_date' => $dueAt,
+                    'metadata' => $supersededOldInvoice ? ['supersedes_invoice_id' => $supersededOldInvoice->id] : null,
                 ]);
+
+                if ($supersededOldInvoice !== null) {
+                    $oldMeta = $supersededOldInvoice->metadata ?? [];
+                    $oldMeta['superseded_by_invoice_id'] = $invoice->id;
+                    $supersededOldInvoice->metadata = $oldMeta;
+                    $supersededOldInvoice->save();
+                }
 
                 InvoiceLine::query()->create([
                     'invoice_id' => $invoice->id,
@@ -144,11 +153,12 @@ class InvoiceGenerationService
 
                 return $invoice->fresh(['lines']);
             } catch (QueryException $e) {
-                // If a concurrent process created an invoice for the same period, fetch and return it
+                // If a concurrent process created an authoritative invoice for the same period, fetch and return it
                 $concurrent = Invoice::query()
                     ->where('subscription_id', $subscription->id)
                     ->whereDate('billing_period_start', $start)
                     ->whereDate('billing_period_end', $end)
+                    ->whereNotIn('status', [InvoiceStatus::Void->value, InvoiceStatus::Cancelled->value])
                     ->first();
 
                 if ($concurrent) {
@@ -194,8 +204,15 @@ class InvoiceGenerationService
 
         $now = $asOf ? Carbon::parse($asOf) : now();
 
-        // 7-day lookahead window: generate only when renews_at <= now + 7 days
+        // Hardened renewal window:
+        // Generate only when renews_at is within [now - 14 days, now + 7 days]
+        // Prevents generating for future dates > 7 days ahead
         if ($subscription->renews_at->gt($now->copy()->addDays(7)->endOfDay())) {
+            return null;
+        }
+
+        // Prevents processing stale historical subscriptions whose renews_at is arbitrarily in the past
+        if ($subscription->renews_at->lt($now->copy()->subDays(14)->startOfDay())) {
             return null;
         }
 
@@ -208,6 +225,7 @@ class InvoiceGenerationService
                 ->where('subscription_id', $subscription->id)
                 ->whereDate('billing_period_start', $start)
                 ->whereDate('billing_period_end', $end)
+                ->whereNotIn('status', [InvoiceStatus::Void->value, InvoiceStatus::Cancelled->value])
                 ->first();
 
             if ($existing !== null) {
@@ -256,6 +274,7 @@ class InvoiceGenerationService
                     ->where('subscription_id', $subscription->id)
                     ->whereDate('billing_period_start', $start)
                     ->whereDate('billing_period_end', $end)
+                    ->whereNotIn('status', [InvoiceStatus::Void->value, InvoiceStatus::Cancelled->value])
                     ->first();
 
                 if ($concurrent) {
@@ -275,12 +294,14 @@ class InvoiceGenerationService
     public function generateUpcomingRenewals(?DateTimeInterface $asOf = null): Collection
     {
         $now = $asOf ? Carbon::parse($asOf) : now();
+        $windowStart = $now->copy()->subDays(14)->startOfDay();
         $targetWindow = $now->copy()->addDays(7)->endOfDay();
 
         $subscriptions = Subscription::query()
             ->with(['plan', 'organization'])
             ->where('status', '!=', SubscriptionStatus::Cancelled->value)
             ->whereNotNull('renews_at')
+            ->where('renews_at', '>=', $windowStart)
             ->where('renews_at', '<=', $targetWindow)
             ->get();
 

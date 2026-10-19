@@ -303,6 +303,10 @@ class InvoiceEnginePhase2Test extends TestCase
         $this->assertSame($this->starterPlan->id, $starterInvoice->plan_id);
         $this->assertSame(500000, $starterInvoice->total);
         $this->assertSame('open', $starterInvoice->status);
+        $periodStart = $starterInvoice->billing_period_start;
+        $periodEnd = $starterInvoice->billing_period_end;
+        $this->assertNotNull($periodStart);
+        $this->assertNotNull($periodEnd);
 
         // Creator changes mind and checks out Pro plan before paying Starter
         $this->actingAs($this->user)
@@ -316,7 +320,12 @@ class InvoiceEnginePhase2Test extends TestCase
         $this->assertNotNull($starterInvoice->voided_at);
         $this->assertSame(500000, $starterInvoice->total); // amount was NOT mutated
         $this->assertSame($this->starterPlan->id, $starterInvoice->plan_id); // plan was NOT mutated
+        $this->assertSame('plan_change', $starterInvoice->metadata['void_reason'] ?? null);
         $this->assertSame($this->proPlan->id, $starterInvoice->metadata['superseded_by_plan_id'] ?? null);
+
+        // SECTION 1 & 4 REQUIREMENT: Period dates MUST be preserved on voided invoice!
+        $this->assertSame($periodStart->toDateString(), $starterInvoice->billing_period_start->toDateString());
+        $this->assertSame($periodEnd->toDateString(), $starterInvoice->billing_period_end->toDateString());
 
         $proInvoice = Invoice::query()->where('plan_id', $this->proPlan->id)->first();
         $this->assertNotNull($proInvoice);
@@ -324,9 +333,181 @@ class InvoiceEnginePhase2Test extends TestCase
         $this->assertSame(1200000, $proInvoice->total);
         $this->assertSame('Pro subscription', $proInvoice->lines->first()?->description);
 
+        // Replacement invoice uses the same period
+        $this->assertSame($periodStart->toDateString(), $proInvoice->billing_period_start->toDateString());
+        $this->assertSame($periodEnd->toDateString(), $proInvoice->billing_period_end->toDateString());
+
+        // Bidirectional supersession linkage
+        $this->assertSame($proInvoice->id, $starterInvoice->metadata['superseded_by_invoice_id'] ?? null);
+        $this->assertSame($starterInvoice->id, $proInvoice->metadata['supersedes_invoice_id'] ?? null);
+
         // New PaymentCheckout points to the Pro invoice
         $latestCheckout = PaymentCheckout::query()->latest('id')->first();
         $this->assertSame($proInvoice->id, $latestCheckout->invoice_id);
+    }
+
+    /** Hardening 1: Voided invoice retains billing period, plan, and amounts */
+    public function test_voided_invoice_retains_billing_period_plan_and_amounts(): void
+    {
+        $sub = Subscription::query()->create([
+            'organization_id' => $this->org->id,
+            'plan_id' => $this->starterPlan->id,
+            'status' => SubscriptionStatus::Active,
+        ]);
+
+        $generator = app(InvoiceGenerationService::class);
+        $invoice = $generator->generateForCheckout($sub, $this->starterPlan);
+
+        $startStr = $invoice->billing_period_start->toDateString();
+        $endStr = $invoice->billing_period_end->toDateString();
+        $total = $invoice->total;
+        $planId = $invoice->plan_id;
+        $invoiceNum = $invoice->invoice_number;
+
+        $invoice->void('Manual cancellation test');
+
+        $invoice->refresh();
+        $this->assertSame('void', $invoice->status);
+        $this->assertSame($startStr, $invoice->billing_period_start->toDateString());
+        $this->assertSame($endStr, $invoice->billing_period_end->toDateString());
+        $this->assertSame($total, $invoice->total);
+        $this->assertSame($planId, $invoice->plan_id);
+        $this->assertSame($invoiceNum, $invoice->invoice_number);
+    }
+
+    /** Hardening 2: SQLite partial unique index allows void + open for same period */
+    public function test_sqlite_partial_unique_index_allows_void_plus_open_for_same_period(): void
+    {
+        $start = Carbon::parse('2026-10-19')->startOfDay();
+        $end = Carbon::parse('2026-11-18')->startOfDay();
+
+        $sub = Subscription::query()->create([
+            'organization_id' => $this->org->id,
+            'plan_id' => $this->starterPlan->id,
+            'status' => SubscriptionStatus::Active,
+        ]);
+
+        $voidInvoice = Invoice::query()->create([
+            'organization_id' => $this->org->id,
+            'subscription_id' => $sub->id,
+            'plan_id' => $this->starterPlan->id,
+            'billing_period_start' => $start,
+            'billing_period_end' => $end,
+            'total' => 500000,
+            'status' => InvoiceStatus::Void->value,
+            'voided_at' => now(),
+        ]);
+
+        $openInvoice = Invoice::query()->create([
+            'organization_id' => $this->org->id,
+            'subscription_id' => $sub->id,
+            'plan_id' => $this->proPlan->id,
+            'billing_period_start' => $start,
+            'billing_period_end' => $end,
+            'total' => 1200000,
+            'status' => InvoiceStatus::Open->value,
+            'issued_at' => now(),
+        ]);
+
+        $this->assertSame(2, Invoice::query()->where('subscription_id', $sub->id)->count());
+        $this->assertSame('void', $voidInvoice->fresh()->status);
+        $this->assertSame('open', $openInvoice->fresh()->status);
+    }
+
+    /** Hardening 3: SQLite partial unique index allows cancelled + open for same period */
+    public function test_sqlite_partial_unique_index_allows_cancelled_plus_open_for_same_period(): void
+    {
+        $start = Carbon::parse('2026-10-19')->startOfDay();
+        $end = Carbon::parse('2026-11-18')->startOfDay();
+
+        $sub = Subscription::query()->create([
+            'organization_id' => $this->org->id,
+            'plan_id' => $this->starterPlan->id,
+            'status' => SubscriptionStatus::Active,
+        ]);
+
+        $cancelledInvoice = Invoice::query()->create([
+            'organization_id' => $this->org->id,
+            'subscription_id' => $sub->id,
+            'plan_id' => $this->starterPlan->id,
+            'billing_period_start' => $start,
+            'billing_period_end' => $end,
+            'total' => 500000,
+            'status' => InvoiceStatus::Cancelled->value,
+        ]);
+
+        $openInvoice = Invoice::query()->create([
+            'organization_id' => $this->org->id,
+            'subscription_id' => $sub->id,
+            'plan_id' => $this->proPlan->id,
+            'billing_period_start' => $start,
+            'billing_period_end' => $end,
+            'total' => 1200000,
+            'status' => InvoiceStatus::Open->value,
+            'issued_at' => now(),
+        ]);
+
+        $this->assertSame(2, Invoice::query()->where('subscription_id', $sub->id)->count());
+        $this->assertSame('cancelled', $cancelledInvoice->fresh()->status);
+        $this->assertSame('open', $openInvoice->fresh()->status);
+    }
+
+    /** Hardening 4: SQLite partial unique index rejects two active open invoices for same period */
+    public function test_sqlite_partial_unique_index_rejects_two_active_open_invoices_for_same_period(): void
+    {
+        $start = Carbon::parse('2026-10-19')->startOfDay();
+        $end = Carbon::parse('2026-11-18')->startOfDay();
+
+        $sub = Subscription::query()->create([
+            'organization_id' => $this->org->id,
+            'plan_id' => $this->starterPlan->id,
+            'status' => SubscriptionStatus::Active,
+        ]);
+
+        Invoice::query()->create([
+            'organization_id' => $this->org->id,
+            'subscription_id' => $sub->id,
+            'plan_id' => $this->starterPlan->id,
+            'billing_period_start' => $start,
+            'billing_period_end' => $end,
+            'total' => 500000,
+            'status' => InvoiceStatus::Open->value,
+        ]);
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
+        // Attempting to create a second open/active invoice for same subscription period must fail
+        Invoice::query()->create([
+            'organization_id' => $this->org->id,
+            'subscription_id' => $sub->id,
+            'plan_id' => $this->proPlan->id,
+            'billing_period_start' => $start,
+            'billing_period_end' => $end,
+            'total' => 1200000,
+            'status' => InvoiceStatus::Open->value,
+        ]);
+    }
+
+    /** Hardening 5: Stale renewal dates do not generate inappropriate invoices */
+    public function test_stale_historical_renewal_dates_do_not_generate_invoices(): void
+    {
+        // Subscription with renews_at 30 days in the past (stale unrenewed record)
+        $staleSub = Subscription::query()->create([
+            'organization_id' => $this->org->id,
+            'plan_id' => $this->starterPlan->id,
+            'status' => SubscriptionStatus::Active,
+            'renews_at' => now()->subDays(30),
+        ]);
+
+        $generator = app(InvoiceGenerationService::class);
+
+        // Individual call returns null
+        $this->assertNull($generator->generateRenewal($staleSub));
+
+        // Batch scan skips stale subscription
+        $upcoming = $generator->generateUpcomingRenewals();
+        $this->assertFalse($upcoming->pluck('subscription_id')->contains($staleSub->id));
+        $this->assertSame(0, Invoice::query()->where('subscription_id', $staleSub->id)->count());
     }
 
     /** 15. Legacy checkout without invoice_id still confirms safely */
