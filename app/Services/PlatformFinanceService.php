@@ -138,7 +138,7 @@ class PlatformFinanceService
 
         // 3. Outstanding Invoices & Collection Risk
         $pendingInvoicesQuery = Invoice::query()
-            ->whereIn('status', [Invoice::STATUS_PENDING, Invoice::STATUS_PAST_DUE]);
+            ->whereIn('status', [Invoice::STATUS_PENDING, 'open', Invoice::STATUS_PAST_DUE, Invoice::STATUS_PARTIALLY_PAID]);
 
         $outstandingInvoicesCount = (clone $pendingInvoicesQuery)->count();
         $outstandingInvoicesMinor = (int) (clone $pendingInvoicesQuery)->sum('amount');
@@ -502,7 +502,11 @@ class PlatformFinanceService
             ->with(['organization', 'subscription.plan']);
 
         if (! empty($filters['status'])) {
-            $query->where('status', $filters['status']);
+            if ($filters['status'] === 'pending' || $filters['status'] === 'open') {
+                $query->whereIn('status', ['pending', 'open']);
+            } else {
+                $query->where('status', $filters['status']);
+            }
         }
 
         if (! empty($filters['organization_id'])) {

@@ -107,7 +107,29 @@ class AdminAttentionService
                     'count' => $pastDueSubs,
                     'severity' => 'critical',
                     'action_label' => 'Inspect',
-                    'url' => route('admin.organizations.index'),
+                    'url' => route('admin.finance.subscriptions', ['health' => 'past_due']),
+                ];
+            }
+        } catch (\Throwable) {
+        }
+
+        // 4b. Overdue invoices
+        try {
+            $overdueInvoices = \App\Models\Invoice::query()
+                ->whereIn('status', [\App\Models\Invoice::STATUS_PENDING, 'open', \App\Models\Invoice::STATUS_PAST_DUE, \App\Models\Invoice::STATUS_PARTIALLY_PAID])
+                ->where('due_date', '<', now())
+                ->count();
+
+            if ($overdueInvoices > 0) {
+                $items[] = [
+                    'key' => 'overdue_invoices',
+                    'label' => $overdueInvoices === 1
+                        ? '1 overdue billing invoice requiring collection'
+                        : "{$overdueInvoices} overdue billing invoices requiring collection",
+                    'count' => $overdueInvoices,
+                    'severity' => 'critical',
+                    'action_label' => 'Inspect',
+                    'url' => route('admin.finance.invoices', ['status' => 'past_due']),
                 ];
             }
         } catch (\Throwable) {

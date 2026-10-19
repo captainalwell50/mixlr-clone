@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\CreatorType;
 use App\Enums\EventStatus;
+use App\Enums\OrgRole;
 use App\Enums\SubscriptionStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -15,6 +16,9 @@ class Organization extends Model
 {
     protected $fillable = [
         'name',
+        'country_code',
+        'state_region',
+        'city',
         'slug',
         'creator_type',
         'tagline',
@@ -49,9 +53,24 @@ class Organization extends Model
         return $this->hasMany(Stream::class);
     }
 
+    public function paymentCheckouts(): HasMany
+    {
+        return $this->hasMany(PaymentCheckout::class);
+    }
+
     public function subscriptions(): HasMany
     {
         return $this->hasMany(Subscription::class);
+    }
+
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
+    public function affiliateCommissions(): HasMany
+    {
+        return $this->hasMany(AffiliateCommission::class);
     }
 
     public function subscription(): HasOne
@@ -64,8 +83,7 @@ class Organization extends Model
         $subscription = $this->subscription;
 
         if ($subscription === null) {
-            // Grandfather existing orgs without a subscription row.
-            return true;
+            return false;
         }
 
         if (! $subscription->allowsBroadcast()) {
@@ -73,6 +91,22 @@ class Organization extends Model
         }
 
         return $this->hasFeature('live_streaming');
+    }
+
+    public function needsUpgradeCta(): bool
+    {
+        $subscription = $this->subscription;
+
+        if ($subscription === null) {
+            return true;
+        }
+
+        return $subscription->needsUpgradeCta();
+    }
+
+    public function owners(): BelongsToMany
+    {
+        return $this->users()->wherePivot('role', OrgRole::Owner->value);
     }
 
     public function plan(): ?Plan
@@ -120,6 +154,10 @@ class Organization extends Model
 
     public function defaultStream(): ?Stream
     {
+        if ($this->relationLoaded('streams')) {
+            return $this->streams->sortBy('id')->first();
+        }
+
         return $this->streams()->orderBy('id')->first();
     }
 
@@ -144,6 +182,16 @@ class Organization extends Model
         return $this->belongsToMany(User::class)
             ->withPivot('role')
             ->withTimestamps();
+    }
+
+    public function digitalLibrarySeller(): HasOne
+    {
+        return $this->hasOne(DigitalLibrarySeller::class);
+    }
+
+    public function affiliateAttribution(): HasOne
+    {
+        return $this->hasOne(AffiliateAttribution::class);
     }
 
     public function driveConnection(): HasOne

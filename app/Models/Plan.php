@@ -17,6 +17,7 @@ class Plan extends Model
         'interval',
         'limits',
         'is_active',
+        'is_custom',
         'sort_order',
     ];
 
@@ -25,6 +26,7 @@ class Plan extends Model
         return [
             'limits' => 'array',
             'is_active' => 'boolean',
+            'is_custom' => 'boolean',
             'amount' => 'integer',
         ];
     }
@@ -34,13 +36,60 @@ class Plan extends Model
         return $this->hasMany(Subscription::class);
     }
 
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
+    public function isCustom(): bool
+    {
+        return (bool) $this->is_custom;
+    }
+
     public function isFree(): bool
     {
+        if ($this->isCustom()) {
+            return false;
+        }
+
         return $this->amount === 0 || $this->slug === 'free';
+    }
+
+    public function isRecommended(): bool
+    {
+        return strtolower((string) $this->slug) === 'pro'
+            || strcasecmp((string) $this->name, 'Pro') === 0;
+    }
+
+    public function contactSalesMailto(?string $channelName = null): string
+    {
+        $email = (string) config('app.support_email', 'support@soundmix.live');
+        $subject = filled($channelName)
+            ? 'Custom package — '.$channelName
+            : 'Custom package inquiry';
+
+        return 'mailto:'.$email.'?subject='.rawurlencode($subject);
+    }
+
+    public function periodEndFrom(\DateTimeInterface $from): \Carbon\CarbonInterface
+    {
+        $from = \Illuminate\Support\Carbon::parse($from);
+
+        return match (strtolower((string) $this->interval)) {
+            'weekly' => $from->copy()->addWeek(),
+            'quarterly' => $from->copy()->addMonths(3),
+            'biannually' => $from->copy()->addMonths(6),
+            'annually', 'yearly' => $from->copy()->addYear(),
+            default => $from->copy()->addMonth(),
+        };
     }
 
     public function amountLabel(): string
     {
+        if ($this->isCustom()) {
+            return 'Custom';
+        }
+
         if ($this->isFree()) {
             return 'Free';
         }
