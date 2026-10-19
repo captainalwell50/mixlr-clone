@@ -147,6 +147,11 @@ class Invoice extends Model
         return $this->hasMany(PaymentAllocation::class);
     }
 
+    public function paymentCheckouts(): HasMany
+    {
+        return $this->hasMany(PaymentCheckout::class);
+    }
+
     // -------------------------------------------------------------------------
     // Scopes
     // -------------------------------------------------------------------------
@@ -214,9 +219,15 @@ class Invoice extends Model
         }
 
         $this->status = $to;
+        $shouldEmitIssued = false;
 
-        if ($to === InvoiceStatus::Open && $this->issued_at === null) {
-            $this->issued_at = now();
+        if ($to === InvoiceStatus::Open) {
+            if ($this->issued_at === null) {
+                $this->issued_at = now();
+            }
+            if ($from !== InvoiceStatus::Open) {
+                $shouldEmitIssued = true;
+            }
         } elseif ($to === InvoiceStatus::Paid) {
             $this->paid_at = now();
             if ($this->amount_paid < $this->total) {
@@ -237,6 +248,10 @@ class Invoice extends Model
         }
 
         $this->save();
+
+        if ($shouldEmitIssued) {
+            \App\Events\InvoiceIssued::dispatch($this);
+        }
 
         return $this;
     }

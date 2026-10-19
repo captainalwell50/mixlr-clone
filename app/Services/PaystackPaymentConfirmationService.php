@@ -18,13 +18,20 @@ class PaystackPaymentConfirmationService
         private SubscriptionAssignmentService $assignments,
     ) {}
 
-    public function recordPending(Organization $organization, Plan $plan, string $reference): PaymentCheckout
-    {
+    public function recordPending(
+        Organization $organization,
+        Plan $plan,
+        string $reference,
+        \App\Models\Invoice|int|null $invoice = null,
+    ): PaymentCheckout {
+        $invoiceId = $invoice instanceof \App\Models\Invoice ? $invoice->id : $invoice;
+
         return PaymentCheckout::query()->updateOrCreate(
             ['reference' => $reference],
             [
                 'organization_id' => $organization->id,
                 'plan_id' => $plan->id,
+                'invoice_id' => $invoiceId,
                 'status' => PaymentCheckout::STATUS_PENDING,
                 'amount' => $plan->amount,
                 'currency' => $plan->currency,
@@ -163,19 +170,41 @@ class PaystackPaymentConfirmationService
                 $amountPaid = is_numeric($amountRaw) ? ((float) $amountRaw) / 100 : (float) $plan->amount;
                 $currency = (string) (data_get($data, 'currency') ?? $plan->currency ?? 'NGN');
 
-                \App\Models\Invoice::query()->firstOrCreate(
-                    ['payment_reference' => $reference],
-                    [
-                        'organization_id' => $organization->id,
-                        'subscription_id' => $organization->subscription?->id,
-                        'invoice_number' => 'INV-'.strtoupper(substr($reference, 0, 12)),
-                        'amount' => (int) ($amountPaid * 100),
-                        'currency' => $currency,
-                        'due_date' => now(),
-                        'paid_at' => now(),
-                        'status' => \App\Models\Invoice::STATUS_PAID,
-                    ]
-                );
+                // Phase 2: Check if checkout has an authoritative invoice
+                $invoice = null;
+                if ($checkout?->invoice_id) {
+                    $invoice = \App\Models\Invoice::query()->find($checkout->invoice_id);
+                } elseif (data_get($data, 'metadata.invoice_id')) {
+                    $invoice = \App\Models\Invoice::query()->find(data_get($data, 'metadata.invoice_id'));
+                }
+
+                if ($invoice !== null) {
+                    // Reuse authoritative invoice - do NOT create duplicate invoice!
+                    if ($invoice->payment_reference === null) {
+                        $invoice->payment_reference = $reference;
+                    }
+                    // Transitional Phase 2 compatibility: update legacy status/payment fields
+                    $invoice->status = \App\Models\Invoice::STATUS_PAID;
+                    $invoice->paid_at = now();
+                    $invoice->amount_paid = (int) ($amountPaid * 100);
+                    $invoice->amount_due = 0;
+                    $invoice->save();
+                } else {
+                    // Legacy fallback path: checkout without invoice_id
+                    \App\Models\Invoice::query()->firstOrCreate(
+                        ['payment_reference' => $reference],
+                        [
+                            'organization_id' => $organization->id,
+                            'subscription_id' => $organization->subscription?->id,
+                            'invoice_number' => 'INV-'.strtoupper(substr($reference, 0, 12)),
+                            'amount' => (int) ($amountPaid * 100),
+                            'currency' => $currency,
+                            'due_date' => now(),
+                            'paid_at' => now(),
+                            'status' => \App\Models\Invoice::STATUS_PAID,
+                        ]
+                    );
+                }
 
                 $owners = $organization->users()
                     ->wherePivot('role', \App\Enums\OrgRole::Owner->value)

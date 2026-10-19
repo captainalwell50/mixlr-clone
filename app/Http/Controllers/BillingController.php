@@ -7,7 +7,10 @@ use App\Enums\SubscriptionStatus;
 use App\Models\Organization;
 use App\Models\Plan;
 use App\Models\Subscription;
+use App\Services\FreePeriodService;
+use App\Services\InvoiceGenerationService;
 use App\Services\PaystackClient;
+use App\Services\PaystackPaymentConfirmationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +20,7 @@ use Throwable;
 
 class BillingController extends Controller
 {
-    public function plans(Request $request): View|RedirectResponse
+    public function plans(Request $request, PaystackPaymentConfirmationService $confirmation): View|RedirectResponse
     {
         $organization = $this->ownedOrganization($request);
         if ($organization === null) {
@@ -25,41 +28,71 @@ class BillingController extends Controller
         }
 
         $organization->load('subscription.plan');
+        $confirmation->confirmPending($organization, immediate: true);
+        $organization->load('subscription.plan');
 
         return view('billing.plans', [
             'organization' => $organization,
             'plans' => Plan::query()->where('is_active', true)->orderBy('sort_order')->get(),
             'subscription' => $organization->subscription,
             'paystackEnabled' => app(PaystackClient::class)->enabled(),
+            'pendingCheckout' => $organization->paymentCheckouts()
+                ->pending()
+                ->latest('id')
+                ->first(),
         ]);
     }
 
-    public function startTrial(Request $request): RedirectResponse
+    public function startTrial(Request $request, FreePeriodService $freePeriod): RedirectResponse
     {
         $organization = $this->ownedOrganization($request);
         abort_unless($organization !== null, 403);
 
         $subscription = $organization->subscription;
+        $endsAt = $freePeriod->windowEndsAt($organization, $subscription);
+
+        if ($subscription?->trial_ends_at !== null && $subscription->trial_ends_at->isPast()) {
+            return redirect()->route('billing.plans')
+                ->with('error', __('Your free period has ended. Subscribe to keep broadcasting.'));
+        }
+
+        if ($endsAt->isPast()) {
+            return redirect()->route('billing.plans')
+                ->with('error', __('Your free period has ended. Subscribe to keep broadcasting.'));
+        }
+
         if ($subscription === null) {
             Subscription::query()->create([
                 'organization_id' => $organization->id,
+                'plan_id' => $freePeriod->ensureFreePlan()->id,
                 'status' => SubscriptionStatus::Trialing,
-                'trial_ends_at' => now()->addDays(7),
+                'trial_ends_at' => $endsAt,
             ]);
-        } elseif (! $subscription->allowsBroadcast()) {
+        } elseif ($subscription->trial_ends_at === null && $subscription->isOnFreePeriod()) {
             $subscription->update([
                 'status' => SubscriptionStatus::Trialing,
-                'trial_ends_at' => now()->addDays(7),
+                'trial_ends_at' => $endsAt,
                 'ends_at' => null,
             ]);
+        } elseif (! $subscription->allowsBroadcast()) {
+            return redirect()->route('billing.plans')
+                ->with('error', __('Your free period has ended. Subscribe to keep broadcasting.'));
         }
 
         return redirect()->route('creator.home')
-            ->with('status', __('Your 7-day trial is active. Open Studio when you’re ready.'));
+            ->with('status', __('Your :days-day free access is active. Open Studio when you’re ready.', [
+                'days' => $freePeriod->freeDays(),
+            ]));
     }
 
-    public function checkout(Request $request, Plan $plan, PaystackClient $paystack): RedirectResponse
-    {
+    public function checkout(
+        Request $request,
+        Plan $plan,
+        PaystackClient $paystack,
+        FreePeriodService $freePeriod,
+        PaystackPaymentConfirmationService $confirmation,
+        InvoiceGenerationService $invoiceGenerator,
+    ): RedirectResponse {
         $organization = $this->ownedOrganization($request);
         abort_unless($organization !== null, 403);
         abort_unless($plan->is_active, 404);
@@ -67,10 +100,14 @@ class BillingController extends Controller
         $user = $request->user();
 
         if ($plan->isFree()) {
-            $this->activateSubscription($organization, $plan);
+            return $this->activateFreePlan($organization, $plan, $freePeriod);
+        }
 
-            return redirect()->route('creator.home')
-                ->with('status', __('You’re on the Free plan — open Studio anytime to test the platform.'));
+        if ($plan->isCustom()) {
+            return redirect()->route('billing.plans')
+                ->with('error', __('Custom packages are set up with sales. Email :email to get started.', [
+                    'email' => config('app.support_email'),
+                ]));
         }
 
         if (! $paystack->enabled()) {
@@ -91,18 +128,33 @@ class BillingController extends Controller
                 }
             }
 
+            // Phase 2: Establish subscription billing context & authoritative OPEN invoice
+            $subscription = $organization->subscription;
+            if ($subscription === null) {
+                $subscription = Subscription::query()->create([
+                    'organization_id' => $organization->id,
+                    'plan_id' => $plan->id,
+                    'status' => SubscriptionStatus::Trialing,
+                ]);
+                $organization->setRelation('subscription', $subscription);
+            }
+
+            $invoice = $invoiceGenerator->generateForCheckout($subscription, $plan);
+
             $reference = 'lma_'.$organization->id.'_'.now()->timestamp.'_'.bin2hex(random_bytes(4));
 
             $data = $paystack->initializeTransaction([
                 'email' => $user->email,
                 'amount' => $plan->amount,
                 'currency' => $plan->currency,
-                'plan' => $plan->paystack_plan_code,
                 'reference' => $reference,
                 'callback_url' => route('billing.callback'),
+                'channels' => config('billing.paystack_channels'),
                 'metadata' => [
                     'organization_id' => $organization->id,
                     'plan_id' => $plan->id,
+                    'invoice_id' => $invoice->id,
+                    'paystack_plan_code' => $plan->paystack_plan_code,
                     'cancel_action' => route('billing.plans'),
                 ],
             ]);
@@ -112,10 +164,13 @@ class BillingController extends Controller
                 throw new RuntimeException('Paystack did not return a checkout URL.');
             }
 
+            $confirmation->recordPending($organization, $plan, $reference, $invoice);
+
             session([
                 'billing.checkout_reference' => $reference,
                 'billing.plan_id' => $plan->id,
                 'billing.organization_id' => $organization->id,
+                'billing.invoice_id' => $invoice->id,
             ]);
 
             return redirect()->away($authUrl);
@@ -126,50 +181,79 @@ class BillingController extends Controller
         }
     }
 
-    public function callback(Request $request, PaystackClient $paystack): RedirectResponse
+    public function callback(Request $request, PaystackPaymentConfirmationService $confirmation): RedirectResponse
     {
         $reference = (string) $request->query('reference', session('billing.checkout_reference', ''));
         $organization = $this->ownedOrganization($request);
         abort_unless($organization !== null, 403);
 
         if ($reference === '') {
-            return redirect()->route('billing.plans')
-                ->with('error', __('Missing payment reference.'));
-        }
+            $confirmation->confirmPending($organization, immediate: true);
+            $organization->load('subscription.plan');
 
-        if (! $paystack->enabled()) {
-            return redirect()->route('creator.home');
-        }
-
-        try {
-            $data = $paystack->verifyTransaction($reference);
-        } catch (Throwable $e) {
-            Log::warning('Paystack verify failed', ['error' => $e->getMessage()]);
+            if ($organization->fresh()?->needsUpgradeCta() === false) {
+                return redirect()->route('creator.home')
+                    ->with('status', __('Subscription activated. You’re ready to broadcast.'));
+            }
 
             return redirect()->route('billing.plans')
-                ->with('error', __('Payment could not be verified. If you were charged, it will activate shortly.'));
+                ->with('error', __('Missing payment reference. If you were charged, it will activate shortly.'));
         }
 
-        if (($data['status'] ?? '') !== 'success') {
-            return redirect()->route('billing.plans')
-                ->with('error', __('Payment was not completed.'));
-        }
-
-        $planId = (int) (data_get($data, 'metadata.plan_id') ?: session('billing.plan_id'));
-        $plan = Plan::query()->find($planId);
-
-        $this->activateSubscription(
-            $organization,
-            $plan,
-            data_get($data, 'customer.customer_code'),
-            data_get($data, 'subscription.subscription_code') ?? data_get($data, 'subscription_code'),
-            data_get($data, 'subscription.email_token') ?? data_get($data, 'email_token'),
-        );
-
+        $ok = $confirmation->confirmReference($reference);
         session()->forget(['billing.checkout_reference', 'billing.plan_id', 'billing.organization_id']);
+
+        if (! $ok) {
+            return redirect()->route('billing.plans')
+                ->with('error', __('Payment could not be verified yet. If you were charged, we will confirm it with Paystack shortly.'));
+        }
 
         return redirect()->route('creator.home')
             ->with('status', __('Subscription activated. You’re ready to broadcast.'));
+    }
+
+    protected function activateFreePlan(
+        Organization $organization,
+        Plan $plan,
+        FreePeriodService $freePeriod,
+    ): RedirectResponse {
+        $subscription = $organization->subscription;
+        $endsAt = $freePeriod->windowEndsAt($organization, $subscription);
+
+        if ($subscription?->isOnFreePeriod() && $subscription->trial_ends_at?->isPast()) {
+            return back()->with('error', __('Your free period has ended. Subscribe to keep broadcasting.'));
+        }
+
+        if ($endsAt->isPast() && ($subscription === null || $subscription->isOnFreePeriod())) {
+            return back()->with('error', __('Your free period has ended. Subscribe to keep broadcasting.'));
+        }
+
+        if ($subscription) {
+            $payload = [
+                'plan_id' => $plan->id,
+                'status' => SubscriptionStatus::Active,
+                'ends_at' => null,
+                'renews_at' => null,
+            ];
+            if ($subscription->trial_ends_at === null) {
+                $payload['trial_ends_at'] = $endsAt;
+            }
+            $subscription->update($payload);
+        } else {
+            Subscription::query()->create([
+                'organization_id' => $organization->id,
+                'plan_id' => $plan->id,
+                'status' => SubscriptionStatus::Active,
+                'trial_ends_at' => $endsAt,
+            ]);
+        }
+
+        $days = $organization->fresh()?->subscription?->freeDaysRemaining();
+
+        return redirect()->route('creator.home')
+            ->with('status', $days !== null
+                ? __('You’re on Free — :days day(s) left to go live. Upgrade anytime from billing.', ['days' => $days])
+                : __('You’re on the Free plan. Upgrade anytime from billing.'));
     }
 
     protected function activateWithoutPaystack(Organization $organization, Plan $plan): RedirectResponse
@@ -197,6 +281,7 @@ class BillingController extends Controller
             'status' => SubscriptionStatus::Active,
             'trial_ends_at' => null,
             'ends_at' => null,
+            'renews_at' => $plan?->periodEndFrom(now()),
             'paystack_customer_code' => $customerCode ?? $organization->paystack_customer_code,
             'paystack_subscription_code' => $subscriptionCode,
             'paystack_email_token' => $emailToken,
@@ -208,6 +293,7 @@ class BillingController extends Controller
                 'status' => SubscriptionStatus::Active,
                 'trial_ends_at' => null,
                 'ends_at' => null,
+                'renews_at' => $plan?->periodEndFrom(now()),
             ]);
         } else {
             Subscription::query()->create([
