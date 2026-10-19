@@ -440,10 +440,16 @@ html:not(.dark) .admin-shell .hover\:text-white:hover {
 /* Form Inputs, Selects, Textareas */
 html:not(.dark) .creator-shell input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]),
 html:not(.dark) .admin-shell input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) .app-shell input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) .console input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]),
 html:not(.dark) .creator-shell select,
 html:not(.dark) .admin-shell select,
+html:not(.dark) .app-shell select,
+html:not(.dark) .console select,
 html:not(.dark) .creator-shell textarea,
-html:not(.dark) .admin-shell textarea {
+html:not(.dark) .admin-shell textarea,
+html:not(.dark) .app-shell textarea,
+html:not(.dark) .console textarea {
     background-color: #ffffff !important;
     color: #0f172a !important;
     border-color: #cbd5e1 !important;
@@ -452,17 +458,27 @@ html:not(.dark) .admin-shell textarea {
 
 html:not(.dark) .creator-shell input::placeholder,
 html:not(.dark) .admin-shell input::placeholder,
+html:not(.dark) .app-shell input::placeholder,
+html:not(.dark) .console input::placeholder,
 html:not(.dark) .creator-shell textarea::placeholder,
-html:not(.dark) .admin-shell textarea::placeholder {
+html:not(.dark) .admin-shell textarea::placeholder,
+html:not(.dark) .app-shell textarea::placeholder,
+html:not(.dark) .console textarea::placeholder {
     color: #94a3b8 !important;
 }
 
 html:not(.dark) .creator-shell input:focus,
 html:not(.dark) .admin-shell input:focus,
+html:not(.dark) .app-shell input:focus,
+html:not(.dark) .console input:focus,
 html:not(.dark) .creator-shell select:focus,
 html:not(.dark) .admin-shell select:focus,
+html:not(.dark) .app-shell select:focus,
+html:not(.dark) .console select:focus,
 html:not(.dark) .creator-shell textarea:focus,
-html:not(.dark) .admin-shell textarea:focus {
+html:not(.dark) .admin-shell textarea:focus,
+html:not(.dark) .app-shell textarea:focus,
+html:not(.dark) .console textarea:focus {
     background-color: #ffffff !important;
     border-color: #059669 !important;
     box-shadow: 0 0 0 1px #059669, 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
@@ -11791,21 +11807,21 @@ html[data-studio-theme="dark"] .mixer-strip--out .mixer-fader::-webkit-slider-th
     font-size: 0.9375rem;
     line-height: normal;
     border-radius: 0.625rem;
-    border: 1px solid var(--app-input-border);
-    background-color: var(--app-input-bg);
-    color: var(--app-text);
+    border: 1px solid var(--app-input-border) !important;
+    background-color: var(--app-input-bg) !important;
+    color: var(--app-text) !important;
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 
 .auth-input::placeholder {
-    color: var(--app-text-muted);
+    color: var(--app-text-muted) !important;
     opacity: 0.75;
 }
 
 .auth-input:focus {
     outline: none;
-    border-color: var(--app-accent);
-    box-shadow: 0 0 0 3px var(--app-accent-soft);
+    border-color: var(--app-accent) !important;
+    box-shadow: 0 0 0 3px var(--app-accent-soft) !important;
 }
 
 .auth-input.is-invalid,
@@ -11820,9 +11836,9 @@ html[data-studio-theme="dark"] .mixer-strip--out .mixer-fader::-webkit-slider-th
 
 .auth-input[readonly],
 .auth-input[disabled] {
-    background-color: var(--app-surface-muted);
-    border-color: var(--app-border-muted);
-    color: var(--app-text-secondary);
+    background-color: var(--app-surface-muted) !important;
+    border-color: var(--app-border-muted) !important;
+    color: var(--app-text-secondary) !important;
     cursor: not-allowed;
 }
 
