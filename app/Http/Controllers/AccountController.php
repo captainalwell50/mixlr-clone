@@ -21,7 +21,7 @@ class AccountController extends Controller
         ]);
     }
 
-    public function update(Request $request): RedirectResponse
+    public function update(Request $request, \App\Services\OutboundEmailService $outbound): RedirectResponse
     {
         $user = $request->user();
 
@@ -35,6 +35,19 @@ class AccountController extends Controller
             'name' => $validated['name'],
             'password' => $validated['password'],
         ])->save();
+
+        $eventKey = 'password-changed:'.$user->id.':'.now()->format('YmdHis');
+        $outbound->sendTransactional(
+            mailable: new \App\Mail\PasswordChangedMail($user, now(), $request->ip()),
+            recipient: $user->email,
+            type: 'password_changed',
+            eventKey: $eventKey,
+            user: $user,
+            metadata: [
+                'ip' => $request->ip(),
+                'source' => 'account_settings',
+            ]
+        );
 
         return redirect()->route('account.edit')
             ->with('status', __('Account updated. Your new password is active.'));

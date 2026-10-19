@@ -49,4 +49,20 @@ class UserFactory extends Factory
             'email_verified_at' => null,
         ]);
     }
+
+    public function marketingOptedIn(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'marketing_email_opt_in' => true,
+            'marketing_unsubscribed_at' => null,
+        ]);
+    }
+
+    public function marketingUnsubscribed(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'marketing_email_opt_in' => false,
+            'marketing_unsubscribed_at' => now(),
+        ]);
+    }
 }

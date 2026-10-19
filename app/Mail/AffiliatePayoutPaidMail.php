@@ -34,6 +34,7 @@ class AffiliatePayoutPaidMail extends Mailable implements ShouldQueue
     {
         return new Content(
             view: 'emails.affiliate-payout-paid',
+            text: 'emails.affiliate-payout-paid-text',
             with: [
                 'payout' => $this->payout,
                 'affiliate' => $this->payout->affiliateAccount,

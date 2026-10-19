@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\OrgRole;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +22,8 @@ class User extends Authenticatable
         'password',
         'is_admin',
         'avatar_path',
+        'marketing_email_opt_in',
+        'marketing_unsubscribed_at',
     ];
 
     protected $hidden = [
@@ -34,7 +37,40 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
+            'marketing_email_opt_in' => 'boolean',
+            'marketing_unsubscribed_at' => 'datetime',
         ];
+    }
+
+    public function allowsMarketingEmail(): bool
+    {
+        return (bool) $this->marketing_email_opt_in && $this->marketing_unsubscribed_at === null;
+    }
+
+    public function optInToMarketing(): void
+    {
+        $this->update([
+            'marketing_email_opt_in' => true,
+            'marketing_unsubscribed_at' => null,
+        ]);
+    }
+
+    public function unsubscribeFromMarketing(): void
+    {
+        $this->update([
+            'marketing_email_opt_in' => false,
+            'marketing_unsubscribed_at' => now(),
+        ]);
+    }
+
+    public function unsubscribeUrl(): string
+    {
+        return \Illuminate\Support\Facades\URL::signedRoute('email.unsubscribe', ['user' => $this->id]);
+    }
+
+    public function emailDeliveries(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(EmailDelivery::class);
     }
 
     public function isAdmin(): bool
@@ -49,8 +85,24 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    public function affiliateAccount(): HasOne
+    {
+        return $this->hasOne(AffiliateAccount::class);
+    }
+
     public function orgRole(Organization $organization): ?OrgRole
     {
+        if ($organization->pivot && isset($organization->pivot->role)) {
+            return OrgRole::tryFrom((string) $organization->pivot->role);
+        }
+
+        if ($this->relationLoaded('organizations')) {
+            $membership = $this->organizations->firstWhere('id', $organization->id);
+            if ($membership && $membership->pivot && isset($membership->pivot->role)) {
+                return OrgRole::tryFrom((string) $membership->pivot->role);
+            }
+        }
+
         $membership = $this->organizations()
             ->where('organizations.id', $organization->id)
             ->first();

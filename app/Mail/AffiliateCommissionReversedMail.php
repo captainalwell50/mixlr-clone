@@ -35,6 +35,7 @@ class AffiliateCommissionReversedMail extends Mailable implements ShouldQueue
     {
         return new Content(
             view: 'emails.affiliate-commission-reversed',
+            text: 'emails.affiliate-commission-reversed-text',
             with: [
                 'commission' => $this->commission,
                 'affiliate' => $this->commission->affiliateAccount,

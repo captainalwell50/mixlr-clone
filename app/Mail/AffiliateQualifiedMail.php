@@ -34,6 +34,7 @@ class AffiliateQualifiedMail extends Mailable implements ShouldQueue
     {
         return new Content(
             view: 'emails.affiliate-qualified',
+            text: 'emails.affiliate-qualified-text',
             with: [
                 'affiliate' => $this->affiliateAccount,
                 'user' => $this->affiliateAccount->user,

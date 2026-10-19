@@ -66,6 +66,15 @@ use App\Http\Controllers\StudioSessionController;
 use App\Models\Organization;
 use Illuminate\Support\Facades\Route;
 
+foreach (config('app.custom_domain_channels', []) as $customDomain => $customSlug) {
+    Route::domain($customDomain)->group(function () use ($customSlug) {
+        Route::get('/', function () use ($customSlug) {
+            $organization = Organization::where('slug', $customSlug)->firstOrFail();
+            return app(\App\Http\Controllers\ChannelController::class)->show(request(), $organization);
+        });
+    });
+}
+
 Route::get('/', function () {
     return view('welcome');
 });
@@ -192,6 +201,14 @@ TXT;
 Route::get('/privacy', [LegalController::class, 'privacy'])->name('legal.privacy');
 Route::get('/terms', [LegalController::class, 'terms'])->name('legal.terms');
 Route::get('/support', [LegalController::class, 'support'])->name('legal.support');
+
+Route::get('/email/unsubscribe/{user}', [\App\Http\Controllers\EmailUnsubscribeController::class, 'show'])
+    ->name('email.unsubscribe')
+    ->middleware('signed');
+
+Route::post('/email/unsubscribe/{user}', [\App\Http\Controllers\EmailUnsubscribeController::class, 'update'])
+    ->name('email.unsubscribe.update')
+    ->middleware('signed');
 
 Route::get('/discover', [DiscoverController::class, 'index'])->name('discover');
 
@@ -528,6 +545,12 @@ Route::middleware(['auth', 'onboarded'])->prefix('admin')->name('admin.')->group
     Route::put('settings/contact', [SettingsController::class, 'updateContact'])->name('settings.contact');
     Route::put('settings/mail', [SettingsController::class, 'updateMail'])->name('settings.mail');
     Route::post('settings/mail/test', [SettingsController::class, 'sendTestMail'])->name('settings.mail.test');
+    Route::get('settings/email', [\App\Http\Controllers\Admin\EmailSettingsController::class, 'index'])->name('settings.email');
+    Route::put('settings/email/destination', [\App\Http\Controllers\Admin\EmailSettingsController::class, 'updateDestination'])->name('settings.email.destination');
+    Route::post('settings/email/verify', [\App\Http\Controllers\Admin\EmailSettingsController::class, 'checkVerification'])->name('settings.email.verify');
+    Route::post('settings/email/sync', [\App\Http\Controllers\Admin\EmailSettingsController::class, 'syncRouting'])->name('settings.email.sync');
+    Route::delete('settings/email/pending', [\App\Http\Controllers\Admin\EmailSettingsController::class, 'cancelPending'])->name('settings.email.cancel-pending');
+    Route::get('email-deliveries', [\App\Http\Controllers\Admin\EmailDeliveryController::class, 'index'])->name('email-deliveries.index');
 
     Route::get('users', [UserController::class, 'index'])->name('users.index');
     Route::get('users/create', [UserController::class, 'create'])->name('users.create');
