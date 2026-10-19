@@ -14,6 +14,18 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 10h2v8H4v-8zm5-6h2v14H9V4zm5 3h2v11h-2V7zm5 4h2v7h-2v-7z"/></svg>
         </button>
     </div>
+    <div class="stage-volume-dock hidden sm:flex items-center justify-center gap-2 max-w-[12rem] mx-auto mt-2.5 opacity-80 hover:opacity-100 transition-opacity" aria-label="Volume">
+        <input
+            id="stage-volume"
+            class="archive-volume-slider"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="1"
+            aria-label="Volume level"
+        >
+    </div>
     <audio id="stream-audio" class="sr-only" playsinline></audio>
     <p id="stream-status" class="stage-status-line">{{ $status ?? 'Connecting…' }}</p>
 </div>

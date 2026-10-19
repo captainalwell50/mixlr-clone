@@ -1,7 +1,15 @@
 import './bootstrap';
-import { bindStagePlayer } from './player';
+import { bindStagePlayer, listenMeterPeak } from './player';
 import { bindInitialGalleryFromDom, refreshGalleryFromUrl } from './gallery-ui';
 import { bindScriptureListen } from './scripture-listen';
+import {
+    ensureAudioSession,
+    setupMediaSession,
+    updateMediaSessionMetadata,
+    syncMediaSessionPlaybackState,
+    handleVisibilityChange,
+    classifyAudioPause,
+} from './media-session';
 
 const root = document.getElementById('listen-root');
 const audio = document.getElementById('stream-audio');
@@ -10,15 +18,15 @@ const statusEl = document.getElementById('stream-status');
 const STATUS_POLL_MS = 5000;
 /** Hold through brief ICE/NAT blips before any recovery work. */
 const DISCONNECT_GRACE_MS = 20_000;
-/** Extra hold after a soft ICE restart before tearing down. */
+/** Extra hold after a failed recovery before tearing down. */
 const ICE_RESTART_GRACE_MS = 12_000;
 const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 20_000;
 const OFFLINE_CONFIRM_POLLS = 2;
 const MAX_SOFT_ICE_RESTARTS = 2;
-/** Receive jitter buffer target (seconds / ms) — absorbs micro-gaps without cutting audio. */
-const PLAYOUT_DELAY_HINT_S = 0.25;
-const JITTER_BUFFER_TARGET_MS = 250;
+/** Receive jitter buffer — hide small gaps. Publisher bursts still need a healthy ingest. */
+const PLAYOUT_DELAY_HINT_S = 0.45;
+const JITTER_BUFFER_TARGET_MS = 450;
 
 /** @type {import('hls.js').default | null} */
 let hls = null;
@@ -37,14 +45,33 @@ let retryAttempt = 0;
 let whepSucceeded = false;
 /** Once HLS works (CDN / AAC), keep preferring it for this page session. */
 let hlsSucceeded = false;
+/** One-shot switch from AAC remux onto Opus WHEP after admin prefer_hls flips. */
+let whepPreferUpgradeTried = false;
 /** @type {ReturnType<typeof bindStagePlayer> | null} */
 let stagePlayer = null;
 /** Listener clicked Pause — do not auto-resume via poll/retry/WHEP. */
 let userPaused = false;
+/** Interrupted by external OS event (call, audio focus loss, etc.) vs intentional user pause. */
+let interrupted = false;
+/** Current broadcast metadata for MediaSession. */
+let currentMetadata = {
+    title: '',
+    artist: '',
+    artworkUrl: '',
+};
 /** True while we are tearing down media (ignore the resulting pause event). */
 let tearingDown = false;
 
 function preferHls() {
+    if (typeof window !== 'undefined' && window.location) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('transport') === 'hls' || params.get('player') === 'hls' || params.get('prefer_hls') === '1') {
+            return true;
+        }
+        if (params.get('transport') === 'whep' || params.get('player') === 'whep' || params.get('prefer_hls') === '0') {
+            return false;
+        }
+    }
     return root?.dataset.preferHls === '1' || root?.dataset.preferHls === 'true';
 }
 
@@ -82,23 +109,42 @@ function hasAttachedMedia() {
 function setUserPaused(paused) {
     userPaused = paused;
     if (paused) {
+        interrupted = false;
         clearRetry();
         setStatus(pausedStatusMessage());
     }
+    syncMediaSessionPlaybackState({
+        isPlaying: audioStillPlaying(),
+        isLive: isMarkedLive(),
+        userPaused,
+    });
 }
 
 function playAudioElement() {
     if (!audio || userPaused) {
         return Promise.resolve();
     }
-    return audio.play().catch(() => {
+    ensureAudioSession();
+    updateMediaSessionMetadata(currentMetadata);
+    if (audio && currentMetadata.title) {
+        audio.title = currentMetadata.title;
+    }
+    return audio.play().then(() => {
+        interrupted = false;
+        updateMediaSessionMetadata(currentMetadata);
+        syncMediaSessionPlaybackState({
+            isPlaying: true,
+            isLive: isMarkedLive(),
+            userPaused: false,
+        });
+    }).catch(() => {
         if (!userPaused) {
             setStatus('Press play when you are ready.');
         }
     });
 }
 
-function applyPlaybackUrls(data) {
+function applyPlaybackMetadata(data) {
     if (!root || !data || typeof data !== 'object') {
         return;
     }
@@ -107,6 +153,30 @@ function applyPlaybackUrls(data) {
     }
     if (typeof data.whep_url === 'string' && data.whep_url) {
         root.dataset.whepUrl = data.whep_url;
+    }
+    if (typeof data.prefer_hls === 'boolean') {
+        root.dataset.preferHls = data.prefer_hls ? '1' : '0';
+    }
+
+    let metaChanged = false;
+    if (typeof data.title === 'string' && data.title && data.title !== currentMetadata.title) {
+        currentMetadata.title = data.title;
+        metaChanged = true;
+        const portalTitle = document.querySelector('.portal-title') || document.querySelector('.embed-title');
+        if (portalTitle) {
+            portalTitle.textContent = data.title;
+        }
+    }
+    if (typeof data.organization_name === 'string' && data.organization_name && data.organization_name !== currentMetadata.artist) {
+        currentMetadata.artist = data.organization_name;
+        metaChanged = true;
+    }
+    if (typeof data.artwork_url === 'string' && data.artwork_url !== currentMetadata.artworkUrl) {
+        currentMetadata.artworkUrl = data.artwork_url;
+        metaChanged = true;
+    }
+    if (metaChanged) {
+        updateMediaSessionMetadata(currentMetadata);
     }
 }
 
@@ -184,6 +254,30 @@ function resetRetryBackoff() {
     retryAttempt = 0;
 }
 
+/**
+ * Copy a private-listen capability onto an HLS request.
+ * Public playlist URLs have no `media` param, so this leaves them unchanged.
+ * @param {string} requestUrl
+ * @param {string} playlistUrl
+ */
+function urlWithListenCapability(requestUrl, playlistUrl) {
+    try {
+        const playlist = new URL(playlistUrl, window.location.href);
+        const capability = playlist.searchParams.get('media');
+        if (!capability) {
+            return requestUrl;
+        }
+        const target = new URL(requestUrl, playlist);
+        if (target.searchParams.get('media') === capability) {
+            return requestUrl;
+        }
+        target.searchParams.set('media', capability);
+        return target.toString();
+    } catch {
+        return requestUrl;
+    }
+}
+
 /** Bust CDN/proxy playlist cache after a publisher gap. */
 function hlsUrlWithCacheBust(hlsUrl) {
     try {
@@ -229,20 +323,9 @@ function tuneReceiveAudio(receiver, track) {
 }
 
 function trySoftIceRestart() {
-    if (!pc || typeof pc.restartIce !== 'function') {
-        return false;
-    }
-    if (softIceRestarts >= MAX_SOFT_ICE_RESTARTS) {
-        return false;
-    }
-    try {
-        softIceRestarts += 1;
-        pc.restartIce();
-        setStatus('Smoothing connection…');
-        return true;
-    } catch {
-        return false;
-    }
+    // WHEP has no trickle/ICE-restart signaling to MediaMTX. restartIce() here
+    // renegotiates locally and often kills a pair that was still recovering.
+    return false;
 }
 
 function scheduleRetry(reason) {
@@ -332,6 +415,11 @@ function handlePeerConnectionChange() {
         clearDisconnectGrace();
         clearRetry();
         setStatus(userPaused ? pausedStatusMessage() : (isMarkedLive() ? 'On air' : 'Playing'));
+        syncMediaSessionPlaybackState({
+            isPlaying: audioStillPlaying(),
+            isLive: isMarkedLive(),
+            userPaused,
+        });
         return;
     }
 
@@ -349,6 +437,11 @@ function handlePeerConnectionChange() {
     }
 
     if (state === 'failed' || state === 'closed') {
+        syncMediaSessionPlaybackState({
+            isPlaying: false,
+            isLive: isMarkedLive(),
+            userPaused,
+        });
         if (userPaused) {
             setStatus(pausedStatusMessage());
             return;
@@ -371,7 +464,7 @@ function handlePeerConnectionChange() {
     }
 }
 
-function updateBroadcastBadge(live) {
+function updateBroadcastBadge(live, status = null) {
     const badge =
         document.getElementById('broadcast-badge') ||
         document.querySelector('.embed-badge');
@@ -379,12 +472,19 @@ function updateBroadcastBadge(live) {
         return;
     }
 
-    badge.classList.toggle('is-idle', !live);
+    const currentStatus = status || (live ? 'live' : (root?.dataset.streamStatus || 'offline'));
+    const isPaused = currentStatus === 'paused';
+
+    badge.classList.toggle('is-idle', !live && !isPaused);
     badge.classList.toggle('is-live', live);
+    badge.classList.toggle('is-paused', isPaused);
 
     if (live) {
         badge.innerHTML =
             '<span class="live-dot" aria-hidden="true"></span> Live';
+    } else if (isPaused) {
+        badge.innerHTML =
+            '<span class="live-dot is-paused" aria-hidden="true"></span> Paused';
     } else {
         badge.textContent = badge.classList.contains('portal-badge') ? 'Offline' : 'Offline';
     }
@@ -406,6 +506,11 @@ async function applyOffline() {
     stagePlayer?.disable();
     stagePlayer?.setPlayingVisual(false);
     setStatus('Offline');
+    syncMediaSessionPlaybackState({
+        isPlaying: false,
+        isLive: false,
+        userPaused,
+    });
 }
 
 async function applyLive({ force = false } = {}) {
@@ -414,6 +519,11 @@ async function applyLive({ force = false } = {}) {
         root.dataset.streamStatus = 'live';
     }
     updateBroadcastBadge(true);
+    syncMediaSessionPlaybackState({
+        isPlaying: audioStillPlaying(),
+        isLive: true,
+        userPaused,
+    });
     if (userPaused) {
         stagePlayer?.enable();
         setStatus(pausedStatusMessage());
@@ -443,7 +553,7 @@ async function refreshStreamStatus() {
         }
 
         const data = await res.json();
-        applyPlaybackUrls(data);
+        applyPlaybackMetadata(data);
         const live = data.status === 'live';
         const wasLive = isMarkedLive();
 
@@ -467,6 +577,16 @@ async function refreshStreamStatus() {
             // MediaMTX destroy) — resubscribe without waiting for offline→live.
             if (userPaused) {
                 setStatus(pausedStatusMessage());
+            } else if (
+                hls &&
+                !preferHls() &&
+                (root.dataset.whepUrl || '') &&
+                !whepPreferUpgradeTried
+            ) {
+                // Upgrade AAC/CDN remux to Studio Opus (WHEP) without a full page reload.
+                whepPreferUpgradeTried = true;
+                hlsSucceeded = false;
+                void startPlayback({ force: true });
             } else if (!playbackLooksHealthy() && !startingPlayback && !retryTimer) {
                 scheduleRetry(waitingMessage());
             }
@@ -487,7 +607,8 @@ function startStatusPolling() {
 
     const tick = async () => {
         await refreshStreamStatus();
-        statusPollTimer = window.setTimeout(tick, STATUS_POLL_MS);
+        const nextDelay = document.hidden && audioStillPlaying() ? 15000 : STATUS_POLL_MS;
+        statusPollTimer = window.setTimeout(tick, nextDelay);
     };
 
     statusPollTimer = window.setTimeout(tick, STATUS_POLL_MS);
@@ -539,6 +660,11 @@ async function teardown() {
                 /* ignore */
             }
         }
+        syncMediaSessionPlaybackState({
+            isPlaying: false,
+            isLive: isMarkedLive(),
+            userPaused,
+        });
     } finally {
         tearingDown = false;
     }
@@ -548,6 +674,87 @@ async function teardown() {
  * Opus from Studio WHIP is not reliably playable via HLS in Chrome — use WHEP.
  * @param {string} whepUrl
  */
+function iceCandidateIp(line) {
+    return line.trim().split(/\s+/)[4] || '';
+}
+
+function isUnusableIceIp(ip) {
+    if (!ip) {
+        return true;
+    }
+    if (
+        ip === '20.120.113.129'
+        || ip === '127.0.0.1'
+        || ip === '0.0.0.0'
+        || ip === '::1'
+        || ip === '::'
+    ) {
+        return true;
+    }
+    if (/^(10\.|192\.168\.|169\.254\.)/.test(ip)) {
+        return true;
+    }
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) {
+        return true;
+    }
+
+    return false;
+}
+
+function sanitizeRemoteIceSdp(sdp) {
+    const nl = sdp.includes('\r\n') ? '\r\n' : '\n';
+    const lines = sdp.split(/\r?\n/);
+    const usable = lines.filter((line) => {
+        if (!/^a=candidate:/i.test(line)) {
+            return true;
+        }
+        return !isUnusableIceIp(iceCandidateIp(line));
+    });
+    if (!usable.some((line) => /^a=candidate:/i.test(line))) {
+        return sdp;
+    }
+
+    return usable.join(nl);
+}
+
+/**
+ * MediaMTX often returns Location: http://127.0.0.1:8889/live/... or /live/...
+ * (Caddy stripped /rtc). DELETE then hits the wrong host/path.
+ * @param {string|null} loc
+ * @param {string} baseUrl
+ */
+function resolveMediaProxyUrl(loc, baseUrl) {
+    if (!loc) {
+        return null;
+    }
+    const base = new URL(baseUrl);
+    let abs;
+    try {
+        abs = new URL(loc, base);
+    } catch {
+        return loc;
+    }
+    const privateHost = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|localhost$|0\.0\.0\.0$)/i.test(abs.hostname);
+    const mtxPort = abs.port === '8889' || abs.port === '8888';
+    if (privateHost || mtxPort) {
+        const path = `${abs.pathname}${abs.search}${abs.hash}`;
+        const prefixed = path.startsWith('/rtc/') || path.startsWith('/hls/')
+            ? path
+            : (path.startsWith('/live/') ? `/rtc${path}` : path);
+
+        return `${base.origin}${prefixed}`;
+    }
+    if (
+        abs.origin === base.origin
+        && abs.pathname.startsWith('/live/')
+        && /\/rtc(\/|$)/.test(base.pathname)
+    ) {
+        abs.pathname = `/rtc${abs.pathname}`;
+    }
+
+    return abs.href;
+}
+
 async function startWhep(whepUrl) {
     softIceRestarts = 0;
     pc = new RTCPeerConnection({
@@ -602,12 +809,53 @@ async function startWhep(whepUrl) {
 
     const location = res.headers.get('Location');
     if (location) {
-        whepResourceUrl = new URL(location, whepUrl).toString();
+        whepResourceUrl = resolveMediaProxyUrl(location, whepUrl) || new URL(location, whepUrl).toString();
     }
 
-    const answer = await res.text();
+    const answer = sanitizeRemoteIceSdp(await res.text());
+    // Desktop/phone WHIP often answers G.722. Chrome WHEP of G.722 is silent;
+    // the AAC HLS sidecar is the working listen path (what we used before WHEP-first).
+    if (!/a=rtpmap:\d+ opus\/48000/i.test(answer)) {
+        if (pc) {
+            pc.ontrack = null;
+            pc.onconnectionstatechange = null;
+            pc.close();
+            pc = null;
+        }
+        if (whepResourceUrl) {
+            try {
+                await fetch(whepResourceUrl, { method: 'DELETE' });
+            } catch {
+                /* ignore */
+            }
+            whepResourceUrl = null;
+        }
+        throw new Error('WHEP answered without Opus');
+    }
     await pc.setRemoteDescription({ type: 'answer', sdp: answer });
     whepSucceeded = true;
+}
+
+/**
+ * True if the listen meter heard energy, false if it stayed flat, null if
+ * we could not measure (do not force a WHEP fallback).
+ * @param {number} ms
+ * @returns {Promise<boolean|null>}
+ */
+async function waitForListenEnergy(ms) {
+    const deadline = Date.now() + ms;
+    let sawAnalyser = false;
+    while (Date.now() < deadline) {
+        const peak = listenMeterPeak();
+        if (peak != null) {
+            sawAnalyser = true;
+            if (peak >= 6) {
+                return true;
+            }
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+    }
+    return sawAnalyser ? false : null;
 }
 
 /**
@@ -622,7 +870,7 @@ async function startHls(hlsUrl, opts = {}) {
         throw new Error('Missing audio element');
     }
 
-    const CONNECT_MS = allowFallback ? 5000 : 15000;
+    const CONNECT_MS = allowFallback ? 14000 : 15000;
 
     if (audio.canPlayType('application/vnd.apple.mpegurl')) {
         await new Promise((resolve, reject) => {
@@ -633,7 +881,22 @@ async function startHls(hlsUrl, opts = {}) {
                     reject(new Error('HLS connect timeout'));
                 }
             }, CONNECT_MS);
-            const onPlaying = () => {
+            const onPlaying = async () => {
+                if (settled) {
+                    return;
+                }
+                if (allowFallback && !userPaused) {
+                    const heard = await waitForListenEnergy(4000);
+                    if (settled) {
+                        return;
+                    }
+                    if (heard === false) {
+                        settled = true;
+                        window.clearTimeout(timer);
+                        reject(new Error('HLS silent'));
+                        return;
+                    }
+                }
                 if (settled) {
                     return;
                 }
@@ -692,6 +955,15 @@ async function startHls(hlsUrl, opts = {}) {
             settled = true;
             window.clearTimeout(timer);
             if (err) {
+                if (hls) {
+                    hls.destroy();
+                    hls = null;
+                }
+                if (audio) {
+                    audio.removeAttribute('src');
+                    audio.srcObject = null;
+                    audio.load();
+                }
                 reject(err);
             } else {
                 hlsSucceeded = true;
@@ -701,6 +973,12 @@ async function startHls(hlsUrl, opts = {}) {
         const timer = window.setTimeout(() => finish(new Error('HLS connect timeout')), CONNECT_MS);
 
         hls = new Hls({
+            xhrSetup(xhr, url) {
+                const next = urlWithListenCapability(url, hlsUrl);
+                if (next !== url) {
+                    xhr.open('GET', next, true);
+                }
+            },
             lowLatencyMode: false,
             backBufferLength: 60,
             maxBufferLength: 60,
@@ -716,15 +994,29 @@ async function startHls(hlsUrl, opts = {}) {
         });
         hls.loadSource(hlsUrlWithCacheBust(hlsUrl));
         hls.attachMedia(audio);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls.on(Hls.Events.MANIFEST_PARSED, async () => {
             if (userPaused) {
                 finish(null);
                 return;
             }
-            audio.play().catch(() => {
+            try {
+                await audio.play();
+            } catch {
                 setStatus('Press play when you are ready.');
                 finish(null);
-            });
+                return;
+            }
+            if (allowFallback) {
+                const heard = await waitForListenEnergy(4000);
+                if (settled) {
+                    return;
+                }
+                if (heard === false) {
+                    finish(new Error('HLS silent'));
+                    return;
+                }
+            }
+            finish(null);
         });
         hls.on(Hls.Events.ERROR, (_, data) => {
             if (!data.fatal) {
@@ -903,6 +1195,9 @@ function ensureStagePlayer() {
         onUserPause: () => setUserPaused(true),
         onUserPlay: () => {
             setUserPaused(false);
+            interrupted = false;
+            ensureAudioSession();
+            updateMediaSessionMetadata(currentMetadata);
             if (!hasAttachedMedia() || peerIsTerminal()) {
                 void startPlayback({ force: true });
                 return true;
@@ -910,6 +1205,20 @@ function ensureStagePlayer() {
             return false;
         },
     });
+
+    audio.addEventListener('playing', () => {
+        interrupted = false;
+        if (audio && currentMetadata.title) {
+            audio.title = currentMetadata.title;
+        }
+        updateMediaSessionMetadata(currentMetadata);
+        syncMediaSessionPlaybackState({
+            isPlaying: true,
+            isLive: isMarkedLive(),
+            userPaused,
+        });
+    });
+
     audio.addEventListener('pause', () => {
         if (tearingDown || startingPlayback) {
             return;
@@ -917,17 +1226,232 @@ function ensureStagePlayer() {
         if (!hasAttachedMedia()) {
             return;
         }
-        setUserPaused(true);
+        syncMediaSessionPlaybackState({
+            isPlaying: false,
+            isLive: isMarkedLive(),
+            userPaused,
+        });
+
+        const pauseType = classifyAudioPause({ userPaused });
+        if (pauseType.isInterruption) {
+            // OS interruption (e.g. incoming call, audio focus loss, bluetooth disconnect)
+            interrupted = true;
+            clearRetry();
+            setStatus('Playback paused — press play to resume.');
+        }
+    });
+
+    audio.addEventListener('ended', () => {
+        syncMediaSessionPlaybackState({
+            isPlaying: false,
+            isLive: false,
+            userPaused: true,
+        });
     });
 }
 
+function initMediaSession() {
+    currentMetadata = {
+        title: root?.dataset.title || document.title || 'Live Broadcast',
+        artist: root?.dataset.artist || 'Sound Mix Live',
+        artworkUrl: root?.dataset.artwork || '',
+    };
+
+    setupMediaSession({
+        metadata: currentMetadata,
+        onUserPlay: () => {
+            setUserPaused(false);
+            interrupted = false;
+            ensureAudioSession();
+            updateMediaSessionMetadata(currentMetadata);
+            if (!hasAttachedMedia() || peerIsTerminal()) {
+                void startPlayback({ force: true });
+            } else {
+                void playAudioElement();
+            }
+        },
+        onUserPause: () => {
+            setUserPaused(true);
+            interrupted = false;
+            if (audio) {
+                audio.pause();
+            }
+        },
+    });
+}
+
+document.addEventListener('visibilitychange', () => {
+    handleVisibilityChange({
+        isHidden: document.hidden,
+        isLive: isMarkedLive(),
+        userPaused,
+        isPlaying: audioStillPlaying(),
+        onForegroundRecovery: () => {
+            if (peerIsTerminal() || !playbackLooksHealthy()) {
+                void startPlayback({ force: true });
+            } else if (audio && audio.paused && !interrupted) {
+                void playAudioElement();
+            }
+        },
+    });
+
+    if (!document.hidden) {
+        void refreshStreamStatus();
+        const gUrl = root?.dataset.galleryUrl;
+        if (gUrl) {
+            void refreshGalleryFromUrl(gUrl);
+        }
+    }
+});
+
+function bindMobilePortalTabs() {
+    const tabs = document.querySelectorAll('.portal-tab-btn');
+    const cards = document.getElementById('portal-cards');
+    if (!tabs.length || !cards) return;
+
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+            if (!target) return;
+            cards.dataset.activeTab = target;
+            tabs.forEach((t) => {
+                const active = t === tab;
+                t.classList.toggle('bg-white/15', active);
+                t.classList.toggle('text-white', active);
+                t.classList.toggle('shadow-sm', active);
+                t.classList.toggle('text-white/60', !active);
+                t.classList.toggle('is-active', active);
+            });
+            if (target === 'scripture' || target === 'board') {
+                const dot = document.getElementById('scripture-tab-dot');
+                if (dot) {
+                    dot.classList.add('hidden');
+                }
+            }
+        });
+    });
+}
+
+function bindStickyPlayer() {
+    const sticky = document.getElementById('mobile-sticky-player');
+    const hero = document.getElementById('portal-hero-viewport') || document.querySelector('.portal-player-screen') || document.getElementById('stage-play-shell') || document.querySelector('.stage-player');
+    if (!sticky || !hero) return;
+
+    if (typeof IntersectionObserver !== 'undefined') {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                const shouldShow = !entry.isIntersecting;
+                sticky.classList.toggle('is-visible', shouldShow);
+            });
+        }, { threshold: 0.1 });
+
+        observer.observe(hero);
+    }
+
+    const stickyPlay = document.getElementById('sticky-btn-play');
+    const heroPlay = document.getElementById('btn-play');
+    if (stickyPlay && heroPlay) {
+        stickyPlay.addEventListener('click', () => {
+            heroPlay.click();
+        });
+    }
+
+    const stickyVol = document.getElementById('sticky-btn-volume');
+    const heroVol = document.getElementById('btn-volume');
+    if (stickyVol && heroVol) {
+        stickyVol.addEventListener('click', () => {
+            heroVol.click();
+        });
+    }
+
+    if (audio) {
+        const updateStickyState = () => {
+            const playing = !audio.paused && !audio.ended && audio.currentTime > 0;
+            const iconPlay = stickyPlay?.querySelector('.icon-play');
+            const iconPause = stickyPlay?.querySelector('.icon-pause');
+            if (iconPlay && iconPause) {
+                iconPlay.classList.toggle('hidden', playing);
+                iconPause.classList.toggle('hidden', !playing);
+            }
+            const volIcon = stickyVol?.querySelector('.icon-volume');
+            const mutedIcon = stickyVol?.querySelector('.icon-muted');
+            if (volIcon && mutedIcon) {
+                volIcon.classList.toggle('hidden', audio.muted);
+                mutedIcon.classList.toggle('hidden', !audio.muted);
+            }
+        };
+
+        audio.addEventListener('play', updateStickyState);
+        audio.addEventListener('pause', updateStickyState);
+        audio.addEventListener('volumechange', updateStickyState);
+        updateStickyState();
+    }
+}
+
+function bindListenAccordion() {
+    const triggers = document.querySelectorAll('.listen-accordion-trigger');
+    const cards = document.getElementById('portal-cards');
+    if (!triggers.length) return;
+
+    triggers.forEach((trigger) => {
+        trigger.addEventListener('click', () => {
+            const item = trigger.closest('.listen-accordion-item');
+            if (!item) return;
+            const wasOpen = item.classList.contains('is-open');
+            const targetTab = trigger.dataset.accordionTab;
+
+            // Single disclosure: close others if open
+            document.querySelectorAll('.listen-accordion-item').forEach((other) => {
+                other.classList.remove('is-open');
+                const btn = other.querySelector('.listen-accordion-trigger');
+                if (btn) btn.setAttribute('aria-expanded', 'false');
+                const panel = other.querySelector('.listen-accordion-panel');
+                if (panel) panel.hidden = true;
+            });
+
+            if (!wasOpen) {
+                item.classList.add('is-open');
+                trigger.setAttribute('aria-expanded', 'true');
+                const panel = item.querySelector('.listen-accordion-panel');
+                if (panel) {
+                    panel.hidden = false;
+                    if (targetTab === 'chat') {
+                        const msgList = panel.querySelector('#chat-messages');
+                        if (msgList) msgList.scrollTop = msgList.scrollHeight;
+                    }
+                }
+                if (cards && targetTab) {
+                    cards.dataset.activeTab = targetTab;
+                }
+                if (targetTab === 'scripture') {
+                    const dot = document.getElementById('scripture-tab-dot');
+                    if (dot) dot.classList.add('hidden');
+                }
+            } else {
+                if (cards) {
+                    cards.dataset.activeTab = '';
+                }
+            }
+        });
+    });
+}
+
+ensureAudioSession();
+initMediaSession();
 startStatusPolling();
 ensureStagePlayer();
 void startPlayback();
 bindInitialGalleryFromDom();
 bindScriptureListen(root);
+bindMobilePortalTabs();
+bindListenAccordion();
+bindStickyPlayer();
 const galleryUrl = root?.dataset.galleryUrl;
 if (galleryUrl) {
     void refreshGalleryFromUrl(galleryUrl);
-    window.setInterval(() => void refreshGalleryFromUrl(galleryUrl), 20000);
+    window.setInterval(() => {
+        if (!document.hidden) {
+            void refreshGalleryFromUrl(galleryUrl);
+        }
+    }, 20000);
 }
