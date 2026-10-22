@@ -152,6 +152,18 @@ class Invoice extends Model
         return $this->hasMany(PaymentCheckout::class);
     }
 
+    public function payments(): \Illuminate\Database\Eloquent\Relations\HasManyThrough
+    {
+        return $this->hasManyThrough(
+            Payment::class,
+            PaymentAllocation::class,
+            'invoice_id',
+            'id',
+            'id',
+            'payment_id'
+        );
+    }
+
     // -------------------------------------------------------------------------
     // Scopes
     // -------------------------------------------------------------------------

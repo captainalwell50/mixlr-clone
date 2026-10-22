@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\OrgRole;
 use App\Enums\SubscriptionStatus;
 use App\Models\Organization;
+use App\Models\PaymentAttempt;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Services\FreePeriodService;
@@ -143,6 +144,9 @@ class BillingController extends Controller
 
             $reference = 'lma_'.$organization->id.'_'.now()->timestamp.'_'.bin2hex(random_bytes(4));
 
+            // Phase 3: Create PaymentAttempt and PaymentCheckout before provider initialization
+            $confirmation->recordPending($organization, $plan, $reference, $invoice);
+
             $data = $paystack->initializeTransaction([
                 'email' => $user->email,
                 'amount' => $plan->amount,
@@ -161,10 +165,10 @@ class BillingController extends Controller
 
             $authUrl = $data['authorization_url'] ?? null;
             if (! is_string($authUrl) || $authUrl === '') {
+                $attempt = PaymentAttempt::where('reference', $reference)->first();
+                $attempt?->markFailed('Paystack did not return a checkout URL.');
                 throw new RuntimeException('Paystack did not return a checkout URL.');
             }
-
-            $confirmation->recordPending($organization, $plan, $reference, $invoice);
 
             session([
                 'billing.checkout_reference' => $reference,
@@ -176,6 +180,11 @@ class BillingController extends Controller
             return redirect()->away($authUrl);
         } catch (Throwable $e) {
             Log::warning('Paystack checkout failed', ['error' => $e->getMessage()]);
+
+            if (isset($reference)) {
+                $attempt = PaymentAttempt::where('reference', $reference)->first();
+                $attempt?->markFailed($e->getMessage());
+            }
 
             return back()->with('error', __('Could not start Paystack checkout. Try again or continue on trial.'));
         }

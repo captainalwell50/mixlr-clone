@@ -56,6 +56,11 @@ class PaymentCheckout extends Model
         return $this->belongsTo(Invoice::class);
     }
 
+    public function paymentAttempts(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PaymentAttempt::class);
+    }
+
     public function isPending(): bool
     {
         return $this->status === self::STATUS_PENDING;

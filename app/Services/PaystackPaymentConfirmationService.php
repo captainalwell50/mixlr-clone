@@ -2,7 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\Invoice;
 use App\Models\Organization;
+use App\Models\Payment;
+use App\Models\PaymentAllocation;
+use App\Models\PaymentAttempt;
 use App\Models\PaymentCheckout;
 use App\Models\Plan;
 use App\Models\Subscription;
@@ -13,10 +17,15 @@ use Throwable;
 
 class PaystackPaymentConfirmationService
 {
+    private InvoiceSettlementService $settlement;
+
     public function __construct(
         private PaystackClient $paystack,
         private SubscriptionAssignmentService $assignments,
-    ) {}
+        ?InvoiceSettlementService $settlement = null,
+    ) {
+        $this->settlement = $settlement ?? app(InvoiceSettlementService::class);
+    }
 
     public function recordPending(
         Organization $organization,
@@ -26,7 +35,7 @@ class PaystackPaymentConfirmationService
     ): PaymentCheckout {
         $invoiceId = $invoice instanceof \App\Models\Invoice ? $invoice->id : $invoice;
 
-        return PaymentCheckout::query()->updateOrCreate(
+        $checkout = PaymentCheckout::query()->updateOrCreate(
             ['reference' => $reference],
             [
                 'organization_id' => $organization->id,
@@ -39,6 +48,24 @@ class PaystackPaymentConfirmationService
                 'verified_at' => null,
             ],
         );
+
+        if ($invoiceId) {
+            PaymentAttempt::query()->updateOrCreate(
+                ['reference' => $reference],
+                [
+                    'invoice_id' => $invoiceId,
+                    'organization_id' => $organization->id,
+                    'payment_checkout_id' => $checkout->id,
+                    'provider' => 'paystack',
+                    'amount' => $plan->amount,
+                    'currency' => $plan->currency ?? 'NGN',
+                    'status' => PaymentAttempt::STATUS_PENDING,
+                    'initiated_at' => now(),
+                ]
+            );
+        }
+
+        return $checkout;
     }
 
     public function confirmReference(string $reference): bool
@@ -85,8 +112,16 @@ class PaystackPaymentConfirmationService
             ? PaymentCheckout::query()->where('reference', $reference)->first()
             : null;
 
+        $providerRef = (string) (data_get($data, 'id') ?? $reference);
+        $attempt = $reference !== ''
+            ? PaymentAttempt::query()->where('reference', $reference)->first()
+            : null;
+
         if ($paystackStatus !== 'success') {
             $this->markUnsuccessful($checkout, $paystackStatus, $reference);
+            if ($attempt !== null) {
+                $attempt->markFailed($paystackStatus !== '' ? $paystackStatus : 'Payment unsuccessful', $data);
+            }
 
             return false;
         }
@@ -109,7 +144,7 @@ class PaystackPaymentConfirmationService
 
         $paystackSubscription = $this->ensurePaystackSubscription($data, $plan);
 
-        DB::transaction(function () use ($organization, $plan, $data, $checkout, $paystackStatus, $paystackSubscription, $reference): void {
+        DB::transaction(function () use ($organization, $plan, $data, $checkout, $attempt, $paystackStatus, $paystackSubscription, $reference, $providerRef): void {
             $organization->refresh();
 
             $renewsAt = $this->renewsAtFromPayload($data, $plan);
@@ -141,6 +176,10 @@ class PaystackPaymentConfirmationService
                 ]);
             }
 
+            if ($attempt !== null) {
+                $attempt->markSucceeded($providerRef, $data);
+            }
+
             $isRenewal = ! empty(data_get($data, 'subscription.subscription_code'))
                 || ! empty(data_get($data, 'subscription_code'))
                 || ($checkout === null);
@@ -157,7 +196,7 @@ class PaystackPaymentConfirmationService
                 confirmedAt: now(),
                 isRenewal: $isRenewal,
                 paymentCheckoutId: $checkout?->id,
-                providerReference: (string) (data_get($data, 'id') ?? $reference),
+                providerReference: $providerRef,
                 metadata: [
                     'provider' => 'paystack',
                     'customer_code' => data_get($data, 'customer.customer_code'),
@@ -165,45 +204,73 @@ class PaystackPaymentConfirmationService
                 ],
             ));
 
+            // Phase 3: Confirmed Payment record (idempotent retrieval/creation)
+            $payment = Payment::query()->where('reference', $reference)->first();
+            if ($payment === null) {
+                $payment = Payment::query()->create([
+                    'organization_id' => $organization->id,
+                    'payment_attempt_id' => $attempt?->id,
+                    'reference' => $reference,
+                    'provider_reference' => $providerRef,
+                    'provider' => 'paystack',
+                    'amount' => $grossAmount,
+                    'currency' => $currency,
+                    'status' => Payment::STATUS_SUCCEEDED,
+                    'confirmed_at' => now(),
+                    'provider_payload' => [
+                        'customer_code' => data_get($data, 'customer.customer_code'),
+                        'channel' => data_get($data, 'channel'),
+                        'plan_code' => data_get($data, 'plan.plan_code'),
+                    ],
+                ]);
+
+                if ($attempt !== null) {
+                    \App\Events\PaymentAttemptSucceeded::dispatch($attempt, $payment);
+                }
+            }
+
             try {
                 $amountRaw = data_get($data, 'amount');
                 $amountPaid = is_numeric($amountRaw) ? ((float) $amountRaw) / 100 : (float) $plan->amount;
-                $currency = (string) (data_get($data, 'currency') ?? $plan->currency ?? 'NGN');
 
-                // Phase 2: Check if checkout has an authoritative invoice
+                // Phase 2/3: Resolve target invoice
                 $invoice = null;
                 if ($checkout?->invoice_id) {
-                    $invoice = \App\Models\Invoice::query()->find($checkout->invoice_id);
+                    $invoice = Invoice::query()->find($checkout->invoice_id);
+                } elseif ($attempt?->invoice_id) {
+                    $invoice = Invoice::query()->find($attempt->invoice_id);
                 } elseif (data_get($data, 'metadata.invoice_id')) {
-                    $invoice = \App\Models\Invoice::query()->find(data_get($data, 'metadata.invoice_id'));
+                    $invoice = Invoice::query()->find(data_get($data, 'metadata.invoice_id'));
                 }
 
                 if ($invoice !== null) {
-                    // Reuse authoritative invoice - do NOT create duplicate invoice!
                     if ($invoice->payment_reference === null) {
                         $invoice->payment_reference = $reference;
+                        $invoice->save();
                     }
-                    // Transitional Phase 2 compatibility: update legacy status/payment fields
-                    $invoice->status = \App\Models\Invoice::STATUS_PAID;
-                    $invoice->paid_at = now();
-                    $invoice->amount_paid = (int) ($amountPaid * 100);
-                    $invoice->amount_due = 0;
-                    $invoice->save();
+                    // Authoritative settlement derived from payment allocation
+                    $this->settlement->settlePayment($payment, $invoice);
                 } else {
                     // Legacy fallback path: checkout without invoice_id
-                    \App\Models\Invoice::query()->firstOrCreate(
+                    $legacyInvoice = Invoice::query()->firstOrCreate(
                         ['payment_reference' => $reference],
                         [
                             'organization_id' => $organization->id,
                             'subscription_id' => $organization->subscription?->id,
                             'invoice_number' => 'INV-'.strtoupper(substr($reference, 0, 12)),
-                            'amount' => (int) ($amountPaid * 100),
+                            'amount' => $grossAmount,
                             'currency' => $currency,
                             'due_date' => now(),
                             'paid_at' => now(),
-                            'status' => \App\Models\Invoice::STATUS_PAID,
+                            'status' => Invoice::STATUS_PAID,
+                            'subtotal' => $grossAmount,
+                            'total' => $grossAmount,
+                            'amount_paid' => $grossAmount,
+                            'amount_due' => 0,
                         ]
                     );
+
+                    $this->settlement->settlePayment($payment, $legacyInvoice);
                 }
 
                 $owners = $organization->users()
@@ -368,6 +435,18 @@ class PaystackPaymentConfirmationService
     {
         $terminal = in_array($paystackStatus, ['failed', 'reversed'], true)
             || ($paystackStatus === 'abandoned' && $checkout?->created_at?->lte(now()->subHours(6)));
+
+        if ($reference !== '') {
+            $attempt = PaymentAttempt::query()->where('reference', $reference)->first();
+            if ($attempt !== null) {
+                if ($terminal) {
+                    $attempt->markFailed($paystackStatus !== '' ? $paystackStatus : 'Payment failed');
+                } elseif ($paystackStatus === 'abandoned') {
+                    $attempt->markAbandoned();
+                }
+            }
+        }
+
         if ($checkout === null) {
             $this->touchCheckout($reference, $paystackStatus !== '' ? $paystackStatus : 'not success');
 
