@@ -8,14 +8,20 @@ class DashboardController extends Controller
 {
     public function __invoke(): RedirectResponse
     {
-        if (auth()->user()?->is_admin) {
+        $user = auth()->user();
+
+        if ($user?->is_admin) {
             return redirect()->route('admin.dashboard');
         }
 
-        if (! auth()->user()?->organizations()->exists()) {
+        if ($user?->organizations()->exists()) {
+            return redirect()->route('creator.home');
+        }
+
+        if (session('onboarding.creator_type') || session('intent') === 'creator') {
             return redirect()->route('onboarding.show');
         }
 
-        return redirect()->route('creator.home');
+        return redirect()->route('discover');
     }
 }

@@ -31,9 +31,15 @@ class GoogleDriveService
             throw new RuntimeException('Google Drive session expired. Reconnect Drive.');
         }
 
+        $clientId = config('services.google_drive.client_id');
+        $clientSecret = config('services.google_drive.client_secret');
+        if (! filled($clientId) || ! filled($clientSecret)) {
+            throw new RuntimeException('Google Drive integration credentials are not configured.');
+        }
+
         $response = Http::asForm()->post('https://oauth2.googleapis.com/token', [
-            'client_id' => config('services.google.client_id'),
-            'client_secret' => config('services.google.client_secret'),
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
             'refresh_token' => $connection->refresh_token,
             'grant_type' => 'refresh_token',
         ]);
@@ -167,17 +173,32 @@ class GoogleDriveService
 
     public function download(OrganizationDriveConnection $connection, string $fileId): string
     {
-        $response = $this->http($connection)
-            ->withOptions(['stream' => false])
-            ->get('https://www.googleapis.com/drive/v3/files/'.$fileId, [
-                'alt' => 'media',
-            ]);
+        $response = $this->openMedia($connection, $fileId);
 
         if (! $response->successful()) {
             throw new RuntimeException('Could not download file from Google Drive.');
         }
 
         return $response->body();
+    }
+
+    /**
+     * Stream a Drive media file. Pass a single byte range such as "bytes=1000-1999"
+     * so Google can answer 206 without this process buffering the whole file.
+     */
+    public function openMedia(OrganizationDriveConnection $connection, string $fileId, ?string $range = null): \Illuminate\Http\Client\Response
+    {
+        $this->ensureFreshToken($connection);
+        $pending = Http::withToken((string) $connection->access_token)
+            ->withOptions(['stream' => true])
+            ->timeout(120);
+        if ($range !== null && $range !== '') {
+            $pending = $pending->withHeaders(['Range' => $range]);
+        }
+
+        return $pending->get('https://www.googleapis.com/drive/v3/files/'.$fileId, [
+            'alt' => 'media',
+        ]);
     }
 
     public function metadata(OrganizationDriveConnection $connection, string $fileId): array

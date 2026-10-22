@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\OrgRole;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -19,6 +20,7 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'email_verified_at',
         'password',
         'is_admin',
         'avatar_path',
@@ -76,6 +78,34 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return $this->is_admin;
+    }
+
+    public function identities(): HasMany
+    {
+        return $this->hasMany(UserIdentity::class);
+    }
+
+    public function hasGoogleIdentity(): bool
+    {
+        if ($this->relationLoaded('identities')) {
+            return $this->identities->contains('provider', 'google');
+        }
+
+        return $this->identities()->where('provider', 'google')->exists();
+    }
+
+    public function googleIdentity(): ?UserIdentity
+    {
+        if ($this->relationLoaded('identities')) {
+            return $this->identities->firstWhere('provider', 'google');
+        }
+
+        return $this->identities()->where('provider', 'google')->first();
+    }
+
+    public function hasPassword(): bool
+    {
+        return filled($this->password);
     }
 
     public function organizations(): BelongsToMany

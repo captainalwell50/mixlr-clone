@@ -154,10 +154,10 @@
                                             <span id="like-count" class="portal-reference-like-count">{{ $heartCount }}</span>
                                         </button>
                                     @else
-                                        <a href="{{ route('login') }}" class="portal-reference-transport-btn portal-like" aria-label="Log in to like">
+                                        <button type="button" class="portal-reference-transport-btn portal-like" aria-label="Like event" onclick="window.SoundmixAuth?.open({ reason: 'heart' })">
                                             <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                                             <span id="like-count" class="portal-reference-like-count">{{ $heartCount }}</span>
-                                        </a>
+                                        </button>
                                     @endauth
 
                                     <button type="button" class="portal-reference-transport-btn portal-reference-skip" aria-label="Previous item" disabled>
@@ -225,7 +225,7 @@
                         data-following="{{ $isFollowing ? '1' : '0' }}"
                     >{{ $isFollowing ? 'Following' : '+ Follow' }}</button>
                 @else
-                    <a href="{{ route('login') }}" class="portal-secondary-action">+ Follow</a>
+                    <button type="button" class="portal-secondary-action" onclick="window.SoundmixAuth?.open({ reason: 'follow' })">+ Follow</button>
                 @endauth
 
                 <button type="button" id="btn-share" class="portal-secondary-action" data-share-url="{{ $shareUrl }}" data-share-title="{{ $event->title }}">
@@ -289,16 +289,15 @@
                                     <div id="chat-messages" class="wa-messages" aria-live="polite">
                                         <p class="wa-empty">Say hello — the room is listening.</p>
                                     </div>
-                                    @auth
-                                        <form id="chat-form" class="wa-composer stage-chat-input">
-                                            <input id="chat-body" type="text" maxlength="500" placeholder="Type a message" autocomplete="off" required>
-                                            <button type="submit" aria-label="Send">Send</button>
-                                        </form>
-                                    @else
-                                        <p class="wa-login">
-                                            <a href="{{ route('login') }}">Log in</a> to join the conversation
+                                    <form id="chat-form" class="wa-composer stage-chat-input" data-authenticated="{{ auth()->check() ? '1' : '0' }}">
+                                        <input id="chat-body" type="text" maxlength="500" placeholder="{{ auth()->check() ? 'Type a message' : 'Sign in to comment...' }}" autocomplete="off" required>
+                                        <button type="submit" aria-label="Send">Send</button>
+                                    </form>
+                                    @guest
+                                        <p class="wa-login text-xs mt-2 text-zinc-400">
+                                            <button type="button" class="text-emerald-400 hover:underline font-medium" onclick="window.SoundmixAuth?.open({ reason: 'chat' })">Sign in</button> to join the conversation
                                         </p>
-                                    @endauth
+                                    @endguest
                                     <div id="chat-root" class="hidden"
                                         data-poll-url="{{ route('events.chat.index', $event) }}"
                                         data-post-url="{{ route('events.chat.store', $event) }}"
@@ -521,6 +520,7 @@
             </div>
         </div>
     </div>
+    <x-listener-auth-sheet />
 @endsection
 
 @section('whatsapp_widget')

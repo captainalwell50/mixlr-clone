@@ -94,6 +94,24 @@ if (root) {
         if (!body) {
             return;
         }
+        // If user is unauthenticated, store draft comment and open listener auth sheet
+        if (formEl.dataset.authenticated === '0') {
+            try {
+                sessionStorage.setItem('soundmix_pending_action', JSON.stringify({
+                    type: 'chat',
+                    body: body,
+                    url: window.location.href,
+                }));
+            } catch (err) {}
+
+            if (window.SoundmixAuth) {
+                window.SoundmixAuth.open({ reason: 'chat' });
+            } else {
+                window.location.href = '/auth/google?intent=listener&intended=' + encodeURIComponent(window.location.pathname + window.location.search);
+            }
+            return;
+        }
+
         const sendBtn = formEl.querySelector('button[type="submit"]');
         if (sendBtn) {
             sendBtn.disabled = true;
@@ -110,7 +128,19 @@ if (root) {
                 body: JSON.stringify({ body }),
             });
             if (res.status === 401) {
-                window.location.href = '/login';
+                try {
+                    sessionStorage.setItem('soundmix_pending_action', JSON.stringify({
+                        type: 'chat',
+                        body: body,
+                        url: window.location.href,
+                    }));
+                } catch (err) {}
+
+                if (window.SoundmixAuth) {
+                    window.SoundmixAuth.open({ reason: 'chat' });
+                } else {
+                    window.location.href = '/auth/google?intent=listener&intended=' + encodeURIComponent(window.location.pathname + window.location.search);
+                }
                 return;
             }
             if (!res.ok) {

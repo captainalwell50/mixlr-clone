@@ -45,6 +45,13 @@ return [
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL').'/auth/google/callback'),
+        'scopes' => ['openid', 'profile', 'email'],
+    ],
+
+    'google_drive' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'redirect' => env('GOOGLE_DRIVE_REDIRECT_URI', env('APP_URL').'/integrations/google-drive/callback'),
         'scopes' => array_values(array_filter(array_map(
             'trim',
@@ -61,6 +68,12 @@ return [
         'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
         'domain' => env('CLOUDFLARE_EMAIL_DOMAIN', 'soundmix.live'),
         'default_destination' => env('CLOUDFLARE_DEFAULT_DESTINATION'),
+    ],
+
+    'whatsapp' => [
+        'enabled' => env('WHATSAPP_SUPPORT_ENABLED', true),
+        'number' => env('WHATSAPP_SUPPORT_NUMBER'),
+        'default_message' => env('WHATSAPP_DEFAULT_MESSAGE', "Hello SoundMix Support,\nI need help with SoundMix."),
     ],
 
 ];

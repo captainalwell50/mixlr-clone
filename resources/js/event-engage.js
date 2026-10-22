@@ -71,7 +71,11 @@ if (root) {
                 },
             });
             if (res.status === 401) {
-                window.location.href = '/login';
+                if (window.SoundmixAuth) {
+                    window.SoundmixAuth.open({ reason: 'heart' });
+                } else {
+                    window.location.href = '/auth/google?intent=listener&intended=' + encodeURIComponent(window.location.pathname + window.location.search);
+                }
                 return;
             }
             if (!res.ok) {
@@ -106,7 +110,11 @@ if (root) {
                 },
             });
             if (res.status === 401) {
-                window.location.href = '/login';
+                if (window.SoundmixAuth) {
+                    window.SoundmixAuth.open({ reason: 'follow' });
+                } else {
+                    window.location.href = '/auth/google?intent=listener&intended=' + encodeURIComponent(window.location.pathname + window.location.search);
+                }
                 return;
             }
             if (!res.ok) {
@@ -168,4 +176,10 @@ if (root) {
 
     void beat();
     window.setInterval(() => void beat(), 15000);
+
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            void beat();
+        }
+    });
 }

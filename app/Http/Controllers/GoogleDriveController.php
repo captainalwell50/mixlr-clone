@@ -16,10 +16,25 @@ class GoogleDriveController extends Controller
     {
         $this->authorizeOrg($request, $organization);
 
+        $clientId = config('services.google_drive.client_id');
+        $clientSecret = config('services.google_drive.client_secret');
+        abort_unless(filled($clientId) && filled($clientSecret), 503, 'Google Drive integration is not configured.');
+
         $request->session()->put('google_drive_org_id', $organization->id);
 
-        return Socialite::driver('google')
-            ->scopes(config('services.google.scopes', []))
+        $redirectUri = (string) config('services.google_drive.redirect');
+        $scopes = (array) config('services.google_drive.scopes', []);
+
+        /** @var \Laravel\Socialite\Two\GoogleProvider $driver */
+        $driver = Socialite::buildProvider(\Laravel\Socialite\Two\GoogleProvider::class, [
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'redirect' => $redirectUri,
+        ]);
+
+        return $driver
+            ->redirectUrl($redirectUri)
+            ->scopes($scopes)
             ->with(['access_type' => 'offline', 'prompt' => 'consent'])
             ->redirect();
     }
@@ -30,7 +45,20 @@ class GoogleDriveController extends Controller
         $organization = Organization::query()->find($orgId);
         abort_unless($organization && $request->user()?->canManageOrganization($organization), 403);
 
-        $googleUser = Socialite::driver('google')->user();
+        $clientId = config('services.google_drive.client_id');
+        $clientSecret = config('services.google_drive.client_secret');
+        abort_unless(filled($clientId) && filled($clientSecret), 503, 'Google Drive integration is not configured.');
+
+        $redirectUri = (string) config('services.google_drive.redirect');
+
+        /** @var \Laravel\Socialite\Two\GoogleProvider $driver */
+        $driver = Socialite::buildProvider(\Laravel\Socialite\Two\GoogleProvider::class, [
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'redirect' => $redirectUri,
+        ]);
+
+        $googleUser = $driver->redirectUrl($redirectUri)->user();
 
         OrganizationDriveConnection::query()->updateOrCreate(
             ['organization_id' => $organization->id],

@@ -461,6 +461,9 @@ Route::middleware('auth')->group(function (): void {
     Route::delete('/account', [AccountController::class, 'destroy'])
         ->middleware('throttle:5,1')
         ->name('account.destroy');
+    Route::delete('/account/identities/{provider}', [AccountController::class, 'disconnectIdentity'])
+        ->middleware('throttle:5,1')
+        ->name('account.identities.destroy');
 
     Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding.show');
     Route::post('/onboarding/type', [OnboardingController::class, 'storeType'])->name('onboarding.type');
