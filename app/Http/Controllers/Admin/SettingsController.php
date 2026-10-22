@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AdminMailAudit;
 use App\Models\SiteSetting;
 use App\Models\Stream;
 use App\Services\AzureVmCapacityService;
+use App\Services\MailConfigurationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -42,17 +44,24 @@ class SettingsController extends Controller
             'whatsappNumber' => old('whatsapp_support_number', SiteSetting::whatsappSupportNumberRaw()),
             'whatsappNumberFromAdmin' => SiteSetting::whatsappSupportIsFromAdmin(),
             'whatsappDefaultMessage' => old('whatsapp_default_message', SiteSetting::whatsappDefaultMessageRaw()),
+            'mailEnabled' => (bool) old('mail_enabled', $mail['enabled']),
             'mailMailer' => old('mail_mailer', $mail['mailer']),
+            'mailEffectiveMailer' => $mail['effective_mailer'],
             'mailHost' => old('mail_host', $mail['host']),
             'mailPort' => old('mail_port', $mail['port']),
             'mailUsername' => old('mail_username', $mail['username']),
-            'mailPasswordMask' => SiteSetting::maskKey($mail['password']),
+            'mailPasswordMask' => $mail['password_masked'],
             'mailPasswordFromAdmin' => SiteSetting::mailPasswordIsFromAdmin(),
             'mailEncryption' => old('mail_encryption', $mail['encryption']),
             'mailFromAddress' => old('mail_from_address', $mail['from_address']),
             'mailFromName' => old('mail_from_name', $mail['from_name']),
+            'mailReplyTo' => old('mail_reply_to', $mail['reply_to']),
             'mailFromAdmin' => $mail['from_admin'],
             'mailReady' => $mail['ready'],
+            'mailLastTestAt' => $mail['last_test_at'],
+            'mailLastTestStatus' => $mail['last_test_status'],
+            'mailLastTestError' => $mail['last_test_error'],
+            'mailLastTestRecipient' => $mail['last_test_recipient'],
         ]);
     }
 
@@ -162,6 +171,7 @@ class SettingsController extends Controller
         abort_unless($request->user()?->isAdmin(), 403);
 
         $validated = $request->validate([
+            'mail_enabled' => ['sometimes', 'boolean'],
             'mail_mailer' => ['required', 'in:smtp,log'],
             'mail_host' => ['nullable', 'string', 'max:255'],
             'mail_port' => ['nullable', 'integer', 'min:1', 'max:65535'],
@@ -170,8 +180,15 @@ class SettingsController extends Controller
             'mail_encryption' => ['required', 'in:tls,ssl,none'],
             'mail_from_address' => ['nullable', 'email', 'max:255'],
             'mail_from_name' => ['nullable', 'string', 'max:255'],
+            'mail_reply_to' => ['nullable', 'email', 'max:255'],
             'mail_clear_password' => ['sometimes', 'boolean'],
         ]);
+
+        $wasEnabled = SiteSetting::mailEnabled();
+        $newEnabled = $request->has('mail_enabled')
+            ? $request->boolean('mail_enabled')
+            : ($validated['mail_mailer'] === 'smtp');
+        SiteSetting::putMailEnabled($newEnabled);
 
         SiteSetting::putValue(SiteSetting::KEY_MAIL_MAILER, $validated['mail_mailer']);
         SiteSetting::putValue(SiteSetting::KEY_MAIL_HOST, trim((string) ($validated['mail_host'] ?? '')) ?: null);
@@ -183,47 +200,83 @@ class SettingsController extends Controller
         SiteSetting::putValue(SiteSetting::KEY_MAIL_ENCRYPTION, $validated['mail_encryption']);
         SiteSetting::putValue(SiteSetting::KEY_MAIL_FROM_ADDRESS, trim((string) ($validated['mail_from_address'] ?? '')) ?: null);
         SiteSetting::putValue(SiteSetting::KEY_MAIL_FROM_NAME, trim((string) ($validated['mail_from_name'] ?? '')) ?: null);
+        SiteSetting::putMailReplyTo(trim((string) ($validated['mail_reply_to'] ?? '')) ?: null);
 
+        $passwordAction = 'preserved';
         if ($request->boolean('mail_clear_password')) {
             SiteSetting::putMailPassword(null);
+            $passwordAction = 'cleared';
         } elseif (filled($validated['mail_password'] ?? null)) {
             SiteSetting::putMailPassword((string) $validated['mail_password']);
+            $passwordAction = 'updated';
         }
 
         SiteSetting::applyMailConfig();
 
+        // Audit logging without secrets
+        AdminMailAudit::record(
+            action: AdminMailAudit::ACTION_SETTINGS_UPDATED,
+            status: 'success',
+            details: [
+                'enabled' => $newEnabled,
+                'mailer' => $validated['mail_mailer'],
+                'host' => trim((string) ($validated['mail_host'] ?? '')),
+                'port' => $validated['mail_port'] ?? null,
+                'encryption' => $validated['mail_encryption'],
+                'from_address' => trim((string) ($validated['mail_from_address'] ?? '')),
+                'reply_to' => trim((string) ($validated['mail_reply_to'] ?? '')),
+                'password_action' => $passwordAction,
+            ],
+            actorId: $request->user()?->id,
+        );
+
+        if ($wasEnabled !== $newEnabled) {
+            AdminMailAudit::record(
+                action: $newEnabled
+                    ? AdminMailAudit::ACTION_DELIVERY_ENABLED
+                    : AdminMailAudit::ACTION_DELIVERY_DISABLED,
+                status: 'success',
+                details: [
+                    'mailer' => $validated['mail_mailer'],
+                ],
+                actorId: $request->user()?->id,
+            );
+        }
+
+        $feedback = $newEnabled
+            ? __('Email settings saved. Live outbound delivery is ENABLED.')
+            : __('Email settings saved. Outbound delivery is in SAFE/LOG mode.');
+
         return redirect()->route('admin.settings.edit')
-            ->with('status', __('Email settings saved.'));
+            ->with('status', $feedback);
     }
 
-    public function sendTestMail(Request $request): RedirectResponse
+    public function sendTestMail(Request $request, MailConfigurationService $mailConfig): RedirectResponse
     {
         abort_unless($request->user()?->isAdmin(), 403);
 
-        SiteSetting::applyMailConfig();
-        $to = $request->user()?->email;
-        if (! is_string($to) || ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
-            return redirect()->route('admin.settings.edit')
-                ->with('error', __('Your admin account has no valid email address.'));
+        $request->validate([
+            'test_recipient' => ['nullable', 'email', 'max:255'],
+        ]);
+
+        $recipient = trim((string) $request->input('test_recipient'));
+        if ($recipient === '') {
+            $recipient = (string) $request->user()?->email;
         }
 
-        try {
-            \Illuminate\Support\Facades\Mail::raw(
-                'Sound Mix Live can send mail with the SMTP settings saved in Platform settings.',
-                function ($message) use ($to): void {
-                    $message->to($to)->subject('Sound Mix Live test email');
-                },
-            );
-        } catch (\Throwable $e) {
+        if (! filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
             return redirect()->route('admin.settings.edit')
-                ->with('error', __('Could not send test email: :error', ['error' => $e->getMessage()]));
+                ->with('error', __('Please provide a valid recipient email address for testing.'));
         }
 
-        $mailer = config('mail.default');
+        $result = $mailConfig->sendTest($recipient, $request->user());
+
+        if (! $result['success']) {
+            return redirect()->route('admin.settings.edit')
+                ->with('error', $result['message']);
+        }
 
         return redirect()->route('admin.settings.edit')
-            ->with('status', $mailer === 'log'
-                ? __('Test email written to the mail log (MAIL_MAILER=log). Switch to SMTP to send through Gmail.')
-                : __('Test email sent to :email.', ['email' => $to]));
+            ->with('status', $result['message']);
     }
 }

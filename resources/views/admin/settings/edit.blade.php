@@ -346,118 +346,229 @@
         @csrf
         @method('PUT')
 
-        <section class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6 space-y-5">
-            <div>
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Email</h2>
-                <p class="mt-2 text-sm text-[var(--stage-muted)]">
-                    SMTP for Free-plan reminders, expiry mail, and other platform messages.
-                    Saved settings override <code class="text-[var(--stage-cream)]">MAIL_*</code> in .env. The password is stored encrypted.
-                </p>
-            </div>
-
-            <div class="rounded-xl border {{ $mailReady ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-amber-500/50 bg-amber-500/10' }} px-5 py-4 space-y-2">
-                <div class="flex flex-wrap items-center gap-3">
-                    <span class="text-xs font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Mail now</span>
-                    <span class="inline-flex items-center rounded-md px-3 py-1 text-sm font-semibold tracking-wide
-                        {{ $mailReady
-                            ? 'bg-emerald-500/25 text-emerald-100 ring-1 ring-emerald-400/40'
-                            : 'bg-amber-500/25 text-amber-100 ring-1 ring-amber-400/40' }}">
-                        {{ $mailReady ? 'SMTP READY' : (strtoupper((string) $mailMailer) === 'LOG' ? 'LOGGING ONLY' : 'NOT READY') }}
+        <section class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6 space-y-6">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--stage-muted)]">Outbound Email &amp; SMTP</h2>
+                    <p class="mt-1 text-sm text-[var(--stage-muted)]">
+                        Provider-agnostic outbound SMTP for transactional mail (password resets, verification, receipts, billing notifications).
+                        Saved credentials override <code class="text-[var(--stage-cream)]">MAIL_*</code> in .env and are encrypted at rest.
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold tracking-wider uppercase
+                        {{ $mailEnabled && $mailEffectiveMailer === 'smtp'
+                            ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40'
+                            : 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40' }}">
+                        {{ $mailEnabled && $mailEffectiveMailer === 'smtp' ? '● Live SMTP Delivery Active' : '○ Safe / Log Mode (No external send)' }}
                     </span>
                 </div>
-                <p class="text-sm text-[var(--stage-cream)]">
-                    Source: <strong>{{ $mailFromAdmin ? 'admin settings' : '.env' }}</strong>
-                    @if ($mailPasswordMask)
-                        · {{ $mailPasswordMask }}
-                    @endif
-                </p>
             </div>
 
-            <div class="flex flex-wrap gap-2">
-                <button type="button" class="console-btn console-btn-ghost" id="mail-gmail-preset">Use Gmail SMTP</button>
+            <!-- Diagnostics & Status Overview -->
+            <div class="rounded-xl border border-[var(--stage-border)] bg-black/20 p-5 space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--stage-border)] pb-3">
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-[var(--stage-muted)]">Delivery Status</span>
+                        <span class="inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold
+                            {{ $mailReady
+                                ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/40'
+                                : 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-400/40' }}">
+                            {{ $mailReady ? 'SMTP READY' : ($mailEffectiveMailer === 'log' ? 'LOGGING ONLY' : 'INCOMPLETE') }}
+                        </span>
+                    </div>
+                    <div class="text-xs text-[var(--stage-muted)]">
+                        Source: <strong class="text-[var(--stage-cream)]">{{ $mailFromAdmin ? 'Admin Platform Settings' : '.env defaults' }}</strong>
+                        @if ($mailPasswordMask)
+                            · Password: <span class="font-mono text-[var(--stage-cream)]">{{ $mailPasswordMask }}</span>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+                    <div>
+                        <span class="text-[var(--stage-muted)] block">Active Transport:</span>
+                        <span class="font-mono font-medium text-[var(--stage-cream)]">{{ strtoupper((string) $mailEffectiveMailer) }}</span>
+                    </div>
+                    <div>
+                        <span class="text-[var(--stage-muted)] block">SMTP Host &amp; Port:</span>
+                        <span class="font-mono font-medium text-[var(--stage-cream)]">
+                            {{ $mailHost ?: '—' }}:{{ $mailPort }} ({{ strtoupper((string) $mailEncryption) }})
+                        </span>
+                    </div>
+                    <div>
+                        <span class="text-[var(--stage-muted)] block">From Sender:</span>
+                        <span class="font-mono font-medium text-[var(--stage-cream)] truncate block" title="{{ $mailFromAddress }}">
+                            {{ $mailFromAddress ?: '—' }}
+                        </span>
+                    </div>
+                    <div>
+                        <span class="text-[var(--stage-muted)] block">Reply-To Address:</span>
+                        <span class="font-mono font-medium text-[var(--stage-cream)] truncate block" title="{{ $mailReplyTo }}">
+                            {{ $mailReplyTo ?: '—' }}
+                        </span>
+                    </div>
+                </div>
+
+                @if($mailLastTestAt)
+                    <div class="border-t border-[var(--stage-border)] pt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[var(--stage-muted)]">Last Test Send:</span>
+                            <span class="inline-flex items-center rounded px-2 py-0.5 font-semibold text-[11px]
+                                {{ $mailLastTestStatus === 'success' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300' }}">
+                                {{ strtoupper((string) $mailLastTestStatus) }}
+                            </span>
+                            <span class="text-[var(--stage-cream)]">{{ $mailLastTestAt }}</span>
+                            @if($mailLastTestRecipient)
+                                <span class="text-[var(--stage-muted)]">to <span class="font-mono text-[var(--stage-cream)]">{{ $mailLastTestRecipient }}</span></span>
+                            @endif
+                        </div>
+                        @if($mailLastTestError)
+                            <div class="w-full mt-1.5 p-2 rounded bg-red-950/40 border border-red-800/40 text-red-300 font-mono text-[11px] break-all">
+                                {{ $mailLastTestError }}
+                            </div>
+                        @endif
+                    </div>
+                @endif
+            </div>
+
+            <!-- Master Kill-Switch Toggle -->
+            <div class="p-4 rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] flex items-start gap-3">
+                <input type="hidden" name="mail_enabled" value="0">
+                <input type="checkbox" name="mail_enabled" id="mail_enabled" value="1"
+                    @checked($mailEnabled)
+                    class="mt-1 rounded border-[var(--stage-border)] bg-transparent text-emerald-500 focus:ring-emerald-500">
+                <label for="mail_enabled" class="cursor-pointer">
+                    <span class="block text-sm font-semibold text-[var(--stage-cream)]">
+                        Enable live outbound delivery (Kill-switch)
+                    </span>
+                    <span class="block text-xs text-[var(--stage-muted)] mt-0.5">
+                        When unchecked, all outbound mail operations (password resets, verification, receipts) are safely diverted to the system log without external network connections.
+                    </span>
+                </label>
+            </div>
+
+            <!-- Provider Presets -->
+            <div class="space-y-2">
+                <span class="text-xs uppercase tracking-wider text-[var(--stage-muted)]">Quick Presets</span>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" class="console-btn console-btn-ghost text-xs" id="mail-gmail-preset">Use Gmail SMTP</button>
+                    <button type="button" class="console-btn console-btn-ghost text-xs" id="mail-brevo-preset">Brevo / Sendinblue (587 TLS)</button>
+                    <button type="button" class="console-btn console-btn-ghost text-xs" id="mail-standard-ssl-preset">Standard Host (465 SSL)</button>
+                </div>
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
                 <label class="block text-sm">
-                    <span class="text-[var(--stage-muted)]">Mailer</span>
+                    <span class="text-[var(--stage-muted)]">Mailer Transport</span>
                     <select name="mail_mailer" id="mail_mailer" class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2">
-                        <option value="smtp" @selected($mailMailer === 'smtp')>SMTP (Gmail or other)</option>
-                        <option value="log" @selected($mailMailer === 'log')>Log only (don’t send)</option>
+                        <option value="smtp" @selected($mailMailer === 'smtp')>SMTP (Live or relay delivery)</option>
+                        <option value="log" @selected($mailMailer === 'log')>Log only (Write to storage/logs/laravel.log)</option>
                     </select>
                 </label>
                 <label class="block text-sm">
-                    <span class="text-[var(--stage-muted)]">Encryption</span>
+                    <span class="text-[var(--stage-muted)]">Encryption Protocol</span>
                     <select name="mail_encryption" id="mail_encryption" class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2">
-                        <option value="tls" @selected($mailEncryption === 'tls')>TLS (Gmail port 587)</option>
-                        <option value="ssl" @selected($mailEncryption === 'ssl')>SSL (Gmail port 465)</option>
-                        <option value="none" @selected($mailEncryption === 'none')>None</option>
+                        <option value="tls" @selected($mailEncryption === 'tls')>STARTTLS (Port 587 recommended)</option>
+                        <option value="ssl" @selected($mailEncryption === 'ssl')>SSL / SMTPS (Port 465)</option>
+                        <option value="none" @selected($mailEncryption === 'none')>None (Plaintext - testing only)</option>
                     </select>
                 </label>
                 <label class="block text-sm">
-                    <span class="text-[var(--stage-muted)]">Host</span>
+                    <span class="text-[var(--stage-muted)]">SMTP Host</span>
                     <input name="mail_host" id="mail_host" value="{{ $mailHost }}"
                         class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2 font-mono text-sm"
-                        placeholder="smtp.gmail.com">
+                        placeholder="e.g. smtp-relay.brevo.com or smtp.gmail.com">
                 </label>
                 <label class="block text-sm">
-                    <span class="text-[var(--stage-muted)]">Port</span>
+                    <span class="text-[var(--stage-muted)]">SMTP Port</span>
                     <input type="number" name="mail_port" id="mail_port" value="{{ $mailPort }}" min="1" max="65535"
-                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2">
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2 font-mono text-sm">
                 </label>
                 <label class="block text-sm sm:col-span-2">
-                    <span class="text-[var(--stage-muted)]">Username</span>
+                    <span class="text-[var(--stage-muted)]">SMTP Username / Login Key</span>
                     <input name="mail_username" id="mail_username" value="{{ $mailUsername }}"
-                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
-                        placeholder="you@gmail.com" autocomplete="off">
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2 font-mono text-sm"
+                        placeholder="e.g. your-login@provider.com or API username" autocomplete="off">
                 </label>
                 <label class="block text-sm sm:col-span-2">
-                    <span class="text-[var(--stage-muted)]">Password</span>
+                    <span class="text-[var(--stage-muted)]">SMTP Password / API Secret</span>
                     <input type="password" name="mail_password" value=""
                         class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2 font-mono text-sm"
-                        placeholder="{{ $mailPasswordMask ? 'Leave blank to keep the saved password' : 'Gmail App Password' }}"
+                        placeholder="{{ $mailPasswordMask ? '•••••••••••••••• (Leave blank to keep existing encrypted password)' : 'Enter SMTP password or API token' }}"
                         autocomplete="new-password">
                 </label>
                 <label class="block text-sm">
-                    <span class="text-[var(--stage-muted)]">From address</span>
+                    <span class="text-[var(--stage-muted)]">From Address</span>
                     <input type="email" name="mail_from_address" id="mail_from_address" value="{{ $mailFromAddress }}"
                         class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
-                        placeholder="you@gmail.com">
+                        placeholder="e.g. support@soundmix.live">
                 </label>
                 <label class="block text-sm">
-                    <span class="text-[var(--stage-muted)]">From name</span>
+                    <span class="text-[var(--stage-muted)]">From Name</span>
                     <input name="mail_from_name" value="{{ $mailFromName }}"
                         class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
-                        placeholder="Sound Mix Live">
+                        placeholder="SoundMix Live">
+                </label>
+                <label class="block text-sm sm:col-span-2">
+                    <span class="text-[var(--stage-muted)]">Reply-To Address</span>
+                    <input type="email" name="mail_reply_to" id="mail_reply_to" value="{{ $mailReplyTo }}"
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2"
+                        placeholder="support@soundmix.live">
+                    <span class="mt-1 block text-[11px] text-[var(--stage-muted)]">
+                        Inbound replies from recipients will be routed here (Cloudflare Email Routing or support inbox).
+                    </span>
                 </label>
             </div>
 
             <label class="flex gap-2 items-center text-sm text-[var(--stage-muted)]">
                 <input type="checkbox" name="mail_clear_password" value="1">
-                Remove saved password (fall back to .env)
+                Remove saved password (clear stored encrypted secret)
             </label>
 
-            <p class="text-xs text-[var(--stage-muted)]">
-                Gmail: turn on 2-Step Verification, then create an
-                <a class="console-link" href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">App Password</a>
-                and paste it above. A normal Gmail password will be rejected.
-            </p>
-
             @error('mail_mailer')
+                <p class="text-xs text-red-300">{{ $message }}</p>
+            @enderror
+            @error('mail_host')
+                <p class="text-xs text-red-300">{{ $message }}</p>
+            @enderror
+            @error('mail_port')
                 <p class="text-xs text-red-300">{{ $message }}</p>
             @enderror
             @error('mail_from_address')
                 <p class="text-xs text-red-300">{{ $message }}</p>
             @enderror
+            @error('mail_reply_to')
+                <p class="text-xs text-red-300">{{ $message }}</p>
+            @enderror
 
-            <div class="flex flex-wrap gap-3">
+            <div class="flex flex-wrap gap-3 pt-2">
                 <button type="submit" class="console-btn console-btn-primary">Save email</button>
             </div>
         </section>
     </form>
 
-    <form method="POST" action="{{ route('admin.settings.mail.test') }}" class="mt-3">
+    <!-- Outbound Delivery Verification Form -->
+    <form method="POST" action="{{ route('admin.settings.mail.test') }}" class="mt-4" autocomplete="off">
         @csrf
-        <button type="submit" class="console-btn console-btn-ghost">Send test email to my account</button>
+        <section class="rounded-xl border border-[var(--stage-border)] bg-[var(--stage-panel)] p-6 space-y-4">
+            <div>
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--stage-muted)]">Send Test Email</h3>
+                <p class="mt-1 text-xs text-[var(--stage-muted)]">
+                    Dispatches a real diagnostic verification email via the active transport to test credentials, TLS handshake, and recipient delivery.
+                </p>
+            </div>
+
+            <div class="flex flex-wrap gap-3 items-end max-w-xl">
+                <label class="flex-1 min-w-[240px] block text-sm">
+                    <span class="text-[var(--stage-muted)] text-xs">Test Recipient Address</span>
+                    <input type="email" name="test_recipient" value="{{ old('test_recipient', auth()->user()?->email) }}"
+                        class="mt-1 w-full rounded-lg border border-[var(--stage-border)] bg-transparent px-3 py-2 text-sm"
+                        placeholder="admin@example.com" required>
+                </label>
+                <button type="submit" class="console-btn console-btn-ghost">Send test email</button>
+            </div>
+        </section>
     </form>
 
     <form method="POST" action="{{ route('admin.settings.contact') }}" class="mt-8" id="contact">
@@ -549,15 +660,25 @@
 @section('vite')
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('mail-gmail-preset')?.addEventListener('click', () => {
+            const setSmtpPreset = (hostVal, portVal, encryptionVal) => {
                 const mailer = document.getElementById('mail_mailer');
                 const host = document.getElementById('mail_host');
                 const port = document.getElementById('mail_port');
                 const encryption = document.getElementById('mail_encryption');
                 if (mailer) mailer.value = 'smtp';
-                if (host) host.value = 'smtp.gmail.com';
-                if (port) port.value = '587';
-                if (encryption) encryption.value = 'tls';
+                if (host) host.value = hostVal;
+                if (port) port.value = portVal;
+                if (encryption) encryption.value = encryptionVal;
+            };
+
+            document.getElementById('mail-gmail-preset')?.addEventListener('click', () => {
+                setSmtpPreset('smtp.gmail.com', '587', 'tls');
+            });
+            document.getElementById('mail-brevo-preset')?.addEventListener('click', () => {
+                setSmtpPreset('smtp-relay.brevo.com', '587', 'tls');
+            });
+            document.getElementById('mail-standard-ssl-preset')?.addEventListener('click', () => {
+                setSmtpPreset('mail.soundmix.live', '465', 'ssl');
             });
         });
     </script>

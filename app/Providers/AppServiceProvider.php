@@ -58,6 +58,16 @@ class AppServiceProvider extends ServiceProvider
             \App\Listeners\SendAffiliateLifecycleNotifications::class,
         );
 
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Queue\Events\JobProcessing::class,
+            function (): void {
+                try {
+                    app(\App\Services\MailConfigurationService::class)->apply();
+                } catch (\Throwable) {
+                }
+            }
+        );
+
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
 

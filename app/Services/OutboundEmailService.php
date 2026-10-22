@@ -144,6 +144,8 @@ class OutboundEmailService
 
         // 3. Dispatch via Laravel Mail
         try {
+            app(\App\Services\MailConfigurationService::class)->apply();
+
             if ($mailable instanceof \Illuminate\Contracts\Queue\ShouldQueue) {
                 Mail::to($recipient)->queue($mailable);
             } else {

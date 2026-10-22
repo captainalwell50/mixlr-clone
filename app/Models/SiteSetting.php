@@ -31,6 +31,8 @@ class SiteSetting extends Model
 
     public const KEY_WHATSAPP_DEFAULT_MESSAGE = 'whatsapp_default_message';
 
+    public const KEY_MAIL_ENABLED = 'mail_enabled';
+
     public const KEY_MAIL_MAILER = 'mail_mailer';
 
     public const KEY_MAIL_HOST = 'mail_host';
@@ -46,6 +48,16 @@ class SiteSetting extends Model
     public const KEY_MAIL_FROM_ADDRESS = 'mail_from_address';
 
     public const KEY_MAIL_FROM_NAME = 'mail_from_name';
+
+    public const KEY_MAIL_REPLY_TO = 'mail_reply_to';
+
+    public const KEY_MAIL_LAST_TEST_AT = 'mail_last_test_at';
+
+    public const KEY_MAIL_LAST_TEST_STATUS = 'mail_last_test_status';
+
+    public const KEY_MAIL_LAST_TEST_ERROR = 'mail_last_test_error';
+
+    public const KEY_MAIL_LAST_TEST_RECIPIENT = 'mail_last_test_recipient';
 
     public const KEY_EMAIL_ROUTING_ACTIVE_DESTINATION = 'email_routing_active_destination';
 
@@ -502,50 +514,61 @@ class SiteSetting extends Model
         }
     }
 
+    public static function mailEnabled(): bool
+    {
+        $stored = static::getValue(self::KEY_MAIL_ENABLED);
+        if ($stored !== null && $stored !== '') {
+            return filter_var($stored, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        // When not explicitly set, reflect stored mail_mailer setting
+        $mailer = static::getValue(self::KEY_MAIL_MAILER);
+        if ($mailer !== null && $mailer !== '') {
+            return $mailer === 'smtp';
+        }
+
+        return false;
+    }
+
+    public static function putMailEnabled(bool $enabled): void
+    {
+        static::putValue(self::KEY_MAIL_ENABLED, $enabled ? '1' : '0');
+    }
+
+    public static function mailReplyTo(): string
+    {
+        $stored = static::getValue(self::KEY_MAIL_REPLY_TO);
+        if (filled($stored) && filter_var($stored, FILTER_VALIDATE_EMAIL)) {
+            return (string) $stored;
+        }
+
+        $env = config('mail.reply_to.address');
+        if (filled($env) && filter_var($env, FILTER_VALIDATE_EMAIL)) {
+            return (string) $env;
+        }
+
+        return static::supportEmail();
+    }
+
+    public static function putMailReplyTo(?string $replyTo): void
+    {
+        $replyTo = is_string($replyTo) ? trim($replyTo) : '';
+        if ($replyTo === '') {
+            static::query()->where('key', self::KEY_MAIL_REPLY_TO)->delete();
+            Cache::forget(self::cacheKey(self::KEY_MAIL_REPLY_TO));
+
+            return;
+        }
+
+        static::putValue(self::KEY_MAIL_REPLY_TO, $replyTo);
+    }
+
     /**
-     * @return array{
-     *     mailer: string,
-     *     host: string,
-     *     port: int,
-     *     username: string,
-     *     password: ?string,
-     *     encryption: string,
-     *     from_address: string,
-     *     from_name: string,
-     *     from_admin: bool,
-     *     ready: bool
-     * }
+     * @return array<string, mixed>
      */
     public static function mailSettings(): array
     {
-        $mailer = static::mailStored(self::KEY_MAIL_MAILER) ?? (string) config('mail.default', 'log');
-        $host = static::mailStored(self::KEY_MAIL_HOST) ?? (string) config('mail.mailers.smtp.host', 'smtp.gmail.com');
-        $port = (int) (static::mailStored(self::KEY_MAIL_PORT) ?? config('mail.mailers.smtp.port', 587));
-        $username = static::mailStored(self::KEY_MAIL_USERNAME) ?? (string) config('mail.mailers.smtp.username', '');
-        $encryption = strtolower((string) (static::mailStored(self::KEY_MAIL_ENCRYPTION) ?? config('mail.mailers.smtp.encryption') ?? 'tls'));
-        if (! in_array($encryption, ['tls', 'ssl', 'none'], true)) {
-            $encryption = 'tls';
-        }
-
-        $fromAddress = static::mailStored(self::KEY_MAIL_FROM_ADDRESS)
-            ?? (string) config('mail.from.address', '');
-        $fromName = static::mailStored(self::KEY_MAIL_FROM_NAME)
-            ?? (string) config('mail.from.name', config('app.name', 'Sound Mix Live'));
-
-        $password = static::mailPassword();
-
-        return [
-            'mailer' => in_array($mailer, ['smtp', 'log'], true) ? $mailer : 'log',
-            'host' => $host !== '' ? $host : 'smtp.gmail.com',
-            'port' => $port > 0 ? $port : 587,
-            'username' => $username,
-            'password' => $password,
-            'encryption' => $encryption,
-            'from_address' => $fromAddress,
-            'from_name' => $fromName,
-            'from_admin' => filled(static::getValue(self::KEY_MAIL_MAILER)),
-            'ready' => $mailer === 'smtp' && filled($username) && filled($password),
-        ];
+        return app(\App\Services\MailConfigurationService::class)->getSettings();
     }
 
     public static function mailPassword(): ?string
@@ -560,7 +583,7 @@ class SiteSetting extends Model
             }
         }
 
-        $env = config('mail.mailers.smtp.password');
+        $env = env('MAIL_PASSWORD');
 
         return filled($env) ? (string) $env : null;
     }
@@ -574,7 +597,9 @@ class SiteSetting extends Model
     {
         if ($plain === null || $plain === '') {
             static::query()->where('key', self::KEY_MAIL_PASSWORD)->delete();
+            static::clearRuntimeCache();
             Cache::forget(self::cacheKey(self::KEY_MAIL_PASSWORD));
+            config(['mail.mailers.smtp.password' => env('MAIL_PASSWORD')]);
 
             return;
         }
@@ -584,30 +609,7 @@ class SiteSetting extends Model
 
     public static function applyMailConfig(): void
     {
-        if (! filled(static::getValue(self::KEY_MAIL_MAILER))) {
-            return;
-        }
-
-        $mail = static::mailSettings();
-        $scheme = $mail['encryption'] === 'ssl' || $mail['port'] === 465 ? 'smtps' : 'smtp';
-        $encryption = $mail['encryption'] === 'none' ? null : $mail['encryption'];
-
-        config([
-            'mail.default' => $mail['mailer'],
-            'mail.mailers.smtp.host' => $mail['host'],
-            'mail.mailers.smtp.port' => $mail['port'],
-            'mail.mailers.smtp.username' => $mail['username'] !== '' ? $mail['username'] : null,
-            'mail.mailers.smtp.password' => $mail['password'],
-            'mail.mailers.smtp.encryption' => $encryption,
-            'mail.mailers.smtp.scheme' => $scheme,
-            'mail.from.address' => $mail['from_address'] !== '' ? $mail['from_address'] : config('mail.from.address'),
-            'mail.from.name' => $mail['from_name'] !== '' ? $mail['from_name'] : config('app.name'),
-        ]);
-
-        try {
-            app('mail.manager')->purge('smtp');
-        } catch (\Throwable) {
-        }
+        app(\App\Services\MailConfigurationService::class)->apply();
     }
 
     public static function emailRoutingActiveDestination(): ?string
