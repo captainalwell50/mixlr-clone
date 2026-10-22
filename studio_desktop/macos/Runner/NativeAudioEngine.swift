@@ -3,6 +3,20 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
+enum MixLayout: String {
+  case auto
+  case mono
+  case stereo
+
+  static func parse(_ raw: String?) -> MixLayout {
+    switch raw?.lowercased() {
+    case "mono": return .mono
+    case "stereo": return .stereo
+    default: return .auto
+    }
+  }
+}
+
 /// Native Core Audio mixer: mic + playlist → master mix (WHIP ring) + cue bus.
 final class NativeAudioEngine {
   struct InputDevice {
@@ -52,6 +66,12 @@ final class NativeAudioEngine {
   private var playlistSlots: [AVAudioPlayerNode] = []
   private var slotTrackIds: [String?] = []
   private let playlistSlotCount = 8
+  /// Software playlist mix — injected on the WHIP capture callback (never mutates the mic graph).
+  private let softPlaylist = PlaylistSoftMixer()
+  /// Local headphones/speakers only. Separate engine so Play cannot crash the mic IO graph.
+  private let monitorEngine = AVAudioEngine()
+  private let monitorPlayer = AVAudioPlayerNode()
+  private var monitorReady = false
   /// Players stay at this format for the session. Mic HW rate lives on a different mixer bus.
   static let playlistPlaybackFormat = AVAudioFormat(
     standardFormatWithSampleRate: 48_000,
@@ -64,6 +84,10 @@ final class NativeAudioEngine {
   private var ringRead = 0
   private var ringCount = 0
   private let ringCapacity: Int
+  /// Realtime scratch for mixing playlist into the WHIP callback (no heap in the audio thread).
+  private var mixScratchL: [Float]
+  private var mixScratchR: [Float]
+  private let playlistMixLock = NSLock()
 
   private var meterTimer: Timer?
   private(set) var micLevel: Float = 0
@@ -80,6 +104,9 @@ final class NativeAudioEngine {
   private(set) var armed = false
   private(set) var selectedDeviceId: String?
   private(set) var selectedOutputDeviceId: String? = "default"
+  private(set) var mixLayout: MixLayout = .auto
+  /// Auto: count of recent buffers that looked like independent L/R (not HW channel count).
+  private var receivedStereoVotes = 0
   private var sessionReady = false
   private var nodesAttached = false
   private var micWired = false
@@ -128,10 +155,103 @@ final class NativeAudioEngine {
     return listInputDevices().first(where: { $0.deviceId == selectedDeviceId })?.label
   }
 
+  func setMixLayout(_ raw: String?) {
+    mixLayout = MixLayout.parse(raw)
+  }
+
+  /// WHIP Opus stereo when the operator chose Stereo or Auto.
+  /// Auto stays stereo-capable so a mono mic cannot downmix the playlist.
+  /// receivedStereoVotes remain diagnostic (observeInputLayout) and do not
+  /// decide the programme bus.
+  func shouldPublishStereo() -> Bool {
+    switch mixLayout {
+    case .mono:
+      return false
+    case .stereo, .auto:
+      return true
+    }
+  }
+
+  /// Look at actual mic PCM. A 2-in interface with one cable still reports 2 HAL channels.
+  private func observeInputLayout(
+    left: UnsafePointer<Float>,
+    right: UnsafePointer<Float>,
+    frames: Int,
+    channelCount: AVAudioChannelCount
+  ) {
+    if channelCount < 2 {
+      receivedStereoVotes = 0
+      return
+    }
+    var sumL2: Float = 0
+    var sumR2: Float = 0
+    var sumLR: Float = 0
+    var peakL: Float = 0
+    var peakR: Float = 0
+    for f in 0..<frames {
+      let l = left[f]
+      let r = right[f]
+      sumL2 += l * l
+      sumR2 += r * r
+      sumLR += l * r
+      let al = abs(l)
+      let ar = abs(r)
+      if al > peakL { peakL = al }
+      if ar > peakR { peakR = ar }
+    }
+    let inv = 1 / Float(max(frames, 1))
+    let rmsL = sqrt(sumL2 * inv)
+    let rmsR = sqrt(sumR2 * inv)
+    let loud = max(rmsL, rmsR, peakL * 0.5, peakR * 0.5)
+    if loud < 0.004 {
+      return
+    }
+    let quiet = min(rmsL, rmsR)
+    let denom = sqrt(sumL2 * sumR2)
+    let corr = denom > 0 ? sumLR / denom : 1
+    let independent = quiet >= loud * 0.12 && corr <= 0.995
+    if independent {
+      receivedStereoVotes = min(receivedStereoVotes + 2, 10)
+    } else {
+      receivedStereoVotes = max(receivedStereoVotes - 2, 0)
+    }
+  }
+
+  /// Actual received input channels (1 or 2), not playlist layout.
+  func receivedInputChannelCount() -> Int {
+    if selectedDeviceId == "none" {
+      return 1
+    }
+    let input = engine.inputNode
+    let hw = input.inputFormat(forBus: 0)
+    if hw.channelCount >= 2 { return 2 }
+    if hw.channelCount == 1 { return 1 }
+    let out = input.outputFormat(forBus: 0)
+    if out.channelCount >= 2 { return 2 }
+    if out.channelCount == 1 { return 1 }
+    if let selectedDeviceId,
+       let match = listInputDevices().first(where: { $0.deviceId == selectedDeviceId }),
+       match.audioDeviceID != 0
+    {
+      let n = inputChannelCount(match.audioDeviceID)
+      if n >= 2 { return 2 }
+      if n == 1 { return 1 }
+    }
+    let defaultID = defaultInputDeviceID()
+    if defaultID != 0 {
+      let n = inputChannelCount(defaultID)
+      if n >= 2 { return 2 }
+      if n == 1 { return 1 }
+    }
+    return 1
+  }
+
   init() {
     // ~1.5s of stereo float @ 48kHz
     ringCapacity = 48_000 * 2 * 3 / 2
     ring = [Float](repeating: 0, count: ringCapacity)
+    mixScratchL = [Float](repeating: 0, count: 4096)
+    mixScratchR = [Float](repeating: 0, count: 4096)
   }
 
   deinit {
@@ -283,6 +403,10 @@ final class NativeAudioEngine {
     stopPublishSide()
     for id in Array(trackMeta.keys) {
       removeTrack(id)
+    }
+    softPlaylist.stopAll()
+    if monitorEngine.isRunning {
+      monitorEngine.stop()
     }
     if engine.isRunning {
       engine.stop()
@@ -660,6 +784,7 @@ final class NativeAudioEngine {
     if let playlist { playlistMuted = playlist }
     clearMixRing()
     applyGains()
+    applyMonitorGain()
   }
 
   func setCues(mic: Bool?, playlist: Bool?) {
@@ -757,13 +882,6 @@ final class NativeAudioEngine {
       return
     }
 
-    do {
-      try ensureEngineRunningForPlaylist()
-    } catch {
-      completion(error)
-      return
-    }
-
     let destFormat = Self.playlistPlaybackFormat
     convertQueue.async { [weak self] in
       guard let self else { return }
@@ -771,24 +889,22 @@ final class NativeAudioEngine {
         let playFile = try self.playbackFile(for: id, source: file, destFormat: destFormat)
         DispatchQueue.main.async {
           do {
-            guard let slot = self.assignPlaylistSlot(for: id) else {
-              throw NSError(
-                domain: "NativeAudio",
-                code: 27,
-                userInfo: [
-                  NSLocalizedDescriptionKey:
-                    "Too many tracks playing. Pause one, then Play.",
-                ]
-              )
+            if self.micWired && !self.engine.isRunning {
+              self.ensurePublishingGraph()
             }
+            try self.softPlaylist.play(id: id, file: playFile) { [weak self] in
+              self?.trackMeta[id]?.playing = false
+              self?.emitTracks()
+            }
+            self.scheduleMonitor(file: playFile, id: id)
+            self.trackMeta[id]?.playing = true
+            self.emitTracks()
             self.debugPlaylist(
-              "play slot id=\(id) engineRunning=\(self.engine.isRunning) micWired=\(self.micWired) fileSR=\(playFile.processingFormat.sampleRate) fileCh=\(playFile.processingFormat.channelCount)"
+              "soft play ok id=\(id) engineRunning=\(self.engine.isRunning) micWired=\(self.micWired) publishing=\(self.micWired)"
             )
-            try self.startPlayer(slot, file: playFile, id: id)
-            self.debugPlaylist("play ok id=\(id)")
             completion(nil)
           } catch {
-            self.debugPlaylist("play FAIL id=\(id) \(error)")
+            self.debugPlaylist("soft play FAIL id=\(id) \(error)")
             completion(self.humanizePlayError(error as NSError))
           }
         }
@@ -802,6 +918,140 @@ final class NativeAudioEngine {
 
   func restart(_ id: String, completion: @escaping (Error?) -> Void) {
     play(id, completion: completion)
+  }
+
+  func playlistVoicePlaying(_ id: String) -> Bool {
+    softPlaylist.isPlaying(id)
+  }
+
+  func startPreviewGraphForTest() throws {
+    try ensureEngineRunningForPlaylist()
+  }
+
+  var isAudioEngineRunning: Bool { engine.isRunning }
+
+  var isMicMuted: Bool { micMuted }
+
+  var publishMasterFader: Float { max(0, masterFader) }
+
+  var publishMicFader: Float { max(0, micFader) }
+
+  var hasPlayingPlaylist: Bool { softPlaylist.hasPlayingVoice() }
+
+  /// Mix playlist onto planar WHIP/ADM buffers. Safe while the mic engine is stopped.
+  @discardableResult
+  func injectPlaylist(
+    left: UnsafeMutablePointer<Float>,
+    right: UnsafeMutablePointer<Float>,
+    frames: Int,
+    sampleRate: Double,
+    downmixToMono: Bool = false,
+    destScale: Float = 1
+  ) -> Float {
+    let gain: Float = playlistMuted ? 0 : max(0, playlistFader) * max(0, masterFader)
+    guard frames > 0, sampleRate > 0 else { return 0 }
+    let n = min(frames, mixScratchL.count)
+    playlistMixLock.lock()
+    defer { playlistMixLock.unlock() }
+    for i in 0..<n {
+      mixScratchL[i] = 0
+      mixScratchR[i] = 0
+    }
+    let rms = mixScratchL.withUnsafeMutableBufferPointer { lp in
+      mixScratchR.withUnsafeMutableBufferPointer { rp in
+        self.softPlaylist.mix(
+          left: lp.baseAddress!,
+          right: rp.baseAddress!,
+          frames: n,
+          destSampleRate: sampleRate,
+          gain: gain
+        )
+      }
+    }
+    let scale = destScale == 0 ? 0 : destScale
+    if downmixToMono {
+      for i in 0..<n {
+        left[i] += scale * 0.5 * (mixScratchL[i] + mixScratchR[i])
+      }
+    } else {
+      for i in 0..<n {
+        left[i] += scale * mixScratchL[i]
+        right[i] += scale * mixScratchR[i]
+      }
+    }
+    if rms > 0 {
+      playlistLevel = max(playlistLevel * 0.5, meterLevel(rms: rms))
+    }
+    return rms
+  }
+
+  func debugMixPlaylist(frames: Int, sampleRate: Double) -> [Float] {
+    var left = [Float](repeating: 0, count: max(frames, 1))
+    var right = [Float](repeating: 0, count: max(frames, 1))
+    left.withUnsafeMutableBufferPointer { l in
+      right.withUnsafeMutableBufferPointer { r in
+        _ = self.softPlaylist.mix(
+          left: l.baseAddress!,
+          right: r.baseAddress!,
+          frames: frames,
+          destSampleRate: sampleRate,
+          gain: 1
+        )
+      }
+    }
+    return left
+  }
+
+  static func localPlaylistMonitorGain(muted: Bool, cue: Bool, fader: Float) -> Float {
+    if muted || !cue { return 0 }
+    return max(0, fader)
+  }
+
+  private func applyMonitorGain() {
+    guard monitorReady else { return }
+    monitorEngine.mainMixerNode.outputVolume = Self.localPlaylistMonitorGain(
+      muted: playlistMuted,
+      cue: playlistCue,
+      fader: playlistFader
+    )
+  }
+
+  private func ensureMonitorEngine() throws {
+    if !monitorReady {
+      monitorEngine.attach(monitorPlayer)
+      monitorEngine.connect(
+        monitorPlayer,
+        to: monitorEngine.mainMixerNode,
+        format: Self.playlistPlaybackFormat
+      )
+      monitorReady = true
+    }
+    applyMonitorGain()
+    if !monitorEngine.isRunning {
+      monitorEngine.prepare()
+      try monitorEngine.start()
+    }
+  }
+
+  private func scheduleMonitor(file: AVAudioFile, id: String) {
+    do {
+      try ensureMonitorEngine()
+    } catch {
+      debugPlaylist("monitor engine skipped id=\(id) \(error.localizedDescription)")
+      return
+    }
+    var err: NSError?
+    let ok = SMCatchException(&err) { [self] in
+      if self.monitorPlayer.isPlaying {
+        self.monitorPlayer.stop()
+      }
+      file.framePosition = 0
+      self.monitorPlayer.scheduleFile(file, at: nil)
+      self.monitorPlayer.play()
+    }
+    debugPlaylist(
+      "monitor schedule ok=\(ok) id=\(id) err=\(err?.localizedDescription ?? "-")"
+    )
   }
 
   private func ensureEngineRunningForPlaylist() throws {
@@ -848,7 +1098,10 @@ final class NativeAudioEngine {
   }
 
   /// Pause (do not stop) so we can attach/connect without dropping the WHIP device.
-  private func mutateGraphWhilePaused(_ work: () throws -> Void) throws {
+  private func mutateGraphWhilePaused(
+    allowRebuild: Bool = true,
+    _ work: () throws -> Void
+  ) throws {
     let running = engine.isRunning
     let preserve = micWired
     if running && preserve {
@@ -873,7 +1126,7 @@ final class NativeAudioEngine {
       do {
         try engine.start()
       } catch {
-        if micWired {
+        if allowRebuild, micWired {
           try rebuildAndStart(deviceId: selectedDeviceId)
         } else if workError == nil {
           throw error
@@ -888,50 +1141,44 @@ final class NativeAudioEngine {
     }
   }
 
-  private func ensureSlotReadyForPlay(_ player: AVAudioPlayerNode) throws {
-    if slotOutputValid(player),
-       Self.formatsMatch(player.outputFormat(forBus: 0), Self.playlistPlaybackFormat) {
-      return
+  private func connectSlotForPlay(_ player: AVAudioPlayerNode) throws {
+    ensurePlaylistSlotsCreated()
+    if player.engine != nil && player.engine !== engine {
+      var detachErr: NSError?
+      _ = SMCatchException(&detachErr) {
+        player.engine?.detach(player)
+      }
     }
-    try mutateGraphWhilePaused {
-      self.ensurePlaylistSlotsCreated()
-      if player.engine != nil && player.engine !== self.engine {
-        var detachErr: NSError?
-        _ = SMCatchException(&detachErr) {
-          player.engine?.detach(player)
-        }
+    if player.engine == nil {
+      var attachErr: NSError?
+      let attached = SMCatchException(&attachErr) { [self] in
+        self.engine.attach(player)
       }
-      if player.engine == nil {
-        var attachErr: NSError?
-        let attached = SMCatchException(&attachErr) { [self] in
-          self.engine.attach(player)
-        }
-        guard attached else {
-          throw attachErr ?? NSError(
-            domain: "NativeAudio",
-            code: 18,
-            userInfo: [NSLocalizedDescriptionKey: "Could not attach playlist player."]
-          )
-        }
-      }
-      var connectErr: NSError?
-      let ok = SMCatchException(&connectErr) { [self] in
-        self.engine.connect(
-          player,
-          to: self.playlistMixer,
-          format: Self.playlistPlaybackFormat
-        )
-      }
-      guard ok else {
-        throw connectErr ?? NSError(
+      guard attached else {
+        throw attachErr ?? NSError(
           domain: "NativeAudio",
-          code: 19,
-          userInfo: [
-            NSLocalizedDescriptionKey:
-              "Could not connect that track to the playlist mix.",
-          ]
+          code: 18,
+          userInfo: [NSLocalizedDescriptionKey: "Could not attach playlist player."]
         )
       }
+    }
+    var connectErr: NSError?
+    let ok = SMCatchException(&connectErr) { [self] in
+      self.engine.connect(
+        player,
+        to: self.playlistMixer,
+        format: Self.playlistPlaybackFormat
+      )
+    }
+    guard ok else {
+      throw connectErr ?? NSError(
+        domain: "NativeAudio",
+        code: 19,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "Could not connect that track to the playlist mix.",
+        ]
+      )
     }
   }
 
@@ -943,56 +1190,6 @@ final class NativeAudioEngine {
     try? mutateGraphWhilePaused {
       self.connectPlaylistSlots(format: Self.playlistPlaybackFormat)
     }
-  }
-
-  private func startPlayer(_ player: AVAudioPlayerNode, file: AVAudioFile, id: String) throws {
-    if !engine.isRunning {
-      try ensureEngineRunningForPlaylist()
-    }
-    try ensureSlotReadyForPlay(player)
-
-    let slotFormat = player.outputFormat(forBus: 0)
-    debugPlaylist(
-      "startPlayer id=\(id) slotSR=\(slotFormat.sampleRate) slotCh=\(slotFormat.channelCount) fileSR=\(file.processingFormat.sampleRate) fileCh=\(file.processingFormat.channelCount) fileInterleaved=\(file.processingFormat.isInterleaved) slotInterleaved=\(slotFormat.isInterleaved)"
-    )
-
-    let runSchedule: () -> NSError? = {
-      var playErr: NSError?
-      let ok = SMCatchException(&playErr) {
-        if player.isPlaying {
-          player.pause()
-        }
-        player.stop()
-        file.framePosition = 0
-        player.scheduleFile(file, at: nil) { [weak self] in
-          DispatchQueue.main.async {
-            self?.trackMeta[id]?.playing = false
-            self?.emitTracks()
-          }
-        }
-        player.play()
-      }
-      return ok ? nil : playErr
-    }
-
-    if let firstErr = runSchedule() {
-      debugPlaylist("startPlayer retry after reconnect id=\(id) \(firstErr)")
-      try mutateGraphWhilePaused {
-        var connectErr: NSError?
-        _ = SMCatchException(&connectErr) { [self] in
-          self.engine.connect(
-            player,
-            to: self.playlistMixer,
-            format: Self.playlistPlaybackFormat
-          )
-        }
-      }
-      if let retryErr = runSchedule() {
-        throw humanizePlayError(retryErr)
-      }
-    }
-    trackMeta[id]?.playing = true
-    emitTracks()
   }
 
   private func ensurePlaylistSlotsCreated() {
@@ -1048,7 +1245,9 @@ final class NativeAudioEngine {
       return trackMeta[other]?.playing != true
     }) {
       if let other = slotTrackIds[index] {
-        playlistSlots[index].stop()
+        if !engine.isRunning {
+          playlistSlots[index].stop()
+        }
         playerNodes.removeValue(forKey: other)
       }
       slotTrackIds[index] = id
@@ -1060,19 +1259,27 @@ final class NativeAudioEngine {
 
   private func releasePlaylistSlot(for id: String) {
     if let index = slotTrackIds.firstIndex(of: id) {
-      playlistSlots[index].stop()
+      if engine.isRunning {
+        playlistSlots[index].pause()
+      } else {
+        playlistSlots[index].stop()
+      }
       slotTrackIds[index] = nil
     }
     playerNodes.removeValue(forKey: id)
   }
 
   func pause(_ id: String) {
-    playerNodes[id]?.pause()
+    softPlaylist.pause(id)
+    if monitorEngine.isRunning {
+      monitorPlayer.pause()
+    }
     trackMeta[id]?.playing = false
     emitTracks()
   }
 
   func removeTrack(_ id: String, deleteCache: Bool = false) {
+    softPlaylist.stop(id)
     releasePlaylistSlot(for: id)
     playerFiles.removeValue(forKey: id)
     trackMeta.removeValue(forKey: id)
@@ -1126,8 +1333,8 @@ final class NativeAudioEngine {
     masterLevel = max(masterLevel * 0.5, next)
   }
 
-  /// Scale for the WebRTC buffer. Mic ring is dry; playlist/master ring is wet
-  /// (mic+playlist faders baked, master applied here).
+  /// Scale for the WebRTC buffer. Mic ring is dry of playlist; master may
+  /// already be baked. Playlist is added in MixCaptureInjector before this scale.
   func publishOutputScale(didInjectMix: Bool) -> Float {
     bufferLock.lock()
     let gain = cachedPublishGain
@@ -1136,10 +1343,18 @@ final class NativeAudioEngine {
     let muted = micMuted
     bufferLock.unlock()
     if didInjectMix, wetMaster {
-      // Mic mute already silenced micMixer; playlist can still go out.
+      // Mic mute already silenced micProgramSend. Playlist is mixed after this scale
+      // is chosen; MixCaptureInjector overrides when a voice is playing.
       return master
     }
-    if muted || gain <= 0 { return 0 }
+    if didInjectMix, !muted {
+      return gain
+    }
+    // Mic mute must not zero a wet playlist mix. Dry mic-only ring can go silent.
+    if muted {
+      return 0
+    }
+    if gain <= 0 { return 0 }
     return gain
   }
 
@@ -1388,6 +1603,7 @@ final class NativeAudioEngine {
   /// Rebuild full mix graph (program + cue PFL) and start capture.
   /// On failure, resetEngineInstance detaches nodes before replacing the engine.
   private func rebuildAndStart(deviceId: String?) throws {
+    receivedStereoVotes = 0
     let preservePublish = micWired
     if preservePublish {
       beginInputHotSwap()
@@ -1795,6 +2011,12 @@ final class NativeAudioEngine {
           self.engineSampleRate = buffer.format.sampleRate
         }
         let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
+        self.observeInputLayout(
+          left: ch[0],
+          right: right,
+          frames: frames,
+          channelCount: buffer.format.channelCount
+        )
         var acc: Float = 0
         for f in 0..<frames {
           let l = ch[0][f]
@@ -1832,6 +2054,12 @@ final class NativeAudioEngine {
           let frames = Int(buffer.frameLength)
           guard frames > 0 else { return }
           let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
+          self.observeInputLayout(
+            left: ch[0],
+            right: right,
+            frames: frames,
+            channelCount: buffer.format.channelCount
+          )
           var acc: Float = 0
           for f in 0..<frames {
             let l = ch[0][f]
@@ -1851,30 +2079,11 @@ final class NativeAudioEngine {
     }
     let micMeterOk = micOk || inputOk
 
-    var playErr: NSError?
-    let playOk = SMCatchException(&playErr) { [self] in
-      self.playlistMixer.installTap(onBus: 0, bufferSize: 1024, format: nil) {
-        [weak self] buffer, _ in
-        guard let self, let ch = buffer.floatChannelData else { return }
-        let frames = Int(buffer.frameLength)
-        guard frames > 0 else { return }
-        let right = buffer.format.channelCount > 1 ? ch[1] : ch[0]
-        var acc: Float = 0
-        for f in 0..<frames {
-          let l = ch[0][f]
-          let r = right[f]
-          acc += l * l + r * r
-        }
-        let rms = sqrt(acc / Float(max(frames * 2, 1)))
-        if self.playlistMuted {
-          self.playlistLevel = 0
-          return
-        }
-        self.playlistLevel = self.meterLevel(rms: rms * max(self.playlistFader, 0))
-      }
-    }
+    var playOk = true
+    // Playlist is mixed in MixCaptureInjector (WHIP), not this tap. Tapping the
+    // silent playlistMixer here would overwrite the playlist meter with zero.
 
-    // Master bus: meters + sole WHIP feed (resampled to 48 kHz in the ring).
+    // Master bus: mic meters + WHIP ring. Playlist is added on the capture callback.
     var masterErr: NSError?
     let masterOk = SMCatchException(&masterErr) { [self] in
       self.masterMixer.installTap(onBus: 0, bufferSize: 2048, format: nil) {
@@ -1896,7 +2105,7 @@ final class NativeAudioEngine {
         let next = self.meterLevel(rms: rms * max(self.masterFader, 0))
         self.masterLevel = max(self.masterLevel * 0.5, next)
 
-        // Always publish master (mic ± playlist). Matches console meters / Listen.
+        // Mic (and any graph mix) for the WHIP ring. Playlist is mixed at capture.
         self.writePcmToRing(
           left: ch[0],
           right: right,
@@ -2350,6 +2559,7 @@ final class NativeAudioEngine {
     micTapPull.outputVolume = (micWired || speechListening) ? 0.001 : 0
     // Cue level is independent of the master fader (operator monitoring).
     engine.mainMixerNode.outputVolume = headphonesOutputVolume
+    applyMonitorGain()
   }
 
   private func startMeters() {
@@ -2357,6 +2567,13 @@ final class NativeAudioEngine {
     meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
       guard let self else { return }
       self.refreshTrackTimes()
+      let playlistRms = self.softPlaylist.lastRms
+      if playlistRms > 0 {
+        self.playlistLevel = max(
+          self.playlistLevel,
+          self.meterLevel(rms: playlistRms)
+        )
+      }
       // Ballistics: fall smoothly when the tap is quiet between buffers.
       self.micLevel *= 0.9
       self.playlistLevel *= 0.9
@@ -2370,14 +2587,16 @@ final class NativeAudioEngine {
 
   private func refreshTrackTimes() {
     var changed = false
-    for (id, player) in playerNodes {
-      guard trackMeta[id] != nil else { continue }
-      if player.isPlaying {
-        // AVAudioPlayerNode doesn't expose easy position; keep playing flag.
-        if trackMeta[id]?.playing != true {
-          trackMeta[id]?.playing = true
-          changed = true
-        }
+    for id in trackMeta.keys {
+      let playing = softPlaylist.isPlaying(id)
+      let time = softPlaylist.currentTime(id)
+      if trackMeta[id]?.playing != playing {
+        trackMeta[id]?.playing = playing
+        changed = true
+      }
+      if let current = trackMeta[id]?.currentTime, abs(current - time) > 0.05 {
+        trackMeta[id]?.currentTime = time
+        changed = true
       }
     }
     if changed { emitTracks() }

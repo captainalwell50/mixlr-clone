@@ -6,11 +6,14 @@ use App\Models\Stream;
 use App\Models\StudioAudioAsset;
 use App\Services\GoogleDriveService;
 use App\Services\StorageQuotaService;
+use App\Support\HttpByteRange;
+use App\Support\LibraryByteRangeResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StudioAudioLibraryController extends Controller
@@ -57,7 +60,7 @@ class StudioAudioLibraryController extends Controller
         abort_unless($org, 404);
 
         $validated = $request->validate([
-            'audio' => ['required', 'file', 'max:51200', 'mimes:mp3,wav,m4a,aac,ogg,flac,webm,mp4'],
+            'audio' => ['required', 'file', 'max:51200'],
             'title' => ['nullable', 'string', 'max:255'],
             'duration_seconds' => ['nullable', 'numeric', 'min:0', 'max:86400'],
             'destination' => ['nullable', 'in:local,platform,drive'],
@@ -65,6 +68,7 @@ class StudioAudioLibraryController extends Controller
 
         /** @var \Illuminate\Http\UploadedFile $file */
         $file = $validated['audio'];
+        $this->assertAudioFile($file);
         $original = $file->getClientOriginalName() ?: 'audio';
         $title = trim((string) ($validated['title'] ?? ''));
         if ($title === '') {
@@ -78,7 +82,11 @@ class StudioAudioLibraryController extends Controller
 
         if ($destination === 'drive') {
             $connection = $org->driveConnection;
-            abort_unless($connection, 422, 'Connect Google Drive first.');
+            if ($connection === null) {
+                throw ValidationException::withMessages([
+                    'destination' => 'Connect Google Drive first, or save to Server disk / Platform.',
+                ]);
+            }
 
             $uploaded = $drive->uploadAudio(
                 $connection,
@@ -103,7 +111,10 @@ class StudioAudioLibraryController extends Controller
                     : null,
             ]);
 
-            return response()->json(['asset' => $asset->toLibraryPayload($stream)], 201);
+            return response()->json([
+                'asset' => $asset->toLibraryPayload($stream),
+                'stored_as' => StudioAudioAsset::PROVIDER_DRIVE,
+            ], 201);
         }
 
         $quota->assertCanStore($org, $size);
@@ -136,7 +147,16 @@ class StudioAudioLibraryController extends Controller
                 : null,
         ]);
 
-        return response()->json(['asset' => $asset->toLibraryPayload($stream)], 201);
+        $notice = null;
+        if ($destination === 'platform' && $provider === StudioAudioAsset::PROVIDER_LOCAL) {
+            $notice = 'Platform cloud storage is not enabled, so this file was saved on the server disk.';
+        }
+
+        return response()->json([
+            'asset' => $asset->toLibraryPayload($stream),
+            'stored_as' => $provider,
+            'notice' => $notice,
+        ], 201);
     }
 
     public function importDrive(
@@ -183,34 +203,149 @@ class StudioAudioLibraryController extends Controller
         abort_unless($asset->stream_id === $stream->id, 404);
 
         if ($asset->isDrive()) {
-            $connection = $stream->organization?->driveConnection;
-            abort_unless($connection && $asset->external_id, 404);
-            $body = $drive->download($connection, $asset->external_id);
-
-            return response($body, 200, [
-                'Content-Type' => $asset->mime_type ?: 'audio/mpeg',
-                'Content-Disposition' => 'inline; filename="'.$asset->original_filename.'"',
-                'Cache-Control' => 'private, max-age=300',
-            ]);
+            return $this->driveFile($request, $stream, $asset, $drive);
         }
 
         if ($asset->storage_provider === StudioAudioAsset::PROVIDER_PLATFORM && config('object_storage.enabled')) {
             $disk = Storage::disk((string) config('object_storage.disk', 's3'));
             abort_unless($disk->exists($asset->path), 404);
 
-            return $disk->response($asset->path, $asset->original_filename, [
-                'Content-Type' => $asset->mime_type ?: 'audio/mpeg',
-                'Cache-Control' => 'private, max-age=3600',
-            ]);
+            return $this->objectFile($request, $disk, $asset);
         }
 
         $disk = Storage::disk('public');
         abort_unless($disk->exists($asset->path), 404);
+        $path = $disk->path($asset->path);
+        $size = filesize($path);
+        abort_unless($size !== false, 404);
 
-        return $disk->response($asset->path, $asset->original_filename, [
-            'Content-Type' => $asset->mime_type ?: 'audio/mpeg',
-            'Cache-Control' => 'private, max-age=3600',
-        ]);
+        return LibraryByteRangeResponse::respond(
+            $request,
+            $size,
+            $this->playbackHeaders($asset, 3600),
+            static function (int $start, int $length) use ($path): void {
+                LibraryByteRangeResponse::readLocal($path, $start, $length);
+            },
+            filemtime($path) ?: null,
+        );
+    }
+
+    private function objectFile(Request $request, mixed $disk, StudioAudioAsset $asset): StreamedResponse|Response
+    {
+        $size = (int) $disk->size($asset->path);
+        $mtime = $disk->lastModified($asset->path) ?: null;
+        $headers = $this->playbackHeaders($asset, 3600);
+        $asked = HttpByteRange::resolve($request->headers->get('Range'), $size);
+
+        if (! method_exists($disk, 'getClient')) {
+            if ($asked->outcome !== HttpByteRange::FULL) {
+                return LibraryByteRangeResponse::unsatisfiable($size, $headers);
+            }
+
+            $resource = $disk->readStream($asset->path);
+            abort_unless(is_resource($resource), 404);
+
+            return LibraryByteRangeResponse::respond(
+                $request,
+                $size,
+                $headers,
+                static function (int $start, int $length) use ($resource): void {
+                    LibraryByteRangeResponse::copyChunks($resource, $length, fread(...));
+                    fclose($resource);
+                },
+                $mtime,
+            );
+        }
+
+        $diskName = (string) config('object_storage.disk', 's3');
+        $bucket = (string) config('filesystems.disks.'.$diskName.'.bucket');
+        $key = $asset->path;
+
+        return LibraryByteRangeResponse::respond(
+            $request,
+            $size,
+            $headers,
+            static function (int $start, int $length) use ($disk, $bucket, $key, $size): void {
+                $params = [
+                    'Bucket' => $bucket,
+                    'Key' => $key,
+                ];
+                if ($length !== $size || $start !== 0) {
+                    $params['Range'] = sprintf('bytes=%d-%d', $start, $start + max(0, $length) - 1);
+                }
+                $body = $disk->getClient()->getObject($params)['Body'];
+                $left = $length;
+                while ($left > 0 && ! $body->eof()) {
+                    $chunk = $body->read(min(8192, $left));
+                    if ($chunk === '') {
+                        break;
+                    }
+                    echo $chunk;
+                    $left -= strlen($chunk);
+                    if (connection_aborted()) {
+                        break;
+                    }
+                }
+                $body->close();
+            },
+            $mtime,
+        );
+    }
+
+    private function driveFile(
+        Request $request,
+        Stream $stream,
+        StudioAudioAsset $asset,
+        GoogleDriveService $drive,
+    ): StreamedResponse|Response {
+        $connection = $stream->organization?->driveConnection;
+        abort_unless($connection && $asset->external_id, 404);
+
+        $size = (int) $asset->size_bytes;
+        if ($size <= 0) {
+            $size = (int) ($drive->metadata($connection, $asset->external_id)['size'] ?? 0);
+        }
+
+        $headers = $this->playbackHeaders($asset, 300);
+        $mtime = $asset->updated_at?->getTimestamp();
+        $asked = LibraryByteRangeResponse::resolveRequest($request, $size, $mtime);
+        if ($asked->outcome === HttpByteRange::REJECT || $request->isMethod('HEAD')) {
+            return LibraryByteRangeResponse::respond(
+                $request,
+                $size,
+                $headers,
+                static function (): void {},
+                $mtime,
+            );
+        }
+
+        $range = $asked->outcome === HttpByteRange::PARTIAL
+            ? sprintf('bytes=%d-%d', $asked->start, $asked->end)
+            : null;
+        $remote = $drive->openMedia($connection, (string) $asset->external_id, $range);
+        if ($range !== null && $remote->status() !== 206) {
+            $remote->close();
+
+            return LibraryByteRangeResponse::unsatisfiable($size, $headers);
+        }
+        if ($remote->status() !== 200 && $remote->status() !== 206) {
+            $remote->close();
+            abort(404);
+        }
+
+        return LibraryByteRangeResponse::respond(
+            $request,
+            $size,
+            $headers,
+            static function (int $start, int $length) use ($remote): void {
+                $resource = $remote->resource();
+                if (is_resource($resource)) {
+                    LibraryByteRangeResponse::copyChunks($resource, $length, fread(...));
+                }
+                $remote->close();
+            },
+            $mtime,
+        );
     }
 
     public function destroy(Request $request, Stream $stream, StudioAudioAsset $asset): JsonResponse
@@ -241,5 +376,40 @@ class StudioAudioLibraryController extends Controller
         $signed = $request->hasValidSignature();
 
         abort_unless($canManage || $signed, 403);
+    }
+
+    /**
+     * @param  \Illuminate\Http\UploadedFile  $file
+     */
+    private function assertAudioFile($file): void
+    {
+        $extension = strtolower((string) $file->getClientOriginalExtension());
+        $allowed = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'webm', 'mp4', 'mpeg', 'mpga'];
+        $mime = (string) ($file->getMimeType() ?: '');
+        $looksAudio = str_starts_with($mime, 'audio/')
+            || in_array($extension, $allowed, true)
+            || in_array($mime, ['video/mp4', 'video/webm', 'application/ogg'], true);
+
+        if (! $looksAudio) {
+            throw ValidationException::withMessages([
+                'audio' => 'Use an audio file (mp3, wav, m4a, aac, ogg, or flac).',
+            ]);
+        }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function playbackHeaders(StudioAudioAsset $asset, int $maxAge): array
+    {
+        $filename = str_replace(['"', "\r", "\n"], '', (string) $asset->original_filename);
+
+        return [
+            'Content-Type' => $asset->mime_type ?: 'audio/mpeg',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+            'Cache-Control' => 'private, max-age='.$maxAge,
+            'Access-Control-Allow-Origin' => '*',
+            'Cross-Origin-Resource-Policy' => 'cross-origin',
+        ];
     }
 }

@@ -12,10 +12,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->web(append: [
+            \App\Http\Middleware\ServeTeacherHandleHost::class,
+        ]);
+
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
             'stream.manage' => \App\Http\Middleware\EnsureCanManageStreams::class,
             'onboarded' => \App\Http\Middleware\EnsureOnboarded::class,
+            'affiliate' => \App\Http\Middleware\EnsureApprovedAffiliate::class,
             'subscribed' => \App\Http\Middleware\EnsureSubscribed::class,
         ]);
 

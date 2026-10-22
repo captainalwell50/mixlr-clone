@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\SiteSetting;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -10,7 +11,22 @@ class PaystackClient
 {
     public function enabled(): bool
     {
-        return filled(config('services.paystack.secret_key'));
+        return filled($this->secretKey());
+    }
+
+    public function secretKey(): string
+    {
+        return (string) (SiteSetting::paystackSecretKey() ?? '');
+    }
+
+    public function publicKey(): string
+    {
+        return (string) (SiteSetting::paystackPublicKey() ?? '');
+    }
+
+    public function currency(): string
+    {
+        return SiteSetting::paystackCurrency();
     }
 
     public function createCustomer(string $email, string $name): array
@@ -26,6 +42,15 @@ class PaystackClient
         return $this->post('transaction/initialize', $payload);
     }
 
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function createSubscription(array $payload): array
+    {
+        return $this->post('subscription', $payload);
+    }
+
     public function verifyTransaction(string $reference): array
     {
         return $this->get('transaction/verify/'.rawurlencode($reference));
@@ -33,7 +58,7 @@ class PaystackClient
 
     public function verifyWebhookSignature(string $payload, ?string $signature): bool
     {
-        $secret = (string) config('services.paystack.secret_key');
+        $secret = $this->secretKey();
         if ($secret === '' || $signature === null || $signature === '') {
             return false;
         }
@@ -67,10 +92,11 @@ class PaystackClient
 
     protected function http(): PendingRequest
     {
-        return Http::withToken((string) config('services.paystack.secret_key'))
+        return Http::withToken($this->secretKey())
             ->acceptJson()
             ->asJson()
-            ->timeout(30);
+            ->timeout(20)
+            ->retry(3, 400);
     }
 
     protected function url(string $path): string

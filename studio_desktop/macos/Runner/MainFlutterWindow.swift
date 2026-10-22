@@ -14,6 +14,7 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.registrar(forPlugin: "MixerEnginePlugin"),
       hostView: flutterViewController.view
     )
+    NdiPlugin.register(with: flutterViewController.registrar(forPlugin: "NdiPlugin"))
     super.awakeFromNib()
   }
 }

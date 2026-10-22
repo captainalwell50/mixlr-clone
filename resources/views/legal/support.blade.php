@@ -38,6 +38,16 @@
                 For account deletion requests you can also use the in-app or website Account deletion flow.
             </p>
 
+            @if(\App\Support\WhatsAppSupport::isEnabled())
+                <h2>WhatsApp Support</h2>
+                <p>
+                    For direct real-time assistance, chat with our team on WhatsApp:
+                    <a class="mkt-support-email text-[#25D366] font-medium" href="{{ \App\Support\WhatsAppSupport::url('public', 'Support Page') }}" target="_blank" rel="noopener noreferrer">
+                        Chat on WhatsApp
+                    </a>
+                </p>
+            @endif
+
             <h2>Self-serve links</h2>
             <ul>
                 <li><a href="{{ route('how-it-works') }}">How it works</a></li>

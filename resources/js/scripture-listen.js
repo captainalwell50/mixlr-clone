@@ -1,42 +1,13 @@
-// Keep tight while live — scripture/song are poll-only (no websocket). Rate limit: listen-poll 900/min.
+// Keep tight while live — scripture/song/NDI are poll-only (no websocket). Rate limit: listen-poll 900/min.
 const POLL_MS = 1500;
 const DEFAULT_VERSION = 'KJV';
 
 /**
- * Poll current scripture / song and drive the EasyWorship-style portal-art slide.
- * Last successful cue wins (scripture vs song).
+ * Poll current live board and drive both:
+ * 1. The premium live player scripture overlay (lower-third inside portal-artwork-frame).
+ * 2. The below-the-fold/tab scripture slide and live board details.
+ * Last successful cue wins (scripture vs song vs NDI).
  */
-
-function preferSong(data) {
-    if (data?.live_board === 'scripture') {
-        return false;
-    }
-    if (data?.live_board === 'song') {
-        return true;
-    }
-    const song = data?.song;
-    const scripture = data?.scripture;
-    const hasSong = Boolean(song?.title && song?.text);
-    const hasScripture = Boolean(scripture?.ref && scripture?.text);
-    if (!hasSong) {
-        return false;
-    }
-    if (!hasScripture) {
-        return true;
-    }
-    const songAt = Date.parse(song.updated_at || '');
-    const scriptureAt = Date.parse(scripture.updated_at || '');
-    if (Number.isFinite(songAt) && Number.isFinite(scriptureAt)) {
-        return songAt > scriptureAt;
-    }
-    if (Number.isFinite(scriptureAt) && !Number.isFinite(songAt)) {
-        return false;
-    }
-    if (Number.isFinite(songAt) && !Number.isFinite(scriptureAt)) {
-        return true;
-    }
-    return false;
-}
 export function bindScriptureListen(root) {
     const host = root?.dataset?.scriptureUrl
         ? root
@@ -46,22 +17,73 @@ export function bindScriptureListen(root) {
         return;
     }
 
+    // Right-column / tab elements
     const scriptureSlide = document.getElementById('scripture-slide');
     const songSlide = document.getElementById('song-slide');
+    const ndiSlide = document.getElementById('ndi-slide');
     const scriptureRefEl = scriptureSlide?.querySelector('.scripture-ref');
     const scriptureTextEl = scriptureSlide?.querySelector('.scripture-text');
     const songTitleEl = songSlide?.querySelector('.scripture-ref');
     const songTextEl = songSlide?.querySelector('.scripture-text');
     const songMetaEl = songSlide?.querySelector('.song-slide-meta');
+    const ndiImage = document.getElementById('ndi-slide-image');
+    const ndiSourceEl = document.getElementById('ndi-slide-source');
     const art = document.querySelector('.portal-art');
-    if (!scriptureSlide || !scriptureRefEl || !scriptureTextEl) {
+    const scriptureEmpty = document.getElementById('scripture-empty-state');
+    const scriptureDot = document.getElementById('scripture-tab-dot');
+    const cards = document.getElementById('portal-cards');
+
+    // Premium live player overlay elements
+    const overlay = document.getElementById('live-scripture-overlay');
+    const overlayCard = document.getElementById('live-scripture-card');
+    const overlayRef = document.getElementById('live-scripture-ref');
+    const overlayText = document.getElementById('live-scripture-text');
+    const overlayHint = document.getElementById('live-scripture-expand-hint');
+
+    if (!scriptureSlide && !overlay) {
         return;
     }
 
     let lastKey = '';
     let timer = null;
+    let hideOverlayTimer = null;
+
+    // Mobile tap-to-expand behavior for full verse
+    if (overlayCard) {
+        overlayCard.addEventListener('click', () => {
+            const selection = window.getSelection();
+            if (selection && selection.toString().length > 0) {
+                return;
+            }
+            const isExpanded = overlayCard.classList.toggle('is-expanded');
+            overlayCard.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+            if (overlayHint) {
+                const label = overlayHint.querySelector('.expand-label');
+                if (label) {
+                    label.textContent = isExpanded ? 'Tap to collapse' : 'Tap to expand';
+                }
+            }
+        });
+
+        overlayCard.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                overlayCard.click();
+            }
+        });
+    }
+
+    function notifyActive() {
+        if (scriptureEmpty) {
+            scriptureEmpty.classList.add('hidden');
+        }
+        if (scriptureDot && cards && cards.dataset.activeTab !== 'scripture' && cards.dataset.activeTab !== 'board') {
+            scriptureDot.classList.remove('hidden');
+        }
+    }
 
     function setReference(refEl, ref, version) {
+        if (!refEl) return;
         const label = (version || DEFAULT_VERSION).trim() || DEFAULT_VERSION;
         refEl.replaceChildren();
         refEl.append(document.createTextNode(ref));
@@ -71,14 +93,113 @@ export function bindScriptureListen(root) {
         refEl.append(ver);
     }
 
+    function showOverlay(scripture) {
+        if (!overlay || !overlayRef || !overlayText) {
+            return;
+        }
+        if (hideOverlayTimer) {
+            window.clearTimeout(hideOverlayTimer);
+            hideOverlayTimer = null;
+        }
+
+        const version = (scripture.version || DEFAULT_VERSION).trim() || DEFAULT_VERSION;
+        overlayRef.replaceChildren();
+        overlayRef.append(document.createTextNode(scripture.ref));
+        const verSpan = document.createElement('span');
+        verSpan.className = 'live-scripture-version';
+        verSpan.textContent = ` (${version})`;
+        overlayRef.append(verSpan);
+
+        overlayText.textContent = `“${scripture.text}”`;
+
+        if (overlayCard) {
+            overlayCard.classList.remove('is-expanded');
+            overlayCard.setAttribute('aria-expanded', 'false');
+        }
+        if (overlayHint) {
+            const label = overlayHint.querySelector('.expand-label');
+            if (label) {
+                label.textContent = 'Tap to expand';
+            }
+        }
+
+        const accBadge = document.getElementById('scripture-accordion-badge');
+        if (accBadge) {
+            accBadge.textContent = scripture.ref;
+            accBadge.classList.remove('hidden');
+        }
+
+        if (overlay.hidden || !overlay.classList.contains('is-visible')) {
+            overlay.classList.remove('is-leaving');
+            overlay.hidden = false;
+            void overlay.offsetWidth;
+            requestAnimationFrame(() => {
+                overlay.classList.add('is-visible');
+            });
+        } else {
+            // Subtle transition on content change
+            overlayText.style.transition = 'opacity 120ms ease';
+            overlayText.style.opacity = '0.5';
+            requestAnimationFrame(() => {
+                overlayText.style.opacity = '1';
+            });
+        }
+    }
+
+    function hideOverlay() {
+        const accBadge = document.getElementById('scripture-accordion-badge');
+        if (accBadge) {
+            accBadge.textContent = '';
+            accBadge.classList.add('hidden');
+        }
+
+        if (!overlay || overlay.hidden) {
+            return;
+        }
+
+        overlay.classList.remove('is-visible');
+        overlay.classList.add('is-leaving');
+
+        if (hideOverlayTimer) {
+            window.clearTimeout(hideOverlayTimer);
+        }
+        hideOverlayTimer = window.setTimeout(() => {
+            overlay.hidden = true;
+            overlay.classList.remove('is-leaving');
+            if (overlayRef) {
+                overlayRef.replaceChildren();
+            }
+            if (overlayText) {
+                overlayText.textContent = '';
+            }
+            hideOverlayTimer = null;
+        }, 170);
+    }
+
     function hideAll() {
-        scriptureSlide.hidden = true;
+        hideOverlay();
+        if (scriptureSlide) {
+            scriptureSlide.hidden = true;
+        }
         if (songSlide) {
             songSlide.hidden = true;
         }
-        art?.classList.remove('has-scripture', 'has-song');
-        scriptureRefEl.replaceChildren();
-        scriptureTextEl.textContent = '';
+        if (ndiSlide) {
+            ndiSlide.hidden = true;
+        }
+        if (scriptureEmpty) {
+            scriptureEmpty.classList.remove('hidden');
+        }
+        if (scriptureDot) {
+            scriptureDot.classList.add('hidden');
+        }
+        art?.classList.remove('has-scripture', 'has-song', 'has-ndi');
+        if (scriptureRefEl) {
+            scriptureRefEl.replaceChildren();
+        }
+        if (scriptureTextEl) {
+            scriptureTextEl.textContent = '';
+        }
         if (songTitleEl) {
             songTitleEl.replaceChildren();
         }
@@ -87,6 +208,12 @@ export function bindScriptureListen(root) {
         }
         if (songMetaEl) {
             songMetaEl.textContent = '';
+        }
+        if (ndiImage) {
+            ndiImage.removeAttribute('src');
+        }
+        if (ndiSourceEl) {
+            ndiSourceEl.textContent = '';
         }
     }
 
@@ -104,14 +231,18 @@ export function bindScriptureListen(root) {
             if (!data.enabled) {
                 return;
             }
+            const mode = data.live_board || '';
             const scripture = data.scripture;
-            const song = preferSong(data) ? data.song : null;
+            const song = data.song;
+            const ndi = data.ndi;
             const key = [
-                data.live_board || '',
+                mode,
+                ndi?.image_url || '',
+                ndi?.updated_at || '',
                 song
                     ? `song:${song.title}\n${song.text}\n${song.slide_index}\n${song.updated_at || ''}`
                     : '',
-                !song && scripture
+                scripture
                     ? `scripture:${scripture.ref}\n${scripture.text}\n${scripture.version || ''}\n${scripture.updated_at || ''}`
                     : '',
             ].join('|');
@@ -120,8 +251,37 @@ export function bindScriptureListen(root) {
             }
             lastKey = key;
 
-            if (song?.title && song?.text && songSlide && songTitleEl && songTextEl) {
-                scriptureSlide.hidden = true;
+            if (mode === 'ndi' && ndi?.image_url && ndiSlide && ndiImage) {
+                hideOverlay();
+                if (scriptureSlide) {
+                    scriptureSlide.hidden = true;
+                }
+                if (songSlide) {
+                    songSlide.hidden = true;
+                }
+                if (ndiImage.getAttribute('src') !== ndi.image_url) {
+                    ndiImage.src = ndi.image_url;
+                }
+                if (ndiSourceEl) {
+                    ndiSourceEl.textContent = ndi.source || '';
+                }
+                ndiSlide.hidden = false;
+                art?.classList.add('has-ndi');
+                art?.classList.remove('has-scripture', 'has-song');
+                notifyActive();
+                return;
+            }
+
+            if (ndiSlide) {
+                ndiSlide.hidden = true;
+            }
+            art?.classList.remove('has-ndi');
+
+            if (mode === 'song' && song?.title && song?.text && songSlide && songTitleEl && songTextEl) {
+                hideOverlay();
+                if (scriptureSlide) {
+                    scriptureSlide.hidden = true;
+                }
                 songTitleEl.textContent = song.title;
                 songTextEl.textContent = song.text;
                 if (songMetaEl) {
@@ -132,6 +292,7 @@ export function bindScriptureListen(root) {
                 songSlide.hidden = false;
                 art?.classList.add('has-song');
                 art?.classList.remove('has-scripture');
+                notifyActive();
                 return;
             }
 
@@ -140,15 +301,21 @@ export function bindScriptureListen(root) {
             }
             art?.classList.remove('has-song');
 
-            if (!scripture?.ref || !scripture?.text) {
+            if (mode !== 'scripture' || !scripture?.ref || !scripture?.text) {
                 hideAll();
                 return;
             }
 
-            setReference(scriptureRefEl, scripture.ref, scripture.version);
-            scriptureTextEl.textContent = scripture.text;
-            scriptureSlide.hidden = false;
+            // Mode is scripture: update both overlay and right-column slide
+            showOverlay(scripture);
+
+            if (scriptureSlide && scriptureRefEl && scriptureTextEl) {
+                setReference(scriptureRefEl, scripture.ref, scripture.version);
+                scriptureTextEl.textContent = scripture.text;
+                scriptureSlide.hidden = false;
+            }
             art?.classList.add('has-scripture');
+            notifyActive();
         } catch {
             /* ignore transient errors */
         } finally {
@@ -161,6 +328,9 @@ export function bindScriptureListen(root) {
     window.addEventListener('beforeunload', () => {
         if (timer) {
             window.clearTimeout(timer);
+        }
+        if (hideOverlayTimer) {
+            window.clearTimeout(hideOverlayTimer);
         }
     });
 }

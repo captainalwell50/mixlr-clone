@@ -63,7 +63,7 @@ class NetworkStatus extends ChangeNotifier {
       if (link) {
         _offlineDebounce?.cancel();
         _offlineDebounce = null;
-        _set(NetHealth.degraded, 'No server');
+        _set(NetHealth.degraded, 'Reconnecting');
         return;
       }
 

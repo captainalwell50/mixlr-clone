@@ -108,4 +108,67 @@ class PlanFeaturesTest extends TestCase
             ->assertSee('Donations / support link', false)
             ->assertSee($plan->name, false);
     }
+
+    public function test_billing_page_marks_pro_as_recommended_and_uses_three_columns(): void
+    {
+        $user = User::factory()->create();
+        $org = Organization::query()->create(['name' => 'O', 'slug' => 'pro-billing-'.uniqid()]);
+        $org->users()->attach($user->id, ['role' => OrgRole::Owner->value]);
+
+        Plan::query()->create([
+            'name' => 'Pro',
+            'slug' => 'pro',
+            'amount' => 1500000,
+            'currency' => 'NGN',
+            'interval' => 'monthly',
+            'limits' => PlanFeatureCatalog::defaultLimits(),
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('billing.plans'))
+            ->assertOk()
+            ->assertSee('Recommended', false)
+            ->assertSee('is-recommended', false)
+            ->assertSee('billing-plans-grid', false)
+            ->assertSee('billing-page', false);
+    }
+
+    public function test_billing_page_shows_custom_package_as_contact_sales(): void
+    {
+        $user = User::factory()->create();
+        $org = Organization::query()->create(['name' => 'GIC AOMGs', 'slug' => 'custom-billing-'.uniqid()]);
+        $org->users()->attach($user->id, ['role' => OrgRole::Owner->value]);
+
+        $custom = Plan::query()->where('slug', 'custom')->first();
+        $this->assertNotNull($custom);
+        $this->assertTrue($custom->isCustom());
+        $this->assertFalse($custom->isFree());
+
+        $this->actingAs($user)
+            ->get(route('billing.plans'))
+            ->assertOk()
+            ->assertSee('Contact sales', false)
+            ->assertSee('Pricing and features are tailored', false)
+            ->assertSee('mailto:'.config('app.support_email'), false)
+            ->assertDontSee(route('billing.checkout', $custom), false);
+    }
+
+    public function test_custom_package_cannot_be_self_checked_out(): void
+    {
+        $user = User::factory()->create();
+        $org = Organization::query()->create(['name' => 'Sales Org', 'slug' => 'custom-checkout-'.uniqid()]);
+        $org->users()->attach($user->id, ['role' => OrgRole::Owner->value]);
+        $custom = Plan::query()->where('slug', 'custom')->first();
+        $this->assertNotNull($custom);
+
+        $this->actingAs($user)
+            ->from(route('billing.plans'))
+            ->post(route('billing.checkout', $custom))
+            ->assertRedirect(route('billing.plans'))
+            ->assertSessionHas('error');
+
+        $this->assertNotSame($custom->id, $org->fresh()->subscription?->plan_id);
+    }
 }

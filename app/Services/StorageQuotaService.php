@@ -76,7 +76,7 @@ class StorageQuotaService
 
         throw ValidationException::withMessages([
             'storage' => sprintf(
-                'Platform storage full (%s of %s used). Free space, upgrade your plan, or save the file to Google Drive instead.',
+                'Storage is full (%s of %s used). Upgrade to a higher plan to continue uploading.',
                 $summary['used_label'],
                 $summary['limit_label'],
             ),

@@ -16,6 +16,7 @@ class LiveMixTheme {
   static const good = Color(0xFF3DDC97);
   static const warn = Color(0xFFF0B429);
   static const bad = Color(0xFFFF5C5C);
+  static const line = Color(0x26FFFFFF);
 
   /// @Deprecated — use [accent]. Kept so older call sites compile during rename.
   static const gold = accent;

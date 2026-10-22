@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 
 import '../brand.dart';
 import '../models/models.dart';
-import '../services/api_client.dart';
 import '../services/auth_state.dart';
 import '../services/cache_store.dart';
 import '../services/network_status.dart';
@@ -29,6 +28,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   DateTime? _cachedAt;
   bool _loading = true;
   bool _fromCache = false;
+  bool _loadFailed = false;
   bool _searchOpen = false;
   String _query = '';
   String? _error;
@@ -63,6 +63,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     final net = context.read<NetworkStatus>();
     setState(() {
       _error = null;
+      _loadFailed = false;
       if (_streams.isEmpty) _loading = true;
     });
 
@@ -74,10 +75,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         _streams = streams;
         _cachedAt = DateTime.now();
         _fromCache = false;
+        _loadFailed = false;
         _loading = false;
       });
       await net.refresh();
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       final cached = await _cache.loadDiscover();
       setState(() {
@@ -85,11 +87,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           _streams = cached.streams;
           _cachedAt = cached.savedAt;
           _fromCache = true;
-          _error = net.hasLink
-              ? 'Couldn’t refresh — showing saved rooms'
-              : 'Offline — showing saved rooms';
+          _loadFailed = false;
+          _error = 'Showing saved rooms. Pull to refresh.';
         } else {
-          _error = e is ApiException ? e.message : e.toString();
+          _loadFailed = true;
+          _error = null;
         }
         _loading = false;
       });
@@ -246,7 +248,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                           Text(
                             _searchOpen && _query.trim().isNotEmpty
                                 ? 'No matching creators'
-                                : 'No live rooms right now',
+                                : (_loadFailed
+                                    ? 'Can’t load live rooms'
+                                    : 'No live rooms right now'),
                             style: GoogleFonts.outfit(
                               color: LiveMixTheme.mist,
                               fontWeight: FontWeight.w700,
@@ -257,7 +261,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                           Text(
                             _searchOpen && _query.trim().isNotEmpty
                                 ? 'Try another name, or clear search to see who’s live.'
-                                : 'When a creator goes on air, they’ll show up here.',
+                                : (_loadFailed
+                                    ? 'Check your connection, then pull down to try again.'
+                                    : 'When a creator goes on air, they’ll show up here.'),
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: LiveMixTheme.mute,

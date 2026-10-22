@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOST="${DEPLOY_HOST:-azureuser@20.120.113.129}"
+HOST="${DEPLOY_HOST:-azureuser@20.55.5.40}"
 REMOTE="${DEPLOY_PATH:-/var/www/app}"
 
 rsync -az \

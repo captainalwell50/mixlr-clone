@@ -35,7 +35,7 @@ class EnsureSubscribed
 
         return redirect()
             ->route('billing.plans')
-            ->with('error', __('Subscribe or start a trial to go on air or create streams.'));
+            ->with('error', __('Subscribe to go on air or create streams.'));
     }
 
     protected function resolveOrganization(Request $request): ?Organization

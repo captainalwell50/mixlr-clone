@@ -36,3 +36,12 @@ Thumbs.db
 /studio_desktop/macos/Flutter/ephemeral
 /.tools/
 
+.azure-vm-capacity-token
+
+# Deployment & SSH Keys
+/deploy/ssh/
+/deploy/hostgator/id_*
+*.key
+*.pem
+id_ed25519*
+id_rsa*

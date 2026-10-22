@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\StudioExpiry;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
 class StudioAudioAsset extends Model
@@ -62,28 +62,19 @@ class StudioAudioAsset extends Model
         return in_array($this->storage_provider, [self::PROVIDER_LOCAL, self::PROVIDER_PLATFORM], true);
     }
 
+    /**
+     * Same-origin signed playback URL so Studio (and desktop) can load the
+     * file without a public /storage symlink, APP_URL host mismatch, or R2 CORS.
+     */
     public function url(?Stream $stream = null): string
     {
         $stream ??= $this->stream;
 
-        if ($this->isDrive()) {
-            return URL::temporarySignedRoute(
-                'studio.library.file',
-                now()->addHours(12),
-                ['stream' => $stream, 'asset' => $this],
-            );
-        }
-
-        if ($this->storage_provider === self::PROVIDER_PLATFORM && config('object_storage.enabled')) {
-            try {
-                return Storage::disk((string) config('object_storage.disk', 's3'))
-                    ->temporaryUrl($this->path, now()->addHours(6));
-            } catch (\Throwable) {
-                // fall through
-            }
-        }
-
-        return Storage::disk('public')->url($this->path);
+        return URL::temporarySignedRoute(
+            'studio.library.file',
+            StudioExpiry::at(),
+            ['stream' => $stream, 'asset' => $this],
+        );
     }
 
     /**
@@ -104,7 +95,7 @@ class StudioAudioAsset extends Model
             'storage_provider' => $this->storage_provider,
             'delete_url' => URL::temporarySignedRoute(
                 'studio.library.destroy',
-                now()->addHours(12),
+                StudioExpiry::at(),
                 ['stream' => $stream, 'asset' => $this],
             ),
             'created_at' => $this->created_at?->toIso8601String(),

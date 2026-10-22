@@ -13,10 +13,9 @@ authHTTPExclude:
   - action: api
   - action: metrics
   - action: pprof
-  # Public listen (HLS/WHEP) must never challenge Basic auth in the browser.
-  # Publish/WHIP still goes through authHTTPAddress.
-  - action: read
-  - action: playback
+  # read and playback are decided by Laravel /api/mediamtx/auth.
+  # Public programmes are allowed with no credentials (HTTP 200, no Basic prompt).
+  # A live private event requires the short-lived media capability; denial is 403.
 
 # Internal RTSP for ffmpeg Opus→AAC sidecar (do not expose publicly).
 rtsp: true
@@ -32,8 +31,8 @@ webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
 # Docker advertises bridge IPs if true — break ICE from browsers. Prefer false + public hosts.
 webrtcIPsFromInterfaces: false
-# Local: leave empty. Production Azure VM: list public IP and hostname.
-webrtcAdditionalHosts: ['soundmix.live', 'www.soundmix.live', '20.120.113.129']
+# Public hostname + current Azure IP only. A stale IP (old VM) becomes a dead ICE candidate.
+webrtcAdditionalHosts: ['soundmix.live', 'www.soundmix.live', '20.55.5.40']
 
 hls: true
 hlsAddress: :8888

@@ -35,6 +35,8 @@ class ApiClient {
 
   void setToken(String? token) => _token = token;
 
+  String? get authToken => _token;
+
   Map<String, String> _headers({bool auth = false, String? contentType}) {
     return {
       'Accept': 'application/json',
@@ -199,6 +201,7 @@ class ApiClient {
       whipUrl: publish['whip_url'] as String? ?? '',
       hlsUrl: publish['hls_url'] as String?,
       whepUrl: publish['whep_url'] as String?,
+      opusSendBitrate: publish['opus_send_bitrate'] as int? ?? 320000,
       stream: streamJson == null ? null : StreamSummary.fromJson(streamJson),
       event: eventJson == null ? null : EventSummary.fromJson(eventJson),
     );

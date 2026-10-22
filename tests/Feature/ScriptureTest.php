@@ -212,7 +212,48 @@ class ScriptureTest extends TestCase
             ->assertSee('scripture-board-name', false)
             ->assertSee('Scripture Board', false)
             ->assertSee('scripture-version', false)
-            ->assertSee('(KJV)', false);
+            ->assertSee('(KJV)', false)
+            ->assertSee('live-scripture-overlay', false)
+            ->assertSee('is-visible', false)
+            ->assertSee('John 10:30', false)
+            ->assertSee('I and my Father are one.', false);
+    }
+
+    public function test_event_listen_page_hides_scripture_overlay_when_not_active(): void
+    {
+        [, $stream] = $this->churchStream();
+        $event = Event::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'title' => 'Sunday Service',
+            'status' => EventStatus::Live,
+            'scripture_ref' => null,
+            'scripture_text' => null,
+        ]);
+
+        $this->get(route('events.show', $event))
+            ->assertOk()
+            ->assertSee('data-scripture-url', false)
+            ->assertSee('id="live-scripture-overlay"', false)
+            ->assertSee('hidden', false)
+            ->assertDontSee('is-visible');
+    }
+
+    public function test_event_listen_page_excludes_scripture_overlay_for_non_church_channel(): void
+    {
+        [, $stream] = $this->radioStream();
+        $event = Event::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'title' => 'Radio Evening Show',
+            'status' => EventStatus::Live,
+        ]);
+
+        $this->get(route('events.show', $event))
+            ->assertOk()
+            ->assertDontSee('data-scripture-url')
+            ->assertDontSee('live-scripture-overlay')
+            ->assertDontSee('live-scripture-card');
     }
 
     public function test_sanctum_api_scripture_for_desktop_studio(): void

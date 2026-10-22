@@ -103,7 +103,7 @@
                         @if ($live)
                             Happening now — open the stage and listen in.
                         @elseif ($thisSunday->scheduled_at)
-                            {{ $thisSunday->scheduled_at->timezone(config('app.timezone'))->format('l, M j · g:i A T') }}
+                            {{ \App\Support\LocalTime::format($thisSunday->scheduled_at, 'l, M j · g:i A T') }}
                         @else
                             Scheduled soon.
                         @endif
@@ -127,7 +127,7 @@
                                 'href' => route('events.show', $event),
                                 'title' => $event->title,
                                 'subtitle' => $event->scheduled_at
-                                    ? $event->scheduled_at->timezone(config('app.timezone'))->format('M j · g:i A')
+                                    ? \App\Support\LocalTime::format($event->scheduled_at, 'M j · g:i A')
                                     : 'TBA',
                                 'artwork' => $event->artworkUrl(),
                                 'accent' => $theme,
@@ -147,7 +147,9 @@
                             @include('partials.art-tile', [
                                 'href' => route('archive.play', $recording),
                                 'title' => $recording->displayTitle(),
-                                'subtitle' => $recording->completed_at->format('M j, Y'),
+                                'subtitle' => $recording->occurredAt()
+                                    ? \App\Support\LocalTime::format($recording->occurredAt(), 'M j, Y')
+                                    : '',
                                 'artwork' => $organization->artworkUrl(),
                                 'accent' => $theme,
                             ])
@@ -158,3 +160,12 @@
         </div>
     </div>
 @endsection
+
+@section('whatsapp_widget')
+    <x-whatsapp-support
+        context="public"
+        :organisation="$organization->name"
+        :pageLabel="'Channel: '.$organization->name"
+    />
+@endsection
+

@@ -40,8 +40,8 @@ class ChannelController extends Controller
         $recordings = Recording::query()
             ->publicArchive()
             ->whereHas('stream', fn ($q) => $q->where('organization_id', $organization->id))
-            ->with('stream')
-            ->latest('completed_at')
+            ->with(['stream', 'event'])
+            ->orderedForArchive()
             ->limit(20)
             ->get();
 

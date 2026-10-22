@@ -65,6 +65,9 @@ class PaystackWebhookTest extends TestCase
                     'organization_id' => $org->id,
                     'plan_id' => $plan->id,
                 ],
+                'subscription' => [
+                    'next_payment_date' => now()->addDays(7)->toIso8601String(),
+                ],
             ],
         ], JSON_THROW_ON_ERROR);
 
@@ -88,5 +91,7 @@ class PaystackWebhookTest extends TestCase
             'plan_id' => $plan->id,
             'status' => SubscriptionStatus::Active->value,
         ]);
+        $this->assertTrue($org->fresh()->subscription?->renews_at?->isFuture());
+        $this->assertEquals(7, $org->fresh()->subscription?->renewalDaysRemaining());
     }
 }

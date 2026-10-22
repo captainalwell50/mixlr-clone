@@ -4,14 +4,166 @@
  */
 import './bootstrap';
 
-const OPUS_MAX_BITRATE = 510_000;
+/** Stereo Opus send cap. The mixer page supplies the admin rate. */
+const OPUS_SEND_RATES = new Set([128000, 160000, 192000, 256000, 320000, 510000]);
+
+function readOpusSendBitrate(value) {
+    const rate = Number(value);
+    return OPUS_SEND_RATES.has(rate) ? rate : 320000;
+}
+
+let opusSendBitrate = readOpusSendBitrate(document.body?.dataset.opusBitrate);
 const CLEAN_AUDIO = {
-    channelCount: { ideal: 2 },
     sampleRate: { ideal: 48000 },
     echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false,
+    voiceIsolation: false,
 };
+
+/** @type {1 | 2} */
+let receivedChannels = 1;
+/** @type {{ splitter: ChannelSplitterNode, left: AnalyserNode, right: AnalyserNode, timer: ReturnType<typeof setTimeout>|null } | null} */
+let layoutProbe = null;
+
+function applyReceivedMixLayout() {
+    const n = receivedChannels >= 2 ? 2 : 1;
+    try {
+        if (mixDest) {
+            mixDest.channelCount = n;
+            mixDest.channelCountMode = 'explicit';
+        }
+        if (cueDest) {
+            cueDest.channelCount = n;
+        }
+    } catch {
+        /* optional */
+    }
+}
+
+/**
+ * @param {Float32Array} left
+ * @param {Float32Array} right
+ * @returns {0 | 1 | 2}
+ */
+function decideReceivedLayout(left, right) {
+    const n = Math.min(left.length, right.length);
+    if (n < 32) {
+        return 0;
+    }
+    let sumL2 = 0;
+    let sumR2 = 0;
+    let sumLR = 0;
+    let peakL = 0;
+    let peakR = 0;
+    for (let i = 0; i < n; i += 1) {
+        const l = left[i];
+        const r = right[i];
+        sumL2 += l * l;
+        sumR2 += r * r;
+        sumLR += l * r;
+        const al = Math.abs(l);
+        const ar = Math.abs(r);
+        if (al > peakL) peakL = al;
+        if (ar > peakR) peakR = ar;
+    }
+    const rmsL = Math.sqrt(sumL2 / n);
+    const rmsR = Math.sqrt(sumR2 / n);
+    const loud = Math.max(rmsL, rmsR, peakL * 0.5, peakR * 0.5);
+    if (loud < 0.004) {
+        return 0;
+    }
+    if (Math.min(rmsL, rmsR) < loud * 0.12) {
+        return 1;
+    }
+    const denom = Math.sqrt(sumL2 * sumR2);
+    const corr = denom > 0 ? sumLR / denom : 1;
+    return corr > 0.995 ? 1 : 2;
+}
+
+function stopLayoutProbe() {
+    if (!layoutProbe) return;
+    if (layoutProbe.timer) clearTimeout(layoutProbe.timer);
+    try { layoutProbe.splitter.disconnect(); } catch { /* ignore */ }
+    try { layoutProbe.left.disconnect(); } catch { /* ignore */ }
+    try { layoutProbe.right.disconnect(); } catch { /* ignore */ }
+    layoutProbe = null;
+}
+
+function startLayoutProbe(sourceNode) {
+    stopLayoutProbe();
+    if (!audioCtx || !sourceNode) return;
+    if ((sourceNode.channelCount || 1) < 2) {
+        receivedChannels = 1;
+        applyReceivedMixLayout();
+        return;
+    }
+    const splitter = audioCtx.createChannelSplitter(2);
+    const left = audioCtx.createAnalyser();
+    const right = audioCtx.createAnalyser();
+    left.fftSize = 2048;
+    right.fftSize = 2048;
+    left.smoothingTimeConstant = 0;
+    right.smoothingTimeConstant = 0;
+    sourceNode.connect(splitter);
+    splitter.connect(left, 0);
+    splitter.connect(right, 1);
+    const leftTd = new Float32Array(left.fftSize);
+    const rightTd = new Float32Array(right.fftSize);
+    const probe = { splitter, left, right, timer: null };
+    layoutProbe = probe;
+    let attempts = 0;
+    let stereoHits = 0;
+    const tick = () => {
+        if (layoutProbe !== probe) return;
+        attempts += 1;
+        try {
+            left.getFloatTimeDomainData(leftTd);
+            right.getFloatTimeDomainData(rightTd);
+        } catch {
+            return;
+        }
+        const decision = decideReceivedLayout(leftTd, rightTd);
+        if (decision === 2) {
+            stereoHits += 1;
+            if (stereoHits >= 2) {
+                receivedChannels = 2;
+                applyReceivedMixLayout();
+                stopLayoutProbe();
+                return;
+            }
+        } else if (decision === 1) {
+            stereoHits = 0;
+            receivedChannels = 1;
+            applyReceivedMixLayout();
+            if (attempts >= 8) {
+                stopLayoutProbe();
+                return;
+            }
+        }
+        if (attempts >= 24) {
+            stopLayoutProbe();
+            return;
+        }
+        probe.timer = setTimeout(tick, 180);
+    };
+    probe.timer = setTimeout(tick, 120);
+}
+
+function noteReceivedChannels(stream, sourceNode) {
+    const track = stream?.getAudioTracks?.()?.[0];
+    const fromTrack = Number(track?.getSettings?.()?.channelCount || 0);
+    if (fromTrack === 1 || sourceNode?.channelCount === 1) {
+        receivedChannels = 1;
+        applyReceivedMixLayout();
+        return;
+    }
+    receivedChannels = 1;
+    applyReceivedMixLayout();
+    if (sourceNode) {
+        startLayoutProbe(sourceNode);
+    }
+}
 
 const cueAudio = document.getElementById('cue-audio');
 const host = () => window.SoundMixHost;
@@ -155,11 +307,12 @@ async function ensureMixer() {
         return;
     }
 
-    audioCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+    audioCtx = createSilentAudioContext({ sampleRate: 48000, latencyHint: 'playback' });
     await resumeAudioContext(audioCtx);
 
     mixDest = audioCtx.createMediaStreamDestination();
     cueDest = audioCtx.createMediaStreamDestination();
+    applyReceivedMixLayout();
     masterGain = audioCtx.createGain();
     cueMasterGain = audioCtx.createGain();
     micGain = audioCtx.createGain();
@@ -266,7 +419,8 @@ function preferHighQualityOpus(sdp) {
         opusPts.add(match[1]);
     }
     if (opusPts.size === 0) return out;
-    const fmtpValue = `minptime=20;useinbandfec=1;usedtx=0;stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX_BITRATE};maxplaybackrate=48000`;
+    const stereo = receivedChannels >= 2 ? 1 : 0;
+    const fmtpValue = `minptime=20;useinbandfec=1;usedtx=0;stereo=${stereo};sprop-stereo=${stereo};maxaveragebitrate=${opusSendBitrate};maxplaybackrate=48000`;
     for (const pt of opusPts) {
         const fmtpRe = new RegExp(`^a=fmtp:${pt} .*`, 'im');
         if (fmtpRe.test(out)) {
@@ -279,6 +433,97 @@ function preferHighQualityOpus(sdp) {
     return out;
 }
 
+function whipAudioSdp(sdp) {
+    const out = preferHighQualityOpus(sdp || '');
+    if (!/opus\/48000/i.test(out)) {
+        throw new Error('Browser did not offer Opus.');
+    }
+    return out;
+}
+
+function iceCandidateIp(line) {
+    return line.trim().split(/\s+/)[4] || '';
+}
+
+function iceCandidateProtocol(line) {
+    return (line.trim().split(/\s+/)[2] || '').toLowerCase();
+}
+
+function isUnusableIceIp(ip) {
+    if (!ip) {
+        return true;
+    }
+    if (
+        ip === '20.120.113.129'
+        || ip === '127.0.0.1'
+        || ip === '0.0.0.0'
+        || ip === '::1'
+        || ip === '::'
+    ) {
+        return true;
+    }
+    if (/^(10\.|192\.168\.|169\.254\.)/.test(ip)) {
+        return true;
+    }
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) {
+        return true;
+    }
+
+    return false;
+}
+
+function sanitizeRemoteIceSdp(sdp, opts = {}) {
+    const preferTcp = Boolean(opts.preferTcp);
+    const nl = sdp.includes('\r\n') ? '\r\n' : '\n';
+    const lines = sdp.split(/\r?\n/);
+    const usable = lines.filter((line) => {
+        if (!/^a=candidate:/i.test(line)) {
+            return true;
+        }
+        return !isUnusableIceIp(iceCandidateIp(line));
+    });
+    if (!usable.some((line) => /^a=candidate:/i.test(line))) {
+        return sdp;
+    }
+    if (preferTcp && usable.some((line) => /^a=candidate:/i.test(line) && iceCandidateProtocol(line) === 'tcp')) {
+        return usable
+            .filter((line) => !/^a=candidate:/i.test(line) || iceCandidateProtocol(line) === 'tcp')
+            .join(nl);
+    }
+
+    return usable.join(nl);
+}
+
+function resolveMediaProxyUrl(loc, baseUrl) {
+    if (!loc) {
+        return null;
+    }
+    const base = new URL(baseUrl);
+    let abs;
+    try {
+        abs = new URL(loc, base);
+    } catch {
+        return loc;
+    }
+    const privateHost = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|localhost$|0\.0\.0\.0$)/i.test(abs.hostname);
+    const mtxPort = abs.port === '8889' || abs.port === '8888';
+    if (privateHost || mtxPort) {
+        const path = `${abs.pathname}${abs.search}${abs.hash}`;
+        const prefixed = path.startsWith('/rtc/') || path.startsWith('/hls/')
+            ? path
+            : (path.startsWith('/live/') ? `/rtc${path}` : path);
+        return `${base.origin}${prefixed}`;
+    }
+    if (
+        abs.origin === base.origin
+        && abs.pathname.startsWith('/live/')
+        && /\/rtc(\/|$)/.test(base.pathname)
+    ) {
+        abs.pathname = `/rtc${abs.pathname}`;
+    }
+    return abs.href;
+}
+
 async function applyMaxAudioBitrate(peer) {
     for (const sender of peer.getSenders()) {
         if (sender.track?.kind !== 'audio') continue;
@@ -286,7 +531,7 @@ async function applyMaxAudioBitrate(peer) {
             const params = sender.getParameters();
             if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
             for (const encoding of params.encodings) {
-                encoding.maxBitrate = OPUS_MAX_BITRATE;
+                encoding.maxBitrate = opusSendBitrate;
                 encoding.priority = 'high';
                 encoding.networkPriority = 'high';
             }
@@ -306,6 +551,7 @@ function silenceRemoteAudio(peer) {
 async function publishWhip(whipUrl, stream) {
     const track = stream.getAudioTracks()[0];
     if (!track) throw new Error('No audio track. Check the microphone.');
+    if ('contentHint' in track) track.contentHint = 'music';
 
     pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -318,17 +564,14 @@ async function publishWhip(whipUrl, stream) {
     const transceiver = pc.addTransceiver(track, {
         direction: 'sendonly',
         streams: [stream],
-        sendEncodings: [{ maxBitrate: OPUS_MAX_BITRATE, priority: 'high', networkPriority: 'high' }],
+        sendEncodings: [{ maxBitrate: opusSendBitrate, priority: 'high', networkPriority: 'high' }],
     });
     if (!transceiver.sender) pc.addTrack(track, stream);
     forceOpusCodec(transceiver);
     await applyMaxAudioBitrate(pc);
 
     const offer = await pc.createOffer();
-    const sdp = preferHighQualityOpus(offer.sdp || '');
-    if (!/opus\/48000/i.test(sdp)) {
-        throw new Error('Browser did not offer Opus.');
-    }
+    const sdp = whipAudioSdp(offer.sdp || '');
     await pc.setLocalDescription({ type: 'offer', sdp });
     await applyMaxAudioBitrate(pc);
 
@@ -350,15 +593,18 @@ async function publishWhip(whipUrl, stream) {
     const res = await fetch(whipUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/sdp' },
-        body: pc.localDescription?.sdp ?? '',
+        body: whipAudioSdp(pc.localDescription?.sdp || sdp),
     });
     if (!res.ok) {
         const text = await res.text();
         throw new Error(text || `WHIP failed (${res.status})`);
     }
     const loc = res.headers.get('Location');
-    whipResourceUrl = loc ? new URL(loc, whipUrl).href : null;
-    await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() });
+    whipResourceUrl = resolveMediaProxyUrl(loc, whipUrl);
+    await pc.setRemoteDescription({
+        type: 'answer',
+        sdp: sanitizeRemoteIceSdp(stripNonOpusAudioCodecs(await res.text())),
+    });
     await applyMaxAudioBitrate(pc);
 }
 
@@ -415,7 +661,13 @@ async function openMicStream(deviceId = '') {
     let lastError = null;
     for (const audio of attempts) {
         try {
-            return await tryGet(audio);
+            const stream = await tryGet(audio);
+            for (const track of stream.getAudioTracks()) {
+                if ('contentHint' in track) {
+                    track.contentHint = 'music';
+                }
+            }
+            return stream;
         } catch (e) {
             lastError = e;
         }
@@ -427,19 +679,16 @@ async function openMicStream(deviceId = '') {
 
 function attachMicStream(stream) {
     if (!audioCtx || !micGain) return;
+    stopLayoutProbe();
     micStream = stream;
     micSource = audioCtx.createMediaStreamSource(micStream);
-    try {
-        const merger = audioCtx.createChannelMerger(1);
-        micSource.connect(merger);
-        merger.connect(micGain);
-    } catch {
-        micSource.connect(micGain);
-    }
+    noteReceivedChannels(stream, micSource);
+    micSource.connect(micGain);
     applyGains();
 }
 
 async function releaseMic() {
+    stopLayoutProbe();
     try {
         micSource?.disconnect();
     } catch {

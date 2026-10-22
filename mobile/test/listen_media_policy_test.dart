@@ -70,6 +70,27 @@ void main() {
     expect(payload.logoUrl, contains('logo.png'));
   });
 
+  test('private listen drops HLS even if a playlist URL is present', () {
+    final payload = ListenPayload.fromJson({
+      'stream': {
+        'uuid': 'fee1cf9a-e6ae-4c84-b582-150e924619ca',
+        'title': 'Private',
+        'status': 'live',
+        'hls_url': 'https://cdn.example/index.m3u8?media=abc',
+        'whep_url': 'https://edge.example/whep?media=abc',
+        'playback_mode': 'hls',
+        'prefer_hls': true,
+        'private_listen': true,
+      },
+    });
+
+    expect(payload.privateListen, isTrue);
+    expect(payload.hlsUrl, isNull);
+    expect(payload.whepUrl, contains('media=abc'));
+    expect(payload.playbackMode, 'whep');
+    expect(payload.preferHls, isFalse);
+  });
+
   test('GalleryItem accepts string ids and missing optional fields', () {
     final item = GalleryItem.fromJson({
       'id': '42',

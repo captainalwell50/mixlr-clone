@@ -90,8 +90,10 @@ class AccountController extends Controller
 
             // Keep user safely logged in with refreshed session
             Auth::login($user);
-            $request->session()->put('password_hash_web', $user->getAuthPassword());
-            $request->session()->regenerate();
+            if ($request->hasSession()) {
+                $request->session()->put('password_hash_web', $user->getAuthPassword());
+                $request->session()->regenerate();
+            }
 
             // Outbound notification safely isolated so mail failure does not disrupt persistence
             try {

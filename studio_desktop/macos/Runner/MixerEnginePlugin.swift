@@ -69,8 +69,15 @@ final class MixerEnginePlugin: NSObject {
     audio.onStatus = { [weak self] message in
       self?.post(["type": "status", "message": message])
     }
-    whip.onState = { [weak self] state in
-      self?.post(["type": "publish", "state": state.rawValue])
+    whip.onState = { [weak self] state, message in
+      if state == .connected {
+        self?.audio.ensurePublishingGraph()
+      }
+      var payload: [String: Any] = ["type": "publish", "state": state.rawValue]
+      if let message, !message.isEmpty {
+        payload["message"] = message
+      }
+      self?.post(payload)
     }
     whip.onIce = { [weak self] state in
       self?.post(["type": "ice", "state": state])
@@ -186,6 +193,13 @@ final class MixerEnginePlugin: NSObject {
       audio.reloadDevices()
       result(nil)
 
+    case "setLayout":
+      let mode = (call.arguments as? String)
+        ?? (call.arguments as? [String: Any])?["mode"] as? String
+        ?? "auto"
+      audio.setMixLayout(mode)
+      result(nil)
+
     case "setGains":
       let args = call.arguments as? [String: Any] ?? [:]
       audio.setGains(
@@ -213,11 +227,14 @@ final class MixerEnginePlugin: NSObject {
         result(FlutterError(code: "bad_args", message: "id/title/url required", details: nil))
         return
       }
-      do {
-        try audio.queueTrack(id: id, title: title, url: url, assetId: args["assetId"] as? Int)
-        result(nil)
-      } catch {
-        result(FlutterError(code: "queue", message: error.localizedDescription, details: nil))
+      audio.queueTrack(id: id, title: title, url: url, assetId: args["assetId"] as? Int) { error, localPath in
+        DispatchQueue.main.async {
+          if let error {
+            result(FlutterError(code: "queue", message: error.localizedDescription, details: nil))
+          } else {
+            result(["localPath": localPath ?? ""])
+          }
+        }
       }
 
     case "play":
@@ -225,11 +242,14 @@ final class MixerEnginePlugin: NSObject {
         result(FlutterError(code: "bad_args", message: "track id required", details: nil))
         return
       }
-      do {
-        try audio.play(id)
-        result(nil)
-      } catch {
-        result(FlutterError(code: "play", message: error.localizedDescription, details: nil))
+      audio.play(id) { error in
+        DispatchQueue.main.async {
+          if let error {
+            result(FlutterError(code: "play", message: error.localizedDescription, details: nil))
+          } else {
+            result(nil)
+          }
+        }
       }
 
     case "pause":
@@ -245,24 +265,48 @@ final class MixerEnginePlugin: NSObject {
         result(FlutterError(code: "bad_args", message: "track id required", details: nil))
         return
       }
-      do {
-        try audio.restart(id)
-        result(nil)
-      } catch {
-        result(FlutterError(code: "restart", message: error.localizedDescription, details: nil))
+      audio.restart(id) { error in
+        DispatchQueue.main.async {
+          if let error {
+            result(FlutterError(code: "restart", message: error.localizedDescription, details: nil))
+          } else {
+            result(nil)
+          }
+        }
       }
 
     case "remove":
-      guard let id = call.arguments as? String else {
+      let id: String?
+      let deleteCache: Bool
+      if let s = call.arguments as? String {
+        id = s
+        deleteCache = true
+      } else if let args = call.arguments as? [String: Any] {
+        id = args["id"] as? String
+        deleteCache = args["deleteCache"] as? Bool ?? true
+      } else {
+        id = nil
+        deleteCache = true
+      }
+      guard let id else {
         result(FlutterError(code: "bad_args", message: "track id required", details: nil))
         return
       }
-      audio.removeTrack(id)
+      audio.removeTrack(id, deleteCache: deleteCache)
+      result(nil)
+
+    case "clearTracks":
+      let deleteCache = (call.arguments as? [String: Any])?["deleteCache"] as? Bool ?? false
+      audio.clearTracks(deleteCache: deleteCache)
       result(nil)
 
     case "goLive":
+      let args = call.arguments as? [String: Any]
       let whipUrl = (call.arguments as? String)
-        ?? (call.arguments as? [String: Any])?["whipUrl"] as? String
+        ?? args?["whipUrl"] as? String
+      let claimUrl = args?["claimUrl"] as? String
+      let authToken = args?["authToken"] as? String
+      let opusSendBitrate = args?["opusSendBitrate"] as? Int
       guard let whipUrl, !whipUrl.isEmpty else {
         result(FlutterError(code: "bad_args", message: "whipUrl required", details: nil))
         return
@@ -278,9 +322,11 @@ final class MixerEnginePlugin: NSObject {
           return
         }
       }
-      whip.goLive(whipUrl: whipUrl) { error in
+      audio.ensurePublishingGraph()
+      whip.goLive(whipUrl: whipUrl, claimUrl: claimUrl, authToken: authToken, opusSendBitrate: opusSendBitrate) { error in
         // Result must be on main (Flutter embedding).
         DispatchQueue.main.async {
+          self.audio.ensurePublishingGraph()
           if let error {
             result(FlutterError(code: "goLive", message: error.localizedDescription, details: nil))
           } else {

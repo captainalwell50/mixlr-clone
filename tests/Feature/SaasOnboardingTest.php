@@ -11,7 +11,9 @@ use App\Models\Plan;
 use App\Models\Stream;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Notifications\FreePlanStartedNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class SaasOnboardingTest extends TestCase
@@ -39,6 +41,8 @@ class SaasOnboardingTest extends TestCase
 
     public function test_onboarding_creates_org_owner_and_default_stream(): void
     {
+        Notification::fake();
+
         $user = User::factory()->create(['is_admin' => false]);
 
         $this->actingAs($user)
@@ -76,6 +80,11 @@ class SaasOnboardingTest extends TestCase
             'plan_id' => $freePlan->id,
             'status' => SubscriptionStatus::Active->value,
         ]);
+        $subscription = $org->fresh()->subscription;
+        $this->assertNotNull($subscription?->trial_ends_at);
+        $this->assertTrue($subscription->trial_ends_at->isFuture());
+        $this->assertTrue($org->fresh()->allowsBroadcast());
+        Notification::assertSentTo($user, FreePlanStartedNotification::class);
     }
 
     public function test_free_plan_activates_without_paystack(): void

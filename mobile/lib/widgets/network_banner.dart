@@ -19,8 +19,8 @@ class NetworkBanner extends StatelessWidget {
         ? const Color(0xFF3A1A1A)
         : const Color(0xFF3A2E14);
     final message = net.health == NetHealth.offline
-        ? 'You’re offline — saved content only until you’re back online'
-        : 'Connection issue — ${net.label}. Retrying…';
+        ? 'No internet connection. Pull to refresh when you’re back online.'
+        : 'Can’t reach Sound Mix right now. Trying again…';
 
     return Material(
       color: bg,
@@ -70,18 +70,14 @@ class NetworkPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final net = context.watch<NetworkStatus>();
-    final color = switch (net.health) {
-      NetHealth.online => LiveMixTheme.good,
-      NetHealth.degraded => LiveMixTheme.warn,
-      NetHealth.offline => LiveMixTheme.bad,
-    };
+    if (net.health != NetHealth.online) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: LiveMixTheme.panelHi,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.45)),
+        border: Border.all(color: LiveMixTheme.good.withOpacity(0.45)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -89,13 +85,16 @@ class NetworkPill extends StatelessWidget {
           Container(
             width: 7,
             height: 7,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: LiveMixTheme.good,
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 6),
           Text(
             net.label,
-            style: TextStyle(
-              color: color,
+            style: const TextStyle(
+              color: LiveMixTheme.good,
               fontSize: 11,
               fontWeight: FontWeight.w700,
             ),

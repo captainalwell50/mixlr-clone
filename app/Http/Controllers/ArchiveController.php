@@ -36,16 +36,26 @@ class ArchiveController extends Controller
 
     public function channel(Request $request, Organization $organization): View
     {
-        abort_unless($organization->is_public, 404);
+        $canManage = (bool) $request->user()?->canManageOrganization($organization);
+        abort_unless($organization->is_public || $canManage, 404);
 
         $recordings = Recording::query()
-            ->publicArchive()
             ->whereHas('stream', fn ($q) => $q->where('organization_id', $organization->id))
+            ->where(function ($query) use ($canManage) {
+                $query->where('recordings.is_public', true);
+                if ($canManage) {
+                    $query->orWhere(function ($drafts) {
+                        $drafts->where('recordings.is_public', false)
+                            ->whereIn('recordings.source', [
+                                Recording::SOURCE_ASSEMBLED,
+                                Recording::SOURCE_STUDIO,
+                            ]);
+                    });
+                }
+            })
             ->with(['stream', 'event'])
-            ->latest('completed_at')
+            ->orderedForArchive()
             ->paginate(12);
-
-        $canManage = (bool) $request->user()?->canManageOrganization($organization);
 
         return view('archive-channel', compact('organization', 'recordings', 'canManage'));
     }

@@ -3,7 +3,7 @@
 @section('title', 'Dashboard')
 
 @section('content')
-    <p class="site-section-label">Operator</p>
+    <p class="site-section-label">Platform</p>
     <h1 class="console-title mt-2">Dashboard</h1>
     <p class="console-lead">Creator tools and listening shortcuts for Sound Mix Live.</p>
 

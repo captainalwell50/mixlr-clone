@@ -38,6 +38,27 @@ class EventLifecycleTest extends TestCase
         ]);
     }
 
+    public function test_scheduled_at_is_stored_utc_from_nigeria_wall_clock(): void
+    {
+        [$user, $org] = $this->creatorWithOrg();
+
+        $this->actingAs($user)
+            ->post(route('admin.events.store'), [
+                'organization_id' => $org->id,
+                'title' => 'Sunday 10am',
+                'scheduled_at' => '2026-09-27T10:00',
+                'access' => 'public',
+                'chat_enabled' => '1',
+                'show_listener_count' => '1',
+            ])
+            ->assertRedirect();
+
+        $event = Event::query()->where('title', 'Sunday 10am')->first();
+        $this->assertNotNull($event);
+        $this->assertSame('2026-09-27 09:00:00', $event->scheduled_at?->utc()->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-09-27T10:00', \App\Support\LocalTime::formValue($event->scheduled_at));
+    }
+
     public function test_go_live_marks_event_and_notifies_followers(): void
     {
         Notification::fake();
@@ -126,6 +147,7 @@ class EventLifecycleTest extends TestCase
         ]);
         $user = User::factory()->create(['is_admin' => false]);
         $org->users()->attach($user->id, ['role' => OrgRole::Admin->value]);
+        $this->grantFreeBroadcast($org);
 
         return [$user, $org];
     }

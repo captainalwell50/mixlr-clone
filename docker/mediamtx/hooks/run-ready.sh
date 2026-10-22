@@ -33,11 +33,19 @@ if [ -n "${PUBLISH_SECRET:-}" ]; then
   DST="${DST}?pass=${PUBLISH_SECRET}"
 fi
 
+# Listen page prefers this AAC sidecar when HLS is selected. WHEP Listen
+# plays Studio Opus directly. Keep source channel layout (no -ac).
+AAC_BITRATE="${AAC_BITRATE:-320k}"
+case "$AAC_BITRATE" in
+  [1-9][0-9]*k) ;;
+  *) AAC_BITRATE=320k ;;
+esac
+
 # Block here; MediaMTX runOnReadyRestart restarts on publisher drop / ffmpeg exit.
 exec ffmpeg -hide_banner -loglevel warning -nostdin \
   -rtsp_transport tcp \
   -i "$SRC" \
   -map 0:a:0 -vn \
-  -c:a aac -b:a 128k -ac 2 -ar 48000 \
+  -c:a aac -b:a "$AAC_BITRATE" -profile:a aac_low -ar 48000 -cutoff 20000 \
   -f rtsp -rtsp_transport tcp \
   "$DST"

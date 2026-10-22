@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\EventAccess;
 use App\Enums\EventStatus;
 use App\Models\Event;
+use App\Support\ListenerMediaCapability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,7 +21,8 @@ class EventController extends Controller
             abort_unless($unlocked || $canManage, 403);
         }
 
-        $event->loadMissing('stream');
+        $event->loadMissing(['stream', 'organization']);
+        $media = app(ListenerMediaCapability::class)->urlsForEvent($event);
 
         $status = match (true) {
             $event->isLive() => 'live',
@@ -30,8 +32,12 @@ class EventController extends Controller
 
         return response()->json([
             'status' => $status,
-            'hls_url' => $event->stream?->hlsPlaylistUrl(),
-            'whep_url' => $event->stream?->whepUrl(),
+            'hls_url' => $media['hls_url'],
+            'whep_url' => $media['whep_url'],
+            'prefer_hls' => $event->stream?->preferHlsListen() ?? false,
+            'title' => $event->title,
+            'organization_name' => $event->organization->name,
+            'artwork_url' => $event->artworkUrl() ?: $event->organization->artworkUrl(),
         ]);
     }
 
@@ -52,8 +58,9 @@ class EventController extends Controller
             : false;
         $listenerCount = $event->show_listener_count ? $event->activeListenerCount() : null;
         $isFollowing = $request->user()?->followsChannel($event->organization) ?? false;
-        $hlsUrl = $event->stream?->hlsPlaylistUrl();
-        $whepUrl = $event->stream?->whepUrl();
+        $media = app(ListenerMediaCapability::class)->urlsForEvent($event);
+        $hlsUrl = $media['hls_url'];
+        $whepUrl = $media['whep_url'];
         $preferHls = $event->stream?->preferHlsListen() ?? false;
         $galleryImages = $event->stream
             ? $event->stream->serviceGalleryImages($event->id)->limit(24)->get()

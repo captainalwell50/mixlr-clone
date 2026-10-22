@@ -41,7 +41,7 @@
                     <h1 class="portal-title stage-rise-delay">{{ $recording->displayTitle() }}</h1>
                     <p class="archive-play-channel">{{ $organization->name }}</p>
                     <p class="stage-meta">
-                        {{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }}
+                        {{ \App\Support\LocalTime::format($recording->occurredAt(), 'M j, Y · g:i A') }}
                         · {{ $recording->durationLabel() }}
                     </p>
 
@@ -95,7 +95,7 @@
                             >
                         </div>
 
-                        <audio id="stream-audio" class="sr-only" playsinline preload="metadata"></audio>
+                        <audio id="stream-audio" class="sr-only" playsinline preload="auto"></audio>
                         <p id="stream-status" class="stage-status-line">Press play to listen</p>
                     </div>
                     <div
@@ -127,3 +127,13 @@
         </div>
     </div>
 @endsection
+
+@section('whatsapp_widget')
+    <x-whatsapp-support
+        context="listener"
+        :organisation="$organization->name"
+        :eventTitle="$recording->displayTitle()"
+        pageLabel="Podcast: {{ $recording->displayTitle() }}"
+    />
+@endsection
+

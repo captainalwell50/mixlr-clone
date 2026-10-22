@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Webhooks;
 use App\Enums\EventStatus;
 use App\Enums\StreamStatus;
 use App\Http\Controllers\Controller;
-use App\Jobs\SyncRecordingToObjectStorage;
+use App\Jobs\AssembleEventRecordingJob;
 use App\Models\Event;
 use App\Models\Recording;
 use App\Models\Stream;
 use App\Services\EventBroadcastService;
+use App\Services\EventRecordingAssemblyService;
+use App\Services\RecordingStorageService;
 use App\Support\MediaMtxDuration;
+use App\Support\PublisherClaim;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
@@ -20,7 +23,11 @@ use Illuminate\Validation\Rule;
 
 class MediaMtxWebhookController extends Controller
 {
-    public function __construct(private EventBroadcastService $broadcast) {}
+    public function __construct(
+        private EventBroadcastService $broadcast,
+        private EventRecordingAssemblyService $assembly,
+        private RecordingStorageService $recordingStorage,
+    ) {}
 
     public function __invoke(Request $request): Response
     {
@@ -99,6 +106,17 @@ class MediaMtxWebhookController extends Controller
         if ($lastReady >= $notReadyStarted) {
             return response()->noContent();
         }
+
+        // A takeover records its claim before the WHIP POST. MediaMTX then closes
+        // the old publisher. If that not_ready loses the ready-stamp race, it is
+        // still a replacement: keep the claim and do not pause the live event.
+        if (PublisherClaim::isFresh($uuid, $notReadyStarted)) {
+            return response()->noContent();
+        }
+
+        // The publisher really left. Drop ownership so the same client can
+        // reconnect, and so a later check is not a stale replacement.
+        PublisherClaim::forget($uuid);
 
         // Browser refresh / WHIP reconnect: keep the event live for a grace period so
         // Studio can republish without looking "ended" to listeners.
@@ -199,14 +217,19 @@ class MediaMtxWebhookController extends Controller
             $sizeBytes = Storage::disk('mediamtx_recordings')->size($validated['segment_relative']);
         }
 
-        $minSeconds = max(0, (int) config('streaming.mediamtx.archive_min_segment_seconds', 60));
+        $minSeconds = max(0, (int) config('streaming.mediamtx.archive_min_segment_seconds', 5));
         $minBytes = max(0, (int) config('streaming.mediamtx.archive_min_segment_bytes', 80_000));
+        $minUsable = max($minBytes, (int) config('streaming.mediamtx.assemble_min_usable_bytes', 400_000));
 
-        // Drop reconnect blips that previously polluted Podcasts.
-        if ($durationSeconds !== null && $durationSeconds < $minSeconds) {
-            return response()->noContent();
-        }
-        if ($durationSeconds === null && ($sizeBytes === null || $sizeBytes < $minBytes)) {
+        $tooSmall = $sizeBytes !== null && $sizeBytes < $minBytes;
+        $tooShortAndThin = $durationSeconds !== null
+            && $durationSeconds < $minSeconds
+            && ($sizeBytes === null || $sizeBytes < $minUsable);
+        $isBlip = $tooSmall || $tooShortAndThin || ($durationSeconds === null && $sizeBytes === null);
+
+        if ($isBlip) {
+            $this->forgetSegment($stream->id, $validated['segment_relative']);
+
             return response()->noContent();
         }
 
@@ -216,19 +239,23 @@ class MediaMtxWebhookController extends Controller
             ->latest('id')
             ->first();
 
-        // Prefer Studio uploads when present for this event.
-        $studioAlreadyPublic = $event !== null && Recording::query()
+        // Studio upload is the archive of record — do not keep a MediaMTX copy on disk.
+        $studio = $event === null ? null : Recording::query()
             ->where('event_id', $event->id)
             ->where('source', Recording::SOURCE_STUDIO)
             ->where('is_public', true)
-            ->exists();
+            ->first();
 
-        $isPublic = ! $studioAlreadyPublic && ($event === null || $event->status === EventStatus::Ended);
+        if ($studio !== null && $this->assembly->isUsableAudio($studio)) {
+            $this->forgetSegment($stream->id, $validated['segment_relative']);
+
+            return response()->noContent();
+        }
 
         $title = $event?->title
-            ?: ('Live · '.now()->timezone(config('app.timezone'))->format('M j, g:i A'));
+            ?: ('Live · '.\App\Support\LocalTime::now()->format('M j, g:i A'));
 
-        $recording = Recording::query()->updateOrCreate(
+        Recording::query()->updateOrCreate(
             [
                 'stream_id' => $stream->id,
                 'relative_path' => $validated['segment_relative'],
@@ -237,7 +264,7 @@ class MediaMtxWebhookController extends Controller
                 'event_id' => $event?->id,
                 'title' => $title,
                 'source' => Recording::SOURCE_MEDIAMTX,
-                'is_public' => $isPublic,
+                'is_public' => false,
                 'duration_raw' => $durationSeconds !== null
                     ? (string) round($durationSeconds, 1)
                     : ($validated['duration_raw'] ?? null),
@@ -249,10 +276,25 @@ class MediaMtxWebhookController extends Controller
         $stream->archive_path = $validated['segment_relative'];
         $stream->save();
 
-        if ($isPublic && config('object_storage.enabled')) {
-            SyncRecordingToObjectStorage::dispatch($recording->id);
+        if ($event !== null && $event->status === EventStatus::Ended) {
+            AssembleEventRecordingJob::queueForEvent($event->id);
         }
 
         return response()->noContent();
+    }
+
+    private function forgetSegment(int $streamId, string $relativePath): void
+    {
+        $existing = Recording::query()
+            ->where('stream_id', $streamId)
+            ->where('relative_path', $relativePath)
+            ->first();
+
+        if ($existing !== null) {
+            $this->recordingStorage->deleteFiles($existing);
+            $existing->delete();
+        }
+
+        $this->assembly->discardSegmentFile($relativePath);
     }
 }

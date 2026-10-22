@@ -30,6 +30,20 @@
                 <label for="tagline">Tagline <span class="text-[var(--stage-muted)]">(optional)</span></label>
                 <input id="tagline" type="text" name="tagline" value="{{ old('tagline') }}" maxlength="255">
             </div>
+            <div class="grid gap-4 sm:grid-cols-3">
+                <div>
+                    <label for="country_code">Country <span class="text-[var(--stage-muted)]">(optional)</span></label>
+                    <input id="country_code" type="text" name="country_code" value="{{ old('country_code') }}" maxlength="2" placeholder="NG">
+                </div>
+                <div>
+                    <label for="state_region">State <span class="text-[var(--stage-muted)]">(optional)</span></label>
+                    <input id="state_region" type="text" name="state_region" value="{{ old('state_region') }}" maxlength="120">
+                </div>
+                <div>
+                    <label for="city">City <span class="text-[var(--stage-muted)]">(optional)</span></label>
+                    <input id="city" type="text" name="city" value="{{ old('city') }}" maxlength="120">
+                </div>
+            </div>
             <div>
                 <label for="theme_color">Accent color</label>
                 <input id="theme_color" type="color" name="theme_color" value="{{ old('theme_color', '#3d9b7a') }}" class="h-10 w-20 cursor-pointer rounded border-0 bg-transparent p-0">

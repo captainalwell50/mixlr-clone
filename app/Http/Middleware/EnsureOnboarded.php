@@ -20,7 +20,7 @@ class EnsureOnboarded
             return $next($request);
         }
 
-        if ($request->routeIs('onboarding.*', 'logout')) {
+        if ($request->routeIs('onboarding.*', 'affiliate.*', 'logout')) {
             return $next($request);
         }
 

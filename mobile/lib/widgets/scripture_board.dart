@@ -38,10 +38,11 @@ class ScriptureBoardCard extends StatelessWidget {
 
 /// EasyWorship-style plate over listen artwork (matches web portal-art slide).
 class ScriptureArtOverlay extends StatefulWidget {
-  const ScriptureArtOverlay({super.key, this.cue, this.song});
+  const ScriptureArtOverlay({super.key, this.cue, this.song, this.ndi});
 
   final ScriptureCue? cue;
   final SongCue? song;
+  final NdiCue? ndi;
 
   @override
   State<ScriptureArtOverlay> createState() => _ScriptureArtOverlayState();
@@ -51,7 +52,9 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
   final ScrollController _scroll = ScrollController();
   bool _showScrollCue = false;
 
-  bool get _hasSong => liveBoardPrefersSong(widget.cue, widget.song);
+  bool get _hasNdi =>
+      widget.ndi != null && widget.ndi!.imageUrl.isNotEmpty;
+  bool get _hasSong => !_hasNdi && liveBoardPrefersSong(widget.cue, widget.song);
 
   @override
   void initState() {
@@ -92,6 +95,39 @@ class _ScriptureArtOverlayState extends State<ScriptureArtOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    if (_hasNdi) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: ColoredBox(
+          color: const Color(0xFF0B1220),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                widget.ndi!.imageUrl,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+              Positioned(
+                left: 12,
+                bottom: 10,
+                child: Text(
+                  widget.ndi!.source.toUpperCase(),
+                  style: GoogleFonts.outfit(
+                    color: LiveMixTheme.accentBright.withOpacity(0.8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final boardLabel = _hasSong ? 'LIVE BOARD' : 'SCRIPTURE BOARD';
     final badge = _hasSong
         ? ((widget.song!.slideCount > 1)

@@ -80,5 +80,7 @@ class RecoverCreatorSeeder extends Seeder
                 ],
             );
         }
+
+        app(\App\Services\FreePeriodService::class)->backfill();
     }
 }

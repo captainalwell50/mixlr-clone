@@ -24,22 +24,15 @@ class ScriptureController extends Controller
         if (! $this->isChurch($stream)) {
             return response()->json([
                 'enabled' => false,
-                'live_board' => null,
-                'scripture' => null,
-                'song' => null,
+                ...Event::emptyLiveBoardPayload(),
             ]);
         }
 
         $event = $this->openEvent($stream);
-        $board = $event?->liveBoardPayload() ?? [
-            'live_board' => null,
-            'scripture' => null,
-            'song' => null,
-        ];
 
         return response()->json([
             'enabled' => true,
-            ...$board,
+            ...($event?->liveBoardPayload() ?? Event::emptyLiveBoardPayload()),
         ]);
     }
 
@@ -97,11 +90,7 @@ class ScriptureController extends Controller
 
         return response()->json([
             'ok' => true,
-            ...($event?->fresh()?->liveBoardPayload() ?? [
-                'live_board' => null,
-                'scripture' => null,
-                'song' => null,
-            ]),
+            ...($event?->fresh()?->liveBoardPayload() ?? Event::emptyLiveBoardPayload()),
         ]);
     }
 
@@ -128,5 +117,4 @@ class ScriptureController extends Controller
             ->latest('id')
             ->first();
     }
-
 }

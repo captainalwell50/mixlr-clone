@@ -64,7 +64,9 @@
                             'href' => route('events.show', $event),
                             'title' => $event->title,
                             'subtitle' => $event->organization->name
-                                .' · '.($event->scheduled_at?->format('M j, H:i') ?: 'TBA'),
+                                .' · '.($event->scheduled_at
+                                    ? \App\Support\LocalTime::format($event->scheduled_at, 'M j, H:i')
+                                    : 'TBA'),
                             'artwork' => $event->artworkUrl(),
                             'accent' => $event->organization->themeColor(),
                         ])

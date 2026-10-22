@@ -7,9 +7,12 @@ use App\Enums\OrgRole;
 use App\Enums\StreamStatus;
 use App\Enums\SubscriptionStatus;
 use App\Models\Organization;
-use App\Models\Plan;
 use App\Models\Stream;
 use App\Models\Subscription;
+use App\Notifications\FreePlanStartedNotification;
+use App\Services\AffiliateAttributionService;
+use App\Services\FreePeriodService;
+use App\Support\ChurchIdentity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -88,7 +91,15 @@ class OnboardingController extends Controller
             'slug' => ['nullable', 'string', 'max:255', 'alpha_dash', 'unique:organizations,slug'],
             'theme_color' => ['nullable', 'string', 'max:32'],
             'tagline' => ['nullable', 'string', 'max:255'],
+            'country_code' => ['nullable', 'string', 'max:2'],
+            'state_region' => ['nullable', 'string', 'max:120'],
+            'city' => ['nullable', 'string', 'max:120'],
         ]);
+
+        $country = ChurchIdentity::normalizeCountry((string) ($validated['country_code'] ?? ''));
+        $state = ChurchIdentity::displayPlace((string) ($validated['state_region'] ?? ''));
+        $city = ChurchIdentity::displayPlace((string) ($validated['city'] ?? ''));
+        $hasLocation = strlen($country) === 2 && $state !== '' && $city !== '';
 
         $slug = $validated['slug'] ?? Str::slug($validated['name']);
         if ($slug === '') {
@@ -100,26 +111,16 @@ class OnboardingController extends Controller
 
         $theme = $validated['theme_color'] ?? '#3d9b7a';
 
-        $freePlan = Plan::query()->firstOrCreate(
-            ['slug' => 'free'],
-            [
-                'name' => 'Free',
-                'paystack_plan_code' => null,
-                'amount' => 0,
-                'currency' => env('PAYSTACK_CURRENCY', 'NGN'),
-                'interval' => 'monthly',
-                'limits' => [
-                    'max_streams' => 1,
-                    'gallery' => true,
-                ],
-                'is_active' => true,
-                'sort_order' => 0,
-            ],
-        );
+        $freePeriod = app(FreePeriodService::class);
+        $freePlan = $freePeriod->ensureFreePlan();
+        $trialEndsAt = $freePeriod->endsAtForNewSignup();
 
-        DB::transaction(function () use ($user, $validated, $slug, $theme, $type, $freePlan): void {
+        DB::transaction(function () use ($user, $validated, $slug, $theme, $type, $freePlan, $trialEndsAt, $request, $hasLocation, $country, $state, $city): void {
             $organization = Organization::query()->create([
                 'name' => $validated['name'],
+                'country_code' => $hasLocation ? $country : null,
+                'state_region' => $hasLocation ? $state : null,
+                'city' => $hasLocation ? $city : null,
                 'slug' => $slug,
                 'creator_type' => $type,
                 'tagline' => $validated['tagline'] ?? null,
@@ -146,13 +147,24 @@ class OnboardingController extends Controller
                 'organization_id' => $organization->id,
                 'plan_id' => $freePlan->id,
                 'status' => SubscriptionStatus::Active,
-                'trial_ends_at' => null,
+                'trial_ends_at' => $trialEndsAt,
             ]);
+
+            app(AffiliateAttributionService::class)->attachNewOrganization($organization, $request);
         });
 
         session()->forget('onboarding.creator_type');
 
+        $organization = $user->organizations()->first();
+        if ($organization !== null) {
+            $user->notify(new FreePlanStartedNotification($organization));
+        }
+
+        $days = $freePeriod->freeDays();
+
         return redirect()->route('creator.home')
-            ->with('status', __('Channel created on the Free plan. Open Studio to test, or upgrade anytime from billing.'));
+            ->with('status', __('Channel created on Free for :days days. Open Studio to test, or upgrade anytime from billing.', [
+                'days' => $days,
+            ]));
     }
 }

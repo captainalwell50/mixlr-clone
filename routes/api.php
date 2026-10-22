@@ -19,6 +19,9 @@ use Illuminate\Support\Facades\Route;
 Route::post('/webhooks/mediamtx', MediaMtxWebhookController::class)
     ->middleware('throttle:240,1');
 
+Route::post('/webhooks/email', \App\Http\Controllers\Webhooks\EmailWebhookController::class)
+    ->middleware('throttle:120,1');
+
 Route::post('/mediamtx/auth', MediaMtxAuthController::class)
     ->middleware('throttle:600,1');
 

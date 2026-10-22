@@ -7,12 +7,20 @@
 @property(nonatomic, assign) BOOL echoCancellerMobileMode;
 @end
 
+static void SMDisableAudioProcessingKey(id config, NSString *key) {
+  @try {
+    [config setValue:@NO forKey:key];
+  } @catch (NSException *exception) {
+    // Property not present on this WebRTC-SDK build.
+  }
+}
+
 RTCPeerConnectionFactory *SMMakePeerConnectionFactory(
     BOOL bypassVoiceProcessing,
     id<RTCAudioCustomProcessingDelegate> _Nullable capturePostProcessingDelegate
 ) {
   // Keep APM so capturePostProcessingDelegate (mix inject) runs, but turn off
-  // echo cancellation — default voice processing makes music sound muffled.
+  // voice processing — NS/AGC/HPF make music sound muffled / telephone-like.
   RTCAudioProcessingConfig *config = nil;
   Class configClass = NSClassFromString(@"RTCAudioProcessingConfig");
   if (configClass != Nil) {
@@ -22,6 +30,17 @@ RTCPeerConnectionFactory *SMMakePeerConnectionFactory(
     }
     if ([config respondsToSelector:@selector(setEchoCancellerMobileMode:)]) {
       config.echoCancellerMobileMode = NO;
+    }
+    for (NSString *key in @[
+           @"noiseSuppressorEnabled",
+           @"noiseSuppressionEnabled",
+           @"highPassFilterEnabled",
+           @"autoGainControl1Enabled",
+           @"autoGainControl2Enabled",
+           @"transientSuppressorEnabled",
+           @"residualEchoDetectorEnabled",
+         ]) {
+      SMDisableAudioProcessingKey(config, key);
     }
   }
 

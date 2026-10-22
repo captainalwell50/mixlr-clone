@@ -14,10 +14,11 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 export DEBIAN_FRONTEND=noninteractive
 
 echo "==> Installing base packages"
+sudo timedatectl set-timezone Africa/Lagos || true
 sudo apt-get update -y
 sudo apt-get install -y \
   ca-certificates curl gnupg lsb-release software-properties-common \
-  git unzip ufw docker.io docker-compose-v2 python3
+  git unzip ufw docker.io docker-compose-v2 python3 ffmpeg
 
 echo "==> Installing PHP 8.4"
 if ! php -v 2>/dev/null | grep -q 'PHP 8.4'; then
@@ -106,6 +107,8 @@ replacements = {
     "APP_ENV": "production",
     "APP_DEBUG": "false",
     "APP_URL": app_url,
+    "APP_TIMEZONE": "UTC",
+    "APP_DISPLAY_TIMEZONE": "Africa/Lagos",
     "ADMIN_EMAIL": os.environ["ADMIN_EMAIL"],
     "REGISTRATION_ENABLED": "true",
     "LOG_LEVEL": "warning",

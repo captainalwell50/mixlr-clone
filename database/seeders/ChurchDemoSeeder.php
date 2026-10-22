@@ -5,9 +5,12 @@ namespace Database\Seeders;
 use App\Enums\EventAccess;
 use App\Enums\EventStatus;
 use App\Enums\OrgRole;
+use App\Enums\SubscriptionStatus;
 use App\Models\Event;
 use App\Models\Organization;
+use App\Models\Plan;
 use App\Models\Stream;
+use App\Models\Subscription;
 use App\Models\User;
 use App\Services\EventBroadcastService;
 use Illuminate\Database\Seeder;
@@ -35,6 +38,26 @@ class ChurchDemoSeeder extends Seeder
             ]);
         }
 
+        $freePlan = Plan::query()->firstOrCreate(
+            ['slug' => 'free'],
+            [
+                'name' => 'Free',
+                'amount' => 0,
+                'currency' => env('PAYSTACK_CURRENCY', 'NGN'),
+                'interval' => 'monthly',
+                'is_active' => true,
+                'sort_order' => 0,
+            ],
+        );
+        if ($org->subscription === null) {
+            Subscription::query()->create([
+                'organization_id' => $org->id,
+                'plan_id' => $freePlan->id,
+                'status' => SubscriptionStatus::Active,
+                'trial_ends_at' => now()->addDays((int) config('billing.free_days', 30)),
+            ]);
+        }
+
         $stream = Stream::query()->firstOrCreate(
             ['uuid' => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'],
             [
@@ -57,7 +80,7 @@ class ChurchDemoSeeder extends Seeder
                 'stream_id' => $stream->id,
                 'title' => 'Sunday service',
                 'description' => 'Demo event — share this link; it becomes the live page.',
-                'scheduled_at' => now()->next('Sunday')->setTime(10, 0),
+                'scheduled_at' => \App\Support\LocalTime::now()->next('Sunday')->setTime(10, 0)->utc(),
                 'status' => EventStatus::Scheduled,
                 'access' => EventAccess::Public,
                 'chat_enabled' => true,

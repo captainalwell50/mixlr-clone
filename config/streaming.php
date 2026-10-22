@@ -58,16 +58,57 @@ return [
         'recording_retention_days' => (int) env('RECORDING_RETENTION_DAYS', 365),
 
         /*
-         * Ignore MediaMTX segments shorter than this (reconnect blips). Longer
-         * segments become public podcasts when the linked event has ended.
+         * Ignore MediaMTX reconnect blips shorter than this (the file is deleted).
+         * Longer parts stay private until the event ends, then they are stitched
+         * into one podcast and the parts are deleted.
          */
-        'archive_min_segment_seconds' => (int) env('MEDIAMTX_ARCHIVE_MIN_SEGMENT_SECONDS', 60),
+        'archive_min_segment_seconds' => (int) env('MEDIAMTX_ARCHIVE_MIN_SEGMENT_SECONDS', 5),
 
         /*
          * Fallback when duration_raw is missing: require at least this many bytes.
          */
         'archive_min_segment_bytes' => (int) env('MEDIAMTX_ARCHIVE_MIN_SEGMENT_BYTES', 80_000),
+
+        /*
+         * Usable reconnect parts must be at least this large / this bitrate.
+         * Thin files with inflated duration metadata are discarded.
+         */
+        'assemble_min_usable_bytes' => (int) env('MEDIAMTX_ASSEMBLE_MIN_USABLE_BYTES', 400_000),
+        'assemble_min_bitrate_bps' => (int) env('MEDIAMTX_ASSEMBLE_MIN_BITRATE_BPS', 16_000),
+
+        /*
+         * Untracked files (reconnect blips never inserted into recordings) newer
+         * than this are left on disk so an in-progress MediaMTX segment is not deleted.
+         */
+        'untracked_grace_minutes' => (int) env('MEDIAMTX_UNTRACKED_GRACE_MINUTES', 20),
+
+        /*
+         * Do not catalog a MediaMTX file this soon after it was last written.
+         * The recorder appends to one fMP4 for the whole broadcast; the row is
+         * created only when the segment closes.
+         */
+        'adopt_settle_seconds' => (int) env('MEDIAMTX_ADOPT_SETTLE_SECONDS', 120),
     ],
+
+    /*
+     | ffmpeg used to stitch MediaMTX fmp4 parts at end-live. Empty = auto-detect.
+     */
+    'ffmpeg_path' => env('FFMPEG_PATH'),
+
+    /*
+     | AAC bitrate for the public podcast (live WHIP stays high-quality Opus).
+     | 128 kbps ≈ 56 MB/hour. Live copy is ~510 kbps ≈ 230 MB/hour.
+     | Public Listen HLS is a separate ffmpeg sidecar (LISTEN_HLS_AAC_BITRATE,
+     | default 256k in docker/mediamtx/hooks/run-ready.sh) — not this archive value.
+     */
+    'archive_audio_bitrate_k' => (int) env('ARCHIVE_AUDIO_BITRATE_K', 128),
+
+    /*
+     | Auto-end live/paused events after the publisher has been gone this long.
+     | Prevents paused shows from pinning the origin VM on the peak SKU.
+     | 0 disables. Does not end events whose stream is still Live.
+     */
+    'idle_event_auto_end_minutes' => (int) env('IDLE_EVENT_AUTO_END_MINUTES', 60),
 
     'mediamtx_recordings_path' => env('MEDIAMTX_RECORDINGS_PATH', 'mediamtx-recordings'),
 

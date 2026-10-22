@@ -51,9 +51,13 @@ class CreatorApiController extends Controller
             'streams' => $organization->streams->map(fn (Stream $s) => $this->streamSummary($s))->values(),
             'open_event' => $openEvent ? $this->broadcast->eventPayload($openEvent) : null,
             'can_broadcast' => $organization->allowsBroadcast(),
+            'needs_upgrade' => $organization->needsUpgradeCta(),
+            'billing_url' => route('billing.plans'),
             'subscription' => [
                 'status' => $organization->subscription?->status?->value,
                 'plan' => $organization->subscription?->plan?->name,
+                'trial_ends_at' => $organization->subscription?->trial_ends_at?->toIso8601String(),
+                'days_remaining' => $organization->subscription?->freeDaysRemaining(),
             ],
         ]);
     }
@@ -72,6 +76,7 @@ class CreatorApiController extends Controller
             'whip_url' => $stream->whipUrl(),
             'whep_url' => $stream->whepUrl(),
             'hls_url' => $stream->hlsPlaylistUrl(),
+            'opus_send_bitrate' => \App\Models\SiteSetting::opusSendBitrate(),
             'rtmp_url' => $stream->rtmpUrl(),
             'rtmp_stream_key' => $stream->rtmpStreamKeyForObs(),
             'media_path' => $stream->mediaPath(),
@@ -109,6 +114,7 @@ class CreatorApiController extends Controller
                 'whip_url' => $stream->whipUrl(),
                 'whep_url' => $stream->whepUrl(),
                 'hls_url' => $stream->hlsPlaylistUrl(),
+                'opus_send_bitrate' => \App\Models\SiteSetting::opusSendBitrate(),
             ],
         ]);
     }

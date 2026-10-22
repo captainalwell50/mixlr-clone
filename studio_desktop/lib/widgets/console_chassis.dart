@@ -40,7 +40,7 @@ class ConsoleChassis extends StatelessWidget {
     required this.micArmed,
     required this.busy,
     required this.queueCount,
-    required this.layoutMono,
+    required this.layoutMode,
     required this.outputs,
     required this.selectedOutputDeviceId,
     required this.onMicGain,
@@ -52,7 +52,7 @@ class ConsoleChassis extends StatelessWidget {
     required this.onPlaylistCue,
     required this.onSelectMic,
     required this.onEnableMic,
-    required this.onLayoutMono,
+    required this.onLayoutMode,
     required this.onSelectOutput,
     required this.onReloadDevices,
     this.showAllowMic = false,
@@ -73,7 +73,7 @@ class ConsoleChassis extends StatelessWidget {
   final bool micArmed;
   final bool busy;
   final int queueCount;
-  final bool layoutMono;
+  final String layoutMode;
   final List<AudioInputDevice> outputs;
   final String? selectedOutputDeviceId;
   final ValueChanged<double> onMicGain;
@@ -85,7 +85,7 @@ class ConsoleChassis extends StatelessWidget {
   final VoidCallback onPlaylistCue;
   final ValueChanged<String?> onSelectMic;
   final VoidCallback onEnableMic;
-  final ValueChanged<bool> onLayoutMono;
+  final ValueChanged<String> onLayoutMode;
   final ValueChanged<String?> onSelectOutput;
   final VoidCallback onReloadDevices;
   /// Only for first-run TCC — hide once macOS has already authorized the mic.
@@ -198,8 +198,8 @@ class ConsoleChassis extends StatelessWidget {
                       onMute: () {},
                       onCue: () {},
                       footer: _MasterFooter(
-                        layoutMono: layoutMono,
-                        onLayoutMono: onLayoutMono,
+                        layoutMode: layoutMode,
+                        onLayoutMode: onLayoutMode,
                         outputs: outputs,
                         selectedOutputDeviceId: selectedOutputDeviceId,
                         onSelectOutput: onSelectOutput,
@@ -317,34 +317,60 @@ class _VerticalVu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-                final lit = level.clamp(0.0, 1.0);
+    final lit = level.clamp(0.0, 1.0);
+    final isClipping = level >= 0.98;
     return SizedBox(
       width: 14,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(3),
-        child: Stack(
-          alignment: Alignment.bottomCenter,
-          children: [
-            Container(color: StudioTheme.panelHi),
-            FractionallySizedBox(
-              heightFactor: lit,
-              widthFactor: 1,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      StudioTheme.accent,
-                      StudioTheme.accentBright,
-                      Color(0xFFF0B429),
-                    ],
+      child: Column(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 70),
+            height: 6,
+            width: 14,
+            margin: const EdgeInsets.only(bottom: 3),
+            decoration: BoxDecoration(
+              color: isClipping ? StudioTheme.live : const Color(0xFF1E2824),
+              borderRadius: BorderRadius.circular(2),
+              boxShadow: isClipping
+                  ? [
+                      BoxShadow(
+                        color: StudioTheme.live.withOpacity(0.85),
+                        blurRadius: 6,
+                      ),
+                    ]
+                  : null,
+            ),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: Stack(
+                alignment: Alignment.bottomCenter,
+                children: [
+                  Container(color: StudioTheme.panelHi),
+                  FractionallySizedBox(
+                    heightFactor: lit,
+                    widthFactor: 1,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            StudioTheme.accent,
+                            StudioTheme.accentBright,
+                            Color(0xFFF0B429),
+                            StudioTheme.live,
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -849,16 +875,16 @@ class _StaticFooter extends StatelessWidget {
 
 class _MasterFooter extends StatelessWidget {
   const _MasterFooter({
-    required this.layoutMono,
-    required this.onLayoutMono,
+    required this.layoutMode,
+    required this.onLayoutMode,
     required this.outputs,
     required this.selectedOutputDeviceId,
     required this.onSelectOutput,
     required this.outputEnabled,
   });
 
-  final bool layoutMono;
-  final ValueChanged<bool> onLayoutMono;
+  final String layoutMode;
+  final ValueChanged<String> onLayoutMode;
   final List<AudioInputDevice> outputs;
   final String? selectedOutputDeviceId;
   final ValueChanged<String?> onSelectOutput;
@@ -871,18 +897,31 @@ class _MasterFooter extends StatelessWidget {
       children: [
         Row(
           children: [
-            _Pad(
-              label: 'MONO',
-              active: layoutMono,
-              activeColor: StudioTheme.accentBright,
-              onTap: () => onLayoutMono(true),
+            Expanded(
+              child: _Pad(
+                label: 'AUTO',
+                active: layoutMode == 'auto',
+                activeColor: StudioTheme.accentBright,
+                onTap: () => onLayoutMode('auto'),
+              ),
             ),
-            const SizedBox(width: 6),
-            _Pad(
-              label: 'STEREO',
-              active: !layoutMono,
-              activeColor: StudioTheme.accentBright,
-              onTap: () => onLayoutMono(false),
+            const SizedBox(width: 4),
+            Expanded(
+              child: _Pad(
+                label: 'MONO',
+                active: layoutMode == 'mono',
+                activeColor: StudioTheme.accentBright,
+                onTap: () => onLayoutMode('mono'),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: _Pad(
+                label: 'STEREO',
+                active: layoutMode == 'stereo',
+                activeColor: StudioTheme.accentBright,
+                onTap: () => onLayoutMode('stereo'),
+              ),
             ),
           ],
         ),

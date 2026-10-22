@@ -10,10 +10,9 @@ authHTTPExclude:
   - action: api
   - action: metrics
   - action: pprof
-  # Public listen (HLS/WHEP) must never challenge Basic auth in the browser.
-  # Publish/WHIP still goes through authHTTPAddress.
-  - action: read
-  - action: playback
+  # read and playback are decided by Laravel /api/mediamtx/auth.
+  # Public programmes are allowed with no credentials (HTTP 200, no Basic prompt).
+  # A live private event requires the short-lived media capability; denial is 403.
 
 # Internal RTSP for ffmpeg Opus→AAC sidecar (bound in-container only; do not publish :8554).
 rtsp: true
@@ -26,8 +25,8 @@ webrtcEncryption: false
 webrtcAllowOrigins: ['*']
 webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
-webrtcIPsFromInterfaces: true
-webrtcAdditionalHosts: ['stream.example.org']
+webrtcIPsFromInterfaces: false
+webrtcAdditionalHosts: ['soundmix.live', 'www.soundmix.live', '20.55.5.40']
 
 hls: true
 hlsAddress: :8888

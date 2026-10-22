@@ -7,9 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models.dart';
+import 'publisher_reconnect.dart';
 import 'windows_studio_mixer.dart';
 
-enum MixerPublishState { idle, connecting, connected, failed }
+enum MixerPublishState { idle, connecting, connected, recovering, replaced, failed, stopped }
 
 /// Native macOS AVAudioEngine mixer + WHIP (MethodChannel).
 class MixerBridge extends ChangeNotifier {
@@ -297,6 +298,16 @@ class MixerBridge extends ChangeNotifier {
     });
   }
 
+  Future<void> setLayout(String mode) {
+    final next = (mode == 'mono' || mode == 'stereo') ? mode : 'auto';
+    if (_isWindows) {
+      _bindWindows();
+      _windows!.setLayout(next);
+      return Future.value();
+    }
+    return _channel.invokeMethod<void>('setLayout', next);
+  }
+
   Future<String?> queueTrack(LibraryAsset asset, {String? localPath}) {
     return queueRaw(
       id: 'asset-${asset.id}',
@@ -388,14 +399,24 @@ class MixerBridge extends ChangeNotifier {
     });
   }
 
-  Future<void> goLive(String whipUrl) async {
+  Future<void> goLive(
+    String whipUrl, {
+    String? claimUrl,
+    String? authToken,
+    int? opusSendBitrate,
+  }) async {
     _publish = MixerPublishState.connecting;
     _error = null;
     notifyListeners();
     try {
       if (_isWindows) {
         _bindWindows();
-        await _windows!.goLive(whipUrl).timeout(
+        await _windows!.goLive(
+          whipUrl,
+          claimUrl: claimUrl,
+          authToken: authToken,
+          opusSendBitrate: opusSendBitrate,
+        ).timeout(
           const Duration(seconds: 25),
           onTimeout: () => throw Exception(
             'Go live timed out — WHIP publish did not finish. Try again.',
@@ -406,7 +427,12 @@ class MixerBridge extends ChangeNotifier {
         return;
       }
       await _channel
-          .invokeMethod<void>('goLive', whipUrl)
+          .invokeMethod<void>('goLive', {
+            'whipUrl': whipUrl,
+            if (claimUrl != null && claimUrl.isNotEmpty) 'claimUrl': claimUrl,
+            if (authToken != null && authToken.isNotEmpty) 'authToken': authToken,
+            if (opusSendBitrate != null) 'opusSendBitrate': opusSendBitrate,
+          })
           .timeout(
             const Duration(seconds: 25),
             onTimeout: () => throw Exception(
@@ -544,16 +570,25 @@ class MixerBridge extends ChangeNotifier {
           _publish = switch (state) {
             'connecting' => MixerPublishState.connecting,
             'connected' => MixerPublishState.connected,
+            'recovering' => MixerPublishState.recovering,
+            'replaced' => MixerPublishState.replaced,
+            'stopped' => MixerPublishState.stopped,
             'failed' => MixerPublishState.failed,
             _ => MixerPublishState.idle,
           };
-          if (_publish == MixerPublishState.failed) {
+          if (_publish == MixerPublishState.replaced) {
+            _error = null;
+            _status = (data['message'] as String?)?.isNotEmpty == true
+                ? data['message'] as String
+                : publisherReplacedNotice;
+          } else if (_publish == MixerPublishState.failed) {
             final msg = data['message'] as String?;
             _error = (msg != null && msg.isNotEmpty)
                 ? msg
                 : 'WHIP publish failed. Check network and try Go live again.';
           } else if (_publish == MixerPublishState.connected ||
-              _publish == MixerPublishState.connecting) {
+              _publish == MixerPublishState.connecting ||
+              _publish == MixerPublishState.recovering) {
             _error = null;
             final msg = data['message'] as String?;
             if (msg != null && msg.isNotEmpty) {

@@ -6,6 +6,8 @@ use App\Models\Recording;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RecordingStorageService
@@ -30,6 +32,14 @@ class RecordingStorageService
     public function localDisk(): Filesystem
     {
         return Storage::disk('mediamtx_recordings');
+    }
+
+    public function localAbsolutePath(string $relative): string
+    {
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = $this->localDisk();
+
+        return $disk->path($relative);
     }
 
     public function objectKeyFor(Recording $recording): string
@@ -129,7 +139,7 @@ class RecordingStorageService
         }
     }
 
-    public function streamResponse(Recording $recording, bool $asDownload = false): StreamedResponse
+    public function streamResponse(Recording $recording, bool $asDownload = false): BinaryFileResponse|StreamedResponse
     {
         if (filled($recording->object_key) && $recording->synced_at) {
             $disk = $this->objectDisk();
@@ -140,7 +150,7 @@ class RecordingStorageService
                     : $disk->response($path, basename($recording->relative_path), [
                         'Content-Type' => $this->mimeForPath($recording->relative_path),
                         'Accept-Ranges' => 'bytes',
-                        'Cache-Control' => 'private, max-age=3600',
+                        'Cache-Control' => 'public, max-age=3600',
                     ]);
             }
         }
@@ -150,13 +160,27 @@ class RecordingStorageService
             abort(404);
         }
 
-        return $asDownload
-            ? $disk->download($recording->relative_path, basename($recording->relative_path))
-            : $disk->response($recording->relative_path, basename($recording->relative_path), [
-                'Content-Type' => $this->mimeForPath($recording->relative_path),
-                'Accept-Ranges' => 'bytes',
-                'Cache-Control' => 'private, max-age=3600',
-            ]);
+        $absolute = $disk->path($recording->relative_path);
+        if (! is_readable($absolute)) {
+            abort(404);
+        }
+
+        $filename = basename($recording->relative_path);
+        $headers = [
+            'Content-Type' => $this->mimeForPath($recording->relative_path),
+            'Cache-Control' => 'public, max-age=3600',
+            'Accept-Ranges' => 'bytes',
+        ];
+
+        if ($asDownload) {
+            return response()->download($absolute, $filename, $headers);
+        }
+
+        $response = new BinaryFileResponse($absolute, 200, $headers);
+        $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, $filename);
+        BinaryFileResponse::trustXSendfileTypeHeader();
+
+        return $response;
     }
 
     public function deleteFiles(Recording $recording): void

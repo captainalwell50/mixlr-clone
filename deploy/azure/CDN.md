@@ -103,7 +103,7 @@ MediaMTX (ffmpeg image) remuxes each ready primary path to `live/<uuid>/aac` (AA
 
 | Publish method | Public listen (with sidecar + prefer HLS) | Studio monitor |
 |----------------|-------------------------------------------|----------------|
-| Studio WHIP (Opus) | HLS AAC via CDN (WHEP fallback) | WHEP on primary |
+| Studio WHIP (Opus) | HLS AAC 256k via CDN (WHEP fallback) | WHEP on primary |
 | OBS RTMP (AAC) | HLS (sidecar re-encodes AAC→AAC) | WHEP if codecs allow |
 
 ## NSG reminder

@@ -77,6 +77,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Custom Domain Channels
+    |--------------------------------------------------------------------------
+    |
+    | Maps full custom domains directly to organization slugs, allowing churches
+    | or ministries to use their own root domain as a standalone channel.
+    |
+    */
+    'custom_domain_channels' => [
+        'mtlhfamily.org' => 'mtlh',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Bootstrap admin user
     |--------------------------------------------------------------------------
     |
@@ -107,13 +120,14 @@ return [
     | Application Timezone
     |--------------------------------------------------------------------------
     |
-    | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | Storage / comparisons stay UTC. Nigeria display (WAT, GMT+1, no DST)
+    | uses display_timezone so archive, schedule, and titles match local time.
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
+
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE', 'Africa/Lagos'),
 
     /*
     |--------------------------------------------------------------------------

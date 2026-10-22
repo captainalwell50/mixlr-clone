@@ -53,7 +53,7 @@
                     </svg>
                 </button>
 
-                <!-- Church Brand & Org Switcher Lockup -->
+                <!-- Channel Brand & Org Switcher Lockup -->
                 @if ($creatorOrg)
                     @if ($userOrganizations && $userOrganizations->count() > 1)
                         <details class="relative group">

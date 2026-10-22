@@ -18,6 +18,7 @@ import '../services/audio_file_extension.dart';
 import '../services/auth_state.dart';
 import '../services/live_board_sync.dart';
 import '../services/mixer_bridge.dart';
+import '../services/publisher_reconnect.dart';
 import '../services/mixer_errors.dart';
 import '../services/playlist_queue_store.dart';
 import '../theme.dart';
@@ -51,6 +52,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   bool _loading = true;
   bool _busy = false;
   bool _onAir = false;
+  bool _replaced = false;
   bool _paused = false;
   bool _micMute = false;
   bool _playlistMute = false;
@@ -59,8 +61,8 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   double _micGain = 1.0;
   double _playlistGain = 1.0;
   double _masterGain = 1.0;
-  // Stereo by default so Listen is not a folded-down mix.
-  bool _layoutMono = false;
+  // Auto keeps a stereo-capable programme; Mono/Stereo override.
+  String _layoutMode = 'auto';
   String? _error;
   String _status = 'Loading mixer…';
   DateTime? _liveStartedAt;
@@ -97,6 +99,17 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   void _onMixer() {
     if (!mounted) return;
     setState(() {
+      if (_mixer.publish == MixerPublishState.replaced) {
+        _replaced = true;
+        _onAir = false;
+        _paused = false;
+        _error = null;
+        _status = _mixer.status ?? publisherReplacedNotice;
+        _tick?.cancel();
+        _liveStartedAt = null;
+        _elapsed = Duration.zero;
+        return;
+      }
       final next = _mixer.status;
       if (next != null && _isMixerOperatorAlert(next)) {
         _status = next;
@@ -396,9 +409,11 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     setState(() {
       _busy = true;
       _error = null;
-      _status = _paused
-          ? 'Resuming event & reconnecting publish…'
-          : 'Starting event & connecting publish…';
+      _status = _replaced
+          ? 'Taking over the broadcast…'
+          : _paused
+              ? 'Resuming event & reconnecting publish…'
+              : 'Starting event & connecting publish…';
     });
     final api = context.read<AuthState>().api;
     try {
@@ -419,7 +434,12 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       if (session.stream != null) {
         _stream = session.stream;
       }
-      await _mixer.goLive(whipUrl);
+      await _mixer.goLive(
+        whipUrl,
+        claimUrl: '${AppConfig.apiV1}/streams/${stream.uuid}/publisher-claim',
+        opusSendBitrate: session.opusSendBitrate,
+        authToken: api.authToken,
+      );
       _liveStartedAt = DateTime.now();
       _elapsed = Duration.zero;
       _tick?.cancel();
@@ -431,6 +451,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       setState(() {
         _onAir = true;
         _paused = false;
+        _replaced = false;
         _error = null;
         _status = _micCue || _playlistCue
             ? 'On air — cue is on; use headphones to avoid feedback.'
@@ -492,10 +513,34 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   Future<void> _end() async {
     final stream = _stream;
     if (stream == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('End Broadcast?'),
+        content: const Text(
+          'Are you sure you want to end this live broadcast? All active listeners will be disconnected and this event will be closed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: StudioTheme.live,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('End Live'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
     try {
-      final result = await context.read<AuthState>().api.endStream(stream.uuid);
       await _mixer.stopPublish();
+      final result = await context.read<AuthState>().api.endStream(stream.uuid);
       _tick?.cancel();
       _liveStartedAt = null;
       if (!mounted) return;
@@ -963,6 +1008,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                     onSelectStream: _selectStream,
                     onAir: _onAir,
                     paused: _paused,
+                    replaced: _replaced,
                     clock: _clock,
                     tab: _tab,
                     onTab: (t) => setState(() => _tab = t),
@@ -1004,6 +1050,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                   busy: _busy,
                                   onAir: _onAir,
                                   paused: _paused,
+                                  replaced: _replaced,
                                   canBroadcast: _home?.canBroadcast == true &&
                                       stream != null &&
                                       _mixer.isReady &&
@@ -1038,7 +1085,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                           micArmed: _mixer.isArmed,
                                           busy: _busy,
                                           queueCount: _mixer.tracks.length,
-                                          layoutMono: _layoutMono,
+                                          layoutMode: _layoutMode,
                                           outputs: _mixer.outputs,
                                           selectedOutputDeviceId:
                                               _mixer.selectedOutputDeviceId,
@@ -1083,8 +1130,16 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                                               (_mixer.micPermission ==
                                                       'denied' &&
                                                   !_mixer.isArmed),
-                                          onLayoutMono: (v) =>
-                                              setState(() => _layoutMono = v),
+                                          onLayoutMode: (v) {
+                                            setState(() => _layoutMode = v);
+                                            _mixer.setLayout(v);
+                                            if (_onAir) {
+                                              setState(() {
+                                                _status =
+                                                    'Output layout changed — End, then Start again to apply.';
+                                              });
+                                            }
+                                          },
                                           onSelectOutput: (id) async {
                                             if (id == null) return;
                                             try {
@@ -1187,6 +1242,7 @@ class _TopBar extends StatelessWidget {
     required this.onSelectStream,
     required this.onAir,
     required this.paused,
+    this.replaced = false,
     required this.clock,
     required this.tab,
     required this.onTab,
@@ -1203,6 +1259,7 @@ class _TopBar extends StatelessWidget {
   final ValueChanged<String?> onSelectStream;
   final bool onAir;
   final bool paused;
+  final bool replaced;
   final String clock;
   final StudioWorkspace tab;
   final ValueChanged<StudioWorkspace> onTab;
@@ -1213,167 +1270,234 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final streamPicker = streams.length > 1
+        ? SizedBox(
+            width: 200,
+            child: DropdownButtonFormField<String>(
+              value: selectedStreamUuid,
+              isDense: true,
+              isExpanded: true,
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                filled: true,
+                fillColor: StudioTheme.panelHi,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: StudioTheme.line),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: StudioTheme.line),
+                ),
+              ),
+              dropdownColor: StudioTheme.panel,
+              style: GoogleFonts.outfit(
+                color: StudioTheme.cream,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              items: streams
+                  .map(
+                    (s) => DropdownMenuItem(
+                      value: s.uuid,
+                      child: Text(
+                        s.title,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: onAir ? null : onSelectStream,
+            ),
+          )
+        : null;
+    final orgLabel = (streamPicker == null &&
+            orgName != null &&
+            orgName!.isNotEmpty)
+        ? Text(
+            orgName!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.outfit(
+              color: StudioTheme.mute,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          )
+        : null;
+
     return Container(
       height: 88,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: const BoxDecoration(
         color: Color(0xFF0A100E),
         border: Border(bottom: BorderSide(color: StudioTheme.line)),
       ),
       child: Row(
         children: [
-          Image.asset('assets/brand/soundmix-logo.png', height: 28),
-          const SizedBox(width: 20),
-          KeyedSubtree(
-            key: StudioTourTargets.liveAdvance,
-            child: StudioModeSwitcher(workspace: tab, onChanged: onTab),
-          ),
-          if (streams.length > 1) ...[
-            const SizedBox(width: 16),
-            SizedBox(
-              width: 200,
-              child: DropdownButtonFormField<String>(
-                value: selectedStreamUuid,
-                isDense: true,
-                decoration: InputDecoration(
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  filled: true,
-                  fillColor: StudioTheme.panelHi,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: StudioTheme.line),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: StudioTheme.line),
-                  ),
-                ),
-                dropdownColor: StudioTheme.panel,
-                style: GoogleFonts.outfit(
-                  color: StudioTheme.cream,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-                items: streams
-                    .map(
-                      (s) => DropdownMenuItem(
-                        value: s.uuid,
-                        child: Text(
-                          s.title,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: onAir ? null : onSelectStream,
-              ),
-            ),
-          ] else if (orgName != null && orgName!.isNotEmpty) ...[
-            const SizedBox(width: 16),
-            Text(
-              orgName!,
-              style: GoogleFonts.outfit(
-                color: StudioTheme.mute,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const Spacer(),
-          if (needsUpgrade) ...[
-            TextButton(
-              onPressed: onUpgrade,
-              style: TextButton.styleFrom(
-                foregroundColor: StudioTheme.accentBright,
-                backgroundColor: StudioTheme.accent.withOpacity(0.16),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              ),
-              child: Text(
-                'Upgrade',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 13),
-              ),
-            ),
-            const SizedBox(width: 12),
-          ],
-          if (onAir || paused)
-            Container(
-              margin: const EdgeInsets.only(right: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: onAir ? StudioTheme.liveSoft : StudioTheme.panelHi,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: onAir
-                      ? StudioTheme.live.withOpacity(0.5)
-                      : StudioTheme.line,
-                ),
-              ),
+          Flexible(
+            flex: 3,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: onAir ? StudioTheme.live : StudioTheme.mute,
-                      shape: BoxShape.circle,
-                    ),
+                  Image.asset('assets/brand/soundmix-logo.png', height: 28),
+                  const SizedBox(width: 16),
+                  KeyedSubtree(
+                    key: StudioTourTargets.liveAdvance,
+                    child: StudioModeSwitcher(workspace: tab, onChanged: onTab),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    onAir ? 'ON AIR' : 'PAUSED',
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                      letterSpacing: 1,
-                      color: StudioTheme.cream,
-                    ),
-                  ),
-                  if (onAir) ...[
-                    const SizedBox(width: 10),
-                    Text(
-                      clock,
-                      style: GoogleFonts.outfit(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                        color: StudioTheme.live,
-                      ),
+                  if (streamPicker != null) ...[
+                    const SizedBox(width: 12),
+                    streamPicker,
+                  ] else if (orgLabel != null) ...[
+                    const SizedBox(width: 12),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 180),
+                      child: orgLabel,
                     ),
                   ],
                 ],
               ),
             ),
-          KeyedSubtree(
-            key: StudioTourTargets.tourButton,
-            child: TextButton.icon(
-              key: const Key('studio-tour-open'),
-              onPressed: onTour,
-              icon: const Icon(Icons.help_outline_rounded, size: 18),
-              label: const Text('Studio tour'),
-              style: TextButton.styleFrom(
-                foregroundColor: StudioTheme.cream,
-                backgroundColor: StudioTheme.panelHi,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            flex: 2,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (needsUpgrade) ...[
+                    TextButton(
+                      onPressed: onUpgrade,
+                      style: TextButton.styleFrom(
+                        foregroundColor: StudioTheme.accentBright,
+                        backgroundColor: StudioTheme.accent.withOpacity(0.16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                      ),
+                      child: Text(
+                        'Upgrade',
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  if (onAir || paused || replaced)
+                    Container(
+                      margin: const EdgeInsets.only(right: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: onAir ? StudioTheme.liveSoft : StudioTheme.panelHi,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: onAir
+                              ? StudioTheme.live.withOpacity(0.5)
+                              : StudioTheme.line,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: onAir ? StudioTheme.live : StudioTheme.mute,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            replaced
+                                ? 'REPLACED'
+                                : (onAir ? 'ON AIR' : 'PAUSED'),
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                              letterSpacing: 1,
+                              color: StudioTheme.cream,
+                            ),
+                          ),
+                          if (onAir) ...[
+                            const SizedBox(width: 10),
+                            Text(
+                              clock,
+                              style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                                color: StudioTheme.live,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  KeyedSubtree(
+                    key: StudioTourTargets.tourButton,
+                    child: TextButton.icon(
+                      key: const Key('studio-tour-open'),
+                      onPressed: onTour,
+                      icon: const Icon(Icons.help_outline_rounded, size: 18),
+                      label: const Text('Studio tour'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: StudioTheme.cream,
+                        backgroundColor: StudioTheme.panelHi,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'v${AppConfig.studioVersion}',
+                    style: GoogleFonts.outfit(
+                      color: StudioTheme.mute,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 140),
+                    child: Text(
+                      userName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                        color: StudioTheme.mute,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: onLogout,
+                    style: TextButton.styleFrom(
+                      foregroundColor: StudioTheme.mute,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Text('Sign out'),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'v${AppConfig.studioVersion}',
-            style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 11),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            userName,
-            style: GoogleFonts.outfit(color: StudioTheme.mute, fontSize: 13),
-          ),
-          const SizedBox(width: 12),
-          TextButton(
-            onPressed: onLogout,
-            style: TextButton.styleFrom(foregroundColor: StudioTheme.mute),
-            child: const Text('Sign out'),
           ),
         ],
       ),
@@ -1593,6 +1717,7 @@ class _BroadcastBar extends StatelessWidget {
     required this.busy,
     required this.onAir,
     required this.paused,
+    this.replaced = false,
     required this.canBroadcast,
     required this.onGoLive,
     required this.onPause,
@@ -1604,6 +1729,7 @@ class _BroadcastBar extends StatelessWidget {
   final bool busy;
   final bool onAir;
   final bool paused;
+  final bool replaced;
   final bool canBroadcast;
   final VoidCallback onGoLive;
   final VoidCallback onPause;
@@ -1611,11 +1737,13 @@ class _BroadcastBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final goLabel = busy && !onAir
-        ? (paused ? 'Resuming…' : 'Going live…')
-        : onAir
-            ? 'On air'
-            : (paused ? 'Resume' : 'Go live');
+    final goLabel = replaced
+        ? 'Take Over Broadcast'
+        : busy && !onAir
+            ? (paused ? 'Resuming…' : 'Going live…')
+            : onAir
+                ? 'On air'
+                : (paused ? 'Resume' : 'Go live');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1626,7 +1754,9 @@ class _BroadcastBar extends StatelessWidget {
       child: Row(
         children: [
           FilledButton(
-            onPressed: (!canBroadcast || busy || onAir) ? null : onGoLive,
+            onPressed: (!canBroadcast || busy || (onAir && !replaced))
+                ? null
+                : onGoLive,
             style: FilledButton.styleFrom(
               backgroundColor: onAir ? StudioTheme.live : StudioTheme.accent,
               padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
@@ -1635,7 +1765,7 @@ class _BroadcastBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           OutlinedButton(
-            onPressed: (!onAir || busy) ? null : onPause,
+            onPressed: (!onAir || busy || replaced) ? null : onPause,
             style: OutlinedButton.styleFrom(
               foregroundColor: StudioTheme.cream,
               side: BorderSide(color: StudioTheme.cream.withOpacity(0.22)),
@@ -1645,7 +1775,7 @@ class _BroadcastBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           OutlinedButton(
-            onPressed: (busy || (!onAir && !paused)) ? null : onEnd,
+            onPressed: (busy || replaced || (!onAir && !paused)) ? null : onEnd,
             style: OutlinedButton.styleFrom(
               foregroundColor: StudioTheme.live,
               side: BorderSide(color: StudioTheme.live.withOpacity(0.4)),

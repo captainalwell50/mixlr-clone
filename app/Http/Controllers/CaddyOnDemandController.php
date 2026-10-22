@@ -32,7 +32,8 @@ class CaddyOnDemandController extends Controller
         }
 
         // Issue certs for any real channel host; page visibility stays in ChannelController.
-        $exists = Organization::query()->where('slug', $slug)->exists();
+        $exists = Organization::query()->where('slug', $slug)->exists()
+            || \App\Models\DigitalLibraryTeacher::query()->where('public_handle', $slug)->exists();
 
         return $exists
             ? response('ok', 200)

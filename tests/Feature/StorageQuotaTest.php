@@ -6,7 +6,6 @@ use App\Models\Organization;
 use App\Models\Plan;
 use App\Models\StudioAudioAsset;
 use App\Models\Subscription;
-use App\Models\User;
 use App\Services\StorageQuotaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -74,7 +73,14 @@ class StorageQuotaTest extends TestCase
         $this->assertSame(400, $quota->usedBytes($org));
         $quota->assertCanStore($org, 600);
 
-        $this->expectException(ValidationException::class);
-        $quota->assertCanStore($org, 601);
+        try {
+            $quota->assertCanStore($org, 601);
+            $this->fail('Expected storage quota to block the upload.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString(
+                'Upgrade to a higher plan to continue uploading',
+                $e->errors()['storage'][0] ?? '',
+            );
+        }
     }
 }

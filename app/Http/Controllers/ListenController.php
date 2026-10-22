@@ -14,9 +14,13 @@ class ListenController extends Controller
     public function status(Request $request, Stream $stream): JsonResponse
     {
         $this->authorizeListen($request, $stream);
+        $stream->loadMissing('organization');
 
         return response()->json([
             'status' => $stream->status->value,
+            'title' => $stream->title,
+            'organization_name' => $stream->organization?->name,
+            'artwork_url' => $stream->organization?->artworkUrl(),
         ]);
     }
 

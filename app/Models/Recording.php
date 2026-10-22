@@ -2,12 +2,17 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class Recording extends Model
 {
     public const SOURCE_MEDIAMTX = 'mediamtx';
+
+    public const SOURCE_ASSEMBLED = 'assembled';
 
     public const SOURCE_STUDIO = 'studio';
 
@@ -18,11 +23,15 @@ class Recording extends Model
         'source',
         'is_public',
         'relative_path',
+        'master_path',
         'storage_disk',
         'object_key',
         'synced_at',
         'local_deleted_at',
         'duration_raw',
+        'master_duration_raw',
+        'trim_start_seconds',
+        'trim_end_seconds',
         'size_bytes',
         'completed_at',
     ];
@@ -34,12 +43,36 @@ class Recording extends Model
             'completed_at' => 'datetime',
             'synced_at' => 'datetime',
             'local_deleted_at' => 'datetime',
+            'trim_start_seconds' => 'float',
+            'trim_end_seconds' => 'float',
         ];
     }
 
     public function scopePublicArchive($query)
     {
         return $query->where('is_public', true);
+    }
+
+    /**
+     * Public lists follow the service time. completed_at is only a fallback:
+     * assembly used to overwrite it with a later recording's timestamp.
+     */
+    public function scopeOrderedForArchive(Builder $query): Builder
+    {
+        return $query
+            ->leftJoin('events as archive_events', 'archive_events.id', '=', 'recordings.event_id')
+            ->select('recordings.*')
+            ->orderByDesc(DB::raw('COALESCE(archive_events.ended_at, archive_events.started_at, recordings.completed_at)'))
+            ->orderByDesc('recordings.id');
+    }
+
+    public function occurredAt(): ?Carbon
+    {
+        $this->loadMissing('event');
+
+        return $this->event?->ended_at
+            ?? $this->event?->started_at
+            ?? $this->completed_at;
     }
 
     public function stream(): BelongsTo
@@ -81,7 +114,7 @@ class Recording extends Model
         // Legacy MediaMTX chunks with no event — date stamp, not channel name.
         if ($this->completed_at) {
             return 'Live · '.$this->completed_at
-                ->timezone(config('app.timezone'))
+                ->timezone(\App\Support\LocalTime::tz())
                 ->format('M j, g:i A');
         }
 

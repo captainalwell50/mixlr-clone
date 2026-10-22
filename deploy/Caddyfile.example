@@ -32,7 +32,8 @@ http://127.0.0.1:8080 {
 }
 
 soundmix.live, www.soundmix.live {
-	encode gzip zstd
+	@notPodcastFile not path /archive/*/file /studio/*/library/*/file
+	encode @notPodcastFile gzip zstd
 	request_body {
 		max_size 72MB
 	}
@@ -54,7 +55,14 @@ soundmix.live, www.soundmix.live {
 
 	handle /rtc/* {
 		uri strip_prefix /rtc
-		reverse_proxy 127.0.0.1:8889
+		reverse_proxy 127.0.0.1:8889 {
+			header_up X-Forwarded-Proto {scheme}
+			header_down Location http://127.0.0.1:8889 https://soundmix.live/rtc
+			header_down Location http://localhost:8889 https://soundmix.live/rtc
+			header_down Location http://soundmix.live:8889 https://soundmix.live/rtc
+			header_down Location https://soundmix.live/live/ https://soundmix.live/rtc/live/
+			header_down Location http://soundmix.live/live/ https://soundmix.live/rtc/live/
+		}
 	}
 
 	handle /build/* {
@@ -110,7 +118,8 @@ cdn.soundmix.live {
 
 # Channel pages — Mixlr style: https://your-channel.soundmix.live/
 *.soundmix.live {
-	encode gzip zstd
+	@notPodcastFile not path /archive/*/file /studio/*/library/*/file
+	encode @notPodcastFile gzip zstd
 	request_body {
 		max_size 72MB
 	}

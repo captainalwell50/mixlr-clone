@@ -14,7 +14,7 @@
             </div>
             <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-1">Choose how you’ll broadcast</h1>
             <p class="text-xs text-zinc-400 mt-1 max-w-2xl leading-relaxed">
-                Start with a 30-day Free trial to test Web Studio, live recordings, and your church channel, then activate your preferred broadcasting package.
+                Start with a 30-day Free trial to test Web Studio, live recordings, and your broadcast channel, then activate your preferred broadcasting package.
             </p>
         </div>
 
@@ -111,7 +111,7 @@
                             <p class="billing-plan-price">Custom</p>
                             <p class="billing-plan-note">Pricing and features are tailored to your channel.</p>
                             <p class="billing-plan-copy text-xs text-zinc-400 mt-2 leading-relaxed">
-                                For large churches, broadcast networks, regional campuses, and requirements beyond the standard packages.
+                                For large broadcast networks, organisations, media teams, and requirements beyond the standard packages.
                             </p>
                         @else
                             <p class="billing-plan-price tabular-nums">

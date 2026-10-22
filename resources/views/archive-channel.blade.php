@@ -38,14 +38,18 @@
                         <div class="archive-copy">
                             <h2>{{ $recording->displayTitle() }}</h2>
                             <p class="archive-channel">
-                                @if ($recording->event)
+                                @if (! $recording->is_public)
+                                    Not published
+                                @elseif ($recording->trim_start_seconds !== null)
+                                    Trimmed podcast
+                                @elseif ($recording->event)
                                     Event recording
                                 @else
                                     Podcast
                                 @endif
                             </p>
                             <div class="archive-meta">
-                                <span>{{ $recording->completed_at->timezone(config('app.timezone'))->format('M j, Y · g:i A') }}</span>
+                                <span>{{ \App\Support\LocalTime::format($recording->occurredAt(), 'M j, Y · g:i A') }}</span>
                                 <span>{{ $recording->durationLabel() }}</span>
                                 <span>{{ $recording->sizeLabel() }}</span>
                             </div>
@@ -62,6 +66,14 @@
                                 Play
                             </a>
                             @if ($canManage)
+                                <form method="POST" action="{{ route('archive.publish', $recording) }}" class="archive-delete-form">
+                                    @csrf
+                                    <input type="hidden" name="published" value="{{ $recording->is_public ? '0' : '1' }}">
+                                    <button type="submit" class="{{ $recording->is_public ? 'archive-delete' : 'archive-publish' }}">
+                                        {{ $recording->is_public ? 'Unpublish podcast' : 'Publish podcast' }}
+                                    </button>
+                                </form>
+                                <a href="{{ route('archive.edit', $recording) }}" class="archive-edit">Edit</a>
                                 <form
                                     method="POST"
                                     action="{{ URL::temporarySignedRoute('recordings.destroy', now()->addHours(12), ['stream' => $recording->stream, 'recording' => $recording]) }}"

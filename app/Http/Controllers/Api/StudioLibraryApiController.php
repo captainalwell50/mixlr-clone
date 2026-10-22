@@ -29,6 +29,7 @@ class StudioLibraryApiController extends Controller
                 ['stream' => $stream],
             ),
             'whip_url' => $stream->whipUrl(),
+            'opus_send_bitrate' => \App\Models\SiteSetting::opusSendBitrate(),
             'stream' => [
                 'uuid' => $stream->uuid,
                 'title' => $stream->title,

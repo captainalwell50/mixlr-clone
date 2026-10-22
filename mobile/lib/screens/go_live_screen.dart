@@ -14,6 +14,7 @@ import '../platform_info.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
 import '../services/network_status.dart';
+import '../services/publisher_reconnect.dart';
 import '../services/whip_publisher.dart';
 import '../theme.dart';
 import '../widgets/brand_mark.dart';
@@ -90,6 +91,16 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
         case PublishLink.connecting:
           setState(() => _status = 'Reconnecting publish path…');
           return;
+        case PublishLink.replaced:
+          _tick?.cancel();
+          _presenceTimer?.cancel();
+          setState(() {
+            _onAir = false;
+            _paused = false;
+            _status = publisherReplacedNotice;
+          });
+          return;
+        case PublishLink.stopped:
         case PublishLink.idle:
           break;
       }
@@ -152,7 +163,9 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
     setState(() {
       _busy = true;
       _error = null;
-      _status = 'Requesting publish credentials…';
+      _status = _publisher.link == PublishLink.replaced
+          ? 'Taking over the broadcast…'
+          : 'Requesting publish credentials…';
     });
 
     final api = context.read<AuthState>().api;
@@ -163,7 +176,15 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
       }
 
       setState(() => _status = 'Connecting publish path…');
-      await _publisher.start(publish.whipUrl);
+      await _publisher.start(
+        publish.whipUrl,
+        opusSendBitrate: publish.opusSendBitrate,
+        claim: (claim, intent) => api.publisherClaim(
+          widget.stream.uuid,
+          claim: claim,
+          intent: intent,
+        ),
+      );
 
       setState(() => _status = 'Marking stream live…');
       await api.goLive(widget.stream.uuid);
@@ -312,13 +333,14 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
   String get _qualityLabel {
     final net = context.watch<NetworkStatus>();
     if (!net.hasLink) return 'Offline';
+    if (_publisher.link == PublishLink.replaced) return 'Replaced';
     if (_publisher.link == PublishLink.failed) return 'Link failed';
     if (_publisher.link == PublishLink.connecting) return 'Connecting';
     if (_publisher.link == PublishLink.connected) {
       if (net.health == NetHealth.degraded) return 'Degraded';
       return 'Good';
     }
-    if (net.health == NetHealth.degraded) return 'No server';
+    if (net.health == NetHealth.degraded) return 'Reconnecting';
     return _publisher.isPreviewing ? 'Preview' : 'Standby';
   }
 
@@ -331,7 +353,7 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
       case 'Standby':
         return LiveMixTheme.warn;
       case 'Degraded':
-      case 'No server':
+      case 'Reconnecting':
         return LiveMixTheme.warn;
       default:
         return LiveMixTheme.bad;
@@ -345,6 +367,8 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
       PublishLink.connecting => LiveMixTheme.warn,
       PublishLink.reconnecting => LiveMixTheme.warn,
       PublishLink.failed => LiveMixTheme.bad,
+      PublishLink.replaced => LiveMixTheme.bad,
+      PublishLink.stopped => LiveMixTheme.mute,
       PublishLink.idle => LiveMixTheme.mute,
     };
 
@@ -460,9 +484,11 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
                               Row(
                                 children: [
                                   _StatusChip(
-                                    label: _onAir
-                                        ? 'ON AIR'
-                                        : (_paused ? 'PAUSED' : 'STANDBY'),
+                                    label: _publisher.link == PublishLink.replaced
+                                        ? 'REPLACED'
+                                        : _onAir
+                                            ? 'ON AIR'
+                                            : (_paused ? 'PAUSED' : 'STANDBY'),
                                     color: _onAir
                                         ? LiveMixTheme.live
                                         : LiveMixTheme.accent,
@@ -611,7 +637,13 @@ class _GoLiveScreenState extends State<GoLiveScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (!_onAir) ...[
+                      if (_publisher.link == PublishLink.replaced) ...[
+                        FilledButton.icon(
+                          onPressed: _busy ? null : _goLive,
+                          icon: const Icon(Icons.podcasts_rounded),
+                          label: Text(_busy ? 'Connecting…' : 'Take Over Broadcast'),
+                        ),
+                      ] else if (!_onAir) ...[
                         FilledButton.icon(
                           onPressed: _busy ? null : _goLive,
                           icon: const Icon(Icons.podcasts_rounded),

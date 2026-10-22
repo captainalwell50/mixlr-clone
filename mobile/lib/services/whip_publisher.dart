@@ -6,9 +6,38 @@ import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 
 import '../platform_info.dart';
+import 'publisher_reconnect.dart';
 import 'whep_listener.dart';
 
-enum PublishLink { idle, connecting, connected, reconnecting, failed }
+enum PublishLink { idle, connecting, connected, reconnecting, replaced, failed, stopped }
+
+typedef PublisherClaimRequest = Future<({bool owns, bool replaced})> Function(
+  String claim,
+  String intent,
+);
+
+const opusSendRates = {128000, 160000, 192000, 256000, 320000, 510000};
+
+int clampOpusSendBitrate(int bitrate) =>
+    opusSendRates.contains(bitrate) ? bitrate : 320000;
+
+/// Phone studio has no Mono switch. Publish stereo, matching desktop Auto,
+/// so a mono microphone does not downmix the programme.
+String preferStudioPublishOpus(String sdp, {int bitrate = 320000}) {
+  final rate = clampOpusSendBitrate(bitrate);
+  final fmtp =
+      'minptime=20;useinbandfec=1;usedtx=0;stereo=1;sprop-stereo=1;maxaveragebitrate=$rate;maxplaybackrate=48000';
+  return sdp.replaceAllMapped(
+    RegExp(r'^a=fmtp:(\d+) (.*)$', multiLine: true),
+    (match) {
+      final pt = match.group(1)!;
+      if (!RegExp('a=rtpmap:$pt opus/48000', caseSensitive: false).hasMatch(sdp)) {
+        return match.group(0)!;
+      }
+      return 'a=fmtp:$pt $fmtp';
+    },
+  );
+}
 
 class MicDeviceOption {
   const MicDeviceOption({required this.deviceId, required this.label});
@@ -23,6 +52,7 @@ class WhipPublisher extends ChangeNotifier {
   MediaStream? _local;
   String? _resourceUrl;
   String? _whipUrl;
+  int _opusSendBitrate = 320000;
   Timer? _meterTimer;
   Timer? _reconnectTimer;
   Timer? _disconnectGraceTimer;
@@ -35,6 +65,8 @@ class WhipPublisher extends ChangeNotifier {
   double _peak = 0;
   int _reconnectAttempt = 0;
   PublishLink _link = PublishLink.idle;
+  String? _claimId;
+  PublisherClaimRequest? _claimRequest;
   String? _iceState;
   String? _deviceId;
   String? _deviceLabel;
@@ -174,7 +206,15 @@ class WhipPublisher extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> start(String whipUrl) async {
+  Future<void> start(
+    String whipUrl, {
+    PublisherClaimRequest? claim,
+    int? opusSendBitrate,
+  }) async {
+    if (claim != null) _claimRequest = claim;
+    if (opusSendBitrate != null) {
+      _opusSendBitrate = clampOpusSendBitrate(opusSendBitrate);
+    }
     _whipUrl = whipUrl;
     _wantLive = true;
     _clearReconnectTimers(resetAttempts: false);
@@ -202,6 +242,7 @@ class WhipPublisher extends ChangeNotifier {
         _disconnectGraceTimer = null;
         notifyListeners();
       } else if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
+        if (_link == PublishLink.replaced || _link == PublishLink.stopped) return;
         _link = PublishLink.failed;
         notifyListeners();
         _scheduleRepublish();
@@ -221,7 +262,11 @@ class WhipPublisher extends ChangeNotifier {
       'offerToReceiveAudio': false,
       'offerToReceiveVideo': false,
     });
-    await _pc!.setLocalDescription(offer);
+    final tunedOffer = preferStudioPublishOpus(
+      offer.sdp ?? '',
+      bitrate: _opusSendBitrate,
+    );
+    await _pc!.setLocalDescription(RTCSessionDescription(tunedOffer, 'offer'));
     await _waitForIceGathering(_pc!);
 
     final local = await _pc!.getLocalDescription();
@@ -231,31 +276,36 @@ class WhipPublisher extends ChangeNotifier {
       throw Exception('Failed to build WebRTC offer.');
     }
 
-    final response = await http.post(
+    await _establishClaim();
+    late final http.Response response;
+    try {
+      response = await http.post(
       Uri.parse(whipUrl),
       headers: {
         'Content-Type': 'application/sdp',
         'Accept': 'application/sdp',
       },
-      body: local!.sdp,
+      body: preferStudioPublishOpus(local!.sdp!, bitrate: _opusSendBitrate),
     );
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          'WHIP publish failed (${response.statusCode}): ${response.body}',
+        );
+      }
+      final location = response.headers['location'];
+      if (location != null && location.isNotEmpty) {
+        _resourceUrl = Uri.parse(whipUrl).resolve(location).toString();
+      }
+      await _pc!.setRemoteDescription(
+        RTCSessionDescription(response.body, 'answer'),
+      );
+    } catch (e) {
+      await _releaseClaim();
       _link = PublishLink.failed;
       notifyListeners();
-      throw Exception(
-        'WHIP publish failed (${response.statusCode}): ${response.body}',
-      );
+      rethrow;
     }
-
-    final location = response.headers['location'];
-    if (location != null && location.isNotEmpty) {
-      _resourceUrl = Uri.parse(whipUrl).resolve(location).toString();
-    }
-
-    await _pc!.setRemoteDescription(
-      RTCSessionDescription(response.body, 'answer'),
-    );
 
     _live = true;
     _link = PublishLink.connected;
@@ -264,18 +314,30 @@ class WhipPublisher extends ChangeNotifier {
   }
 
   void _armDisconnectGrace() {
-    if (!_wantLive) return;
+    if (!_wantLive || _link == PublishLink.replaced || _link == PublishLink.stopped) {
+      return;
+    }
     _disconnectGraceTimer?.cancel();
     _disconnectGraceTimer = Timer(const Duration(seconds: 12), () {
       _disconnectGraceTimer = null;
       if (!_wantLive) return;
-      if (_link == PublishLink.connected) return;
+      if (_link == PublishLink.connected ||
+          _link == PublishLink.replaced ||
+          _link == PublishLink.stopped) {
+        return;
+      }
       _scheduleRepublish();
     });
   }
 
   void _scheduleRepublish() {
-    if (!_wantLive || _whipUrl == null || _republishing) return;
+    if (!_wantLive ||
+        _whipUrl == null ||
+        _republishing ||
+        _link == PublishLink.replaced ||
+        _link == PublishLink.stopped) {
+      return;
+    }
     if (_reconnectTimer != null) return;
     _link = PublishLink.reconnecting;
     notifyListeners();
@@ -289,9 +351,21 @@ class WhipPublisher extends ChangeNotifier {
 
   Future<void> _republish() async {
     final url = _whipUrl;
-    if (!_wantLive || url == null || _republishing) return;
+    if (!_wantLive ||
+        url == null ||
+        _republishing ||
+        _link == PublishLink.replaced ||
+        _link == PublishLink.stopped) {
+      return;
+    }
     _republishing = true;
+    _link = PublishLink.reconnecting;
+    notifyListeners();
     try {
+      if (await _ownershipLost()) {
+        await _markReplaced();
+        return;
+      }
       // Tear down WHIP session but keep mic preview tracks.
       if (_resourceUrl != null) {
         try {
@@ -321,10 +395,59 @@ class WhipPublisher extends ChangeNotifier {
     }
   }
 
+  Future<void> _markReplaced() async {
+    _wantLive = false;
+    _live = false;
+    _link = PublishLink.replaced;
+    _clearReconnectTimers();
+    final pc = _pc;
+    _pc = null;
+    _resourceUrl = null;
+    await pc?.close();
+    notifyListeners();
+  }
+
+  Future<void> _establishClaim() async {
+    final request = _claimRequest;
+    if (request == null) return;
+    _claimId = newPublisherClaimId();
+    try {
+      await request(_claimId!, 'claim');
+    } catch (_) {}
+  }
+
+  Future<void> _releaseClaim() async {
+    final request = _claimRequest;
+    final claim = _claimId;
+    _claimId = null;
+    if (request == null || claim == null) return;
+    try {
+      await request(claim, 'release');
+    } catch (_) {}
+  }
+
+  Future<bool> _ownershipLost() async {
+    final request = _claimRequest;
+    final claim = _claimId;
+    if (request == null || claim == null) return false;
+    try {
+      final result = await request(claim, 'check');
+      return decidePublisherReconnect(
+            owns: result.owns,
+            replaced: result.replaced,
+          ) ==
+          PublisherReconnectDecision.replaced;
+    } catch (_) {
+      return decidePublisherReconnect(checkFailed: true) ==
+          PublisherReconnectDecision.replaced;
+    }
+  }
+
   Future<void> stop({bool keepPreview = false}) async {
     _live = false;
     _wantLive = false;
     _clearReconnectTimers();
+    await _releaseClaim();
 
     if (_resourceUrl != null) {
       try {
@@ -336,7 +459,7 @@ class WhipPublisher extends ChangeNotifier {
     await _pc?.close();
     _pc = null;
     _iceState = null;
-    _link = PublishLink.idle;
+    _link = PublishLink.stopped;
     _whipUrl = null;
 
     if (!keepPreview) {

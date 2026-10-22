@@ -9,7 +9,9 @@ use App\Models\Event;
 use App\Models\Organization;
 use App\Models\Recording;
 use App\Models\Stream;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class ListenPageTest extends TestCase
@@ -57,6 +59,9 @@ class ListenPageTest extends TestCase
             ->assertSee('stream-audio', false)
             ->assertSee('Live', false)
             ->assertSee('data-status-url', false)
+            ->assertSee('data-title="Sunday Service"', false)
+            ->assertSee('data-artist="G"', false)
+            ->assertSee('data-artwork=', false)
             ->assertSee(route('listen.status', $stream), false);
     }
 
@@ -73,7 +78,11 @@ class ListenPageTest extends TestCase
 
         $this->getJson(route('listen.status', $stream))
             ->assertOk()
-            ->assertJson(['status' => 'live']);
+            ->assertJson([
+                'status' => 'live',
+                'title' => 'Status Check',
+                'organization_name' => 'G',
+            ]);
 
         $stream->status = StreamStatus::Offline;
         $stream->save();
@@ -98,8 +107,11 @@ class ListenPageTest extends TestCase
             ->assertOk()
             ->assertJson([
                 'status' => 'live',
+                'title' => 'Status Event',
+                'organization_name' => 'G',
                 'hls_url' => null,
                 'whep_url' => null,
+                'prefer_hls' => false,
             ]);
 
         $event->status = EventStatus::Ended;
@@ -258,5 +270,69 @@ class ListenPageTest extends TestCase
         $this->get(route('events.embed', $event))
             ->assertOk()
             ->assertSee('Offline', false);
+    }
+
+    public function test_api_listen_show_includes_following_status(): void
+    {
+        $org = Organization::query()->create(['name' => 'Grace City', 'slug' => 'grace-city-'.uniqid(), 'is_public' => true]);
+        $stream = Stream::query()->create([
+            'organization_id' => $org->id,
+            'uuid' => fake()->uuid(),
+            'title' => 'Sunday Service',
+            'status' => StreamStatus::Live,
+            'is_public' => true,
+        ]);
+
+        // Unauthenticated guest
+        $this->getJson(route('api.listen.show', $stream))
+            ->assertOk()
+            ->assertJsonPath('organization.following', false);
+
+        // Authenticated user who does not follow
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->getJson(route('api.listen.show', $stream))
+            ->assertOk()
+            ->assertJsonPath('organization.following', false);
+
+        // Follow the channel
+        $user->followedChannels()->attach($org->id);
+
+        $this->getJson(route('api.listen.show', $stream))
+            ->assertOk()
+            ->assertJsonPath('organization.following', true);
+    }
+
+    public function test_api_listen_follow_and_unfollow(): void
+    {
+        $org = Organization::query()->create(['name' => 'Grace City', 'slug' => 'grace-city-'.uniqid(), 'is_public' => true]);
+        $stream = Stream::query()->create([
+            'organization_id' => $org->id,
+            'uuid' => fake()->uuid(),
+            'title' => 'Sunday Service',
+            'status' => StreamStatus::Live,
+            'is_public' => true,
+        ]);
+        $user = User::factory()->create();
+
+        // Guest cannot follow
+        $this->postJson(route('api.listen.follow', $stream))->assertUnauthorized();
+
+        Sanctum::actingAs($user);
+
+        // Follow
+        $this->postJson(route('api.listen.follow', $stream))
+            ->assertOk()
+            ->assertJsonPath('following', true);
+
+        $this->assertTrue($user->followsChannel($org));
+
+        // Unfollow
+        $this->deleteJson(route('api.listen.unfollow', $stream))
+            ->assertOk()
+            ->assertJsonPath('following', false);
+
+        $this->assertFalse($user->fresh()->followsChannel($org));
     }
 }

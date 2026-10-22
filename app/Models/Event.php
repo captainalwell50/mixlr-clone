@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 class Event extends Model
 {
@@ -37,6 +39,9 @@ class Event extends Model
         'song_slide_index',
         'song_slide_count',
         'song_updated_at',
+        'ndi_source',
+        'ndi_image_path',
+        'ndi_updated_at',
     ];
 
     protected $hidden = [
@@ -57,6 +62,7 @@ class Event extends Model
             'song_updated_at' => 'datetime',
             'song_slide_index' => 'integer',
             'song_slide_count' => 'integer',
+            'ndi_updated_at' => 'datetime',
         ];
     }
 
@@ -189,41 +195,45 @@ class Event extends Model
         return filled($this->song_title) && filled($this->song_text);
     }
 
+    public function hasLiveNdi(): bool
+    {
+        return filled($this->ndi_image_path);
+    }
+
     /**
-     * Last successful listen-board cue wins (scripture vs song).
+     * Last successful listen-board cue wins (scripture vs song vs NDI).
      *
-     * @return 'scripture'|'song'|null
+     * @return 'scripture'|'song'|'ndi'|null
      */
     public function liveBoardMode(): ?string
     {
-        $scripture = $this->hasLiveScripture();
-        $song = $this->hasLiveSong();
-
-        if ($scripture && $song) {
-            $scriptureAt = $this->scripture_updated_at;
-            $songAt = $this->song_updated_at;
-            if ($scriptureAt && $songAt) {
-                return $scriptureAt->greaterThanOrEqualTo($songAt) ? 'scripture' : 'song';
-            }
-            if ($scriptureAt) {
-                return 'scripture';
-            }
-            if ($songAt) {
-                return 'song';
-            }
-
-            return 'scripture';
+        $candidates = [];
+        if ($this->hasLiveScripture()) {
+            $candidates['scripture'] = $this->scripture_updated_at;
+        }
+        if ($this->hasLiveSong()) {
+            $candidates['song'] = $this->song_updated_at;
+        }
+        if ($this->hasLiveNdi()) {
+            $candidates['ndi'] = $this->ndi_updated_at;
+        }
+        if ($candidates === []) {
+            return null;
         }
 
-        if ($song) {
-            return 'song';
+        $latest = null;
+        $mode = array_key_first($candidates);
+        foreach ($candidates as $name => $at) {
+            if ($at === null) {
+                continue;
+            }
+            if ($latest === null || $at->greaterThan($latest)) {
+                $latest = $at;
+                $mode = $name;
+            }
         }
 
-        if ($scripture) {
-            return 'scripture';
-        }
-
-        return null;
+        return $mode;
     }
 
     /** @return array{ref: string, text: string, version: string, updated_at: string|null}|null */
@@ -261,7 +271,29 @@ class Event extends Model
     }
 
     /**
-     * @return array{live_board: 'scripture'|'song'|null, scripture: array<string, mixed>|null, song: array<string, mixed>|null}
+     * @return array{source: string, image_url: string, updated_at: string|null}|null
+     */
+    public function liveNdiPayload(): ?array
+    {
+        if ($this->liveBoardMode() !== 'ndi' || ! filled($this->ndi_image_path)) {
+            return null;
+        }
+
+        $version = $this->ndi_updated_at?->getTimestamp() ?? time();
+        $stored = Storage::disk('public')->url($this->ndi_image_path);
+        $absolute = str_starts_with($stored, 'http://') || str_starts_with($stored, 'https://')
+            ? $stored
+            : url($stored);
+
+        return [
+            'source' => (string) ($this->ndi_source ?: 'NDI'),
+            'image_url' => $absolute.'?v='.$version,
+            'updated_at' => $this->ndi_updated_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array{live_board: 'scripture'|'song'|'ndi'|null, scripture: array<string, mixed>|null, song: array<string, mixed>|null, ndi: array<string, mixed>|null}
      */
     public function liveBoardPayload(): array
     {
@@ -271,11 +303,24 @@ class Event extends Model
             'live_board' => $mode,
             'scripture' => $this->liveScripturePayload(),
             'song' => $this->liveSongPayload(),
+            'ndi' => $this->liveNdiPayload(),
+        ];
+    }
+
+    /** @return array{live_board: null, scripture: null, song: null, ndi: null} */
+    public static function emptyLiveBoardPayload(): array
+    {
+        return [
+            'live_board' => null,
+            'scripture' => null,
+            'song' => null,
+            'ndi' => null,
         ];
     }
 
     public function cueLiveScripture(string $ref, string $text): void
     {
+        $this->discardNdiImage();
         $this->forceFill([
             'scripture_ref' => $ref,
             'scripture_text' => $text,
@@ -286,11 +331,15 @@ class Event extends Model
             'song_slide_index' => null,
             'song_slide_count' => null,
             'song_updated_at' => null,
+            'ndi_source' => null,
+            'ndi_image_path' => null,
+            'ndi_updated_at' => null,
         ])->save();
     }
 
     public function cueLiveSong(?int $songId, string $title, string $text, int $slideIndex, int $slideCount): void
     {
+        $this->discardNdiImage();
         $this->forceFill([
             'song_id' => $songId,
             'song_title' => $title,
@@ -301,17 +350,90 @@ class Event extends Model
             'scripture_ref' => null,
             'scripture_text' => null,
             'scripture_updated_at' => null,
+            'ndi_source' => null,
+            'ndi_image_path' => null,
+            'ndi_updated_at' => null,
         ])->save();
+    }
+
+    public function cueLiveNdi(string $source, string $imagePath): void
+    {
+        $previous = $this->ndi_image_path;
+        $this->forceFill([
+            'ndi_source' => $source,
+            'ndi_image_path' => $imagePath,
+            'ndi_updated_at' => now(),
+            'scripture_ref' => null,
+            'scripture_text' => null,
+            'scripture_updated_at' => null,
+            'song_id' => null,
+            'song_title' => null,
+            'song_text' => null,
+            'song_slide_index' => null,
+            'song_slide_count' => null,
+            'song_updated_at' => null,
+        ])->save();
+
+        if (filled($previous) && $previous !== $imagePath) {
+            $this->deletePublicFile($previous);
+        }
     }
 
     public function clearLiveScripture(): void
     {
-        $clearStaleSong = $this->liveBoardMode() === 'scripture';
+        $wasActive = $this->liveBoardMode() === 'scripture';
+        if ($wasActive) {
+            $this->discardNdiImage();
+        }
         $this->forceFill([
             'scripture_ref' => null,
             'scripture_text' => null,
             'scripture_updated_at' => now(),
-            ...($clearStaleSong ? [
+            ...($wasActive ? [
+                'song_id' => null,
+                'song_title' => null,
+                'song_text' => null,
+                'song_slide_index' => null,
+                'song_slide_count' => null,
+                'song_updated_at' => null,
+            ] : []),
+            ...($wasActive ? $this->ndiClearColumns() : []),
+        ])->save();
+    }
+
+    public function clearLiveSong(): void
+    {
+        $wasActive = $this->liveBoardMode() === 'song';
+        if ($wasActive) {
+            $this->discardNdiImage();
+        }
+        $this->forceFill([
+            'song_id' => null,
+            'song_title' => null,
+            'song_text' => null,
+            'song_slide_index' => null,
+            'song_slide_count' => null,
+            'song_updated_at' => now(),
+            ...($wasActive ? [
+                'scripture_ref' => null,
+                'scripture_text' => null,
+                'scripture_updated_at' => null,
+            ] : []),
+            ...($wasActive ? $this->ndiClearColumns() : []),
+        ])->save();
+    }
+
+    public function clearLiveNdi(): void
+    {
+        $wasActive = $this->liveBoardMode() === 'ndi';
+        $this->discardNdiImage();
+        $this->forceFill([
+            ...$this->ndiClearColumns(),
+            'ndi_updated_at' => now(),
+            ...($wasActive ? [
+                'scripture_ref' => null,
+                'scripture_text' => null,
+                'scripture_updated_at' => null,
                 'song_id' => null,
                 'song_title' => null,
                 'song_text' => null,
@@ -322,21 +444,28 @@ class Event extends Model
         ])->save();
     }
 
-    public function clearLiveSong(): void
+    /** @return array{ndi_source: null, ndi_image_path: null} */
+    private function ndiClearColumns(): array
     {
-        $clearStaleScripture = $this->liveBoardMode() === 'song';
-        $this->forceFill([
-            'song_id' => null,
-            'song_title' => null,
-            'song_text' => null,
-            'song_slide_index' => null,
-            'song_slide_count' => null,
-            'song_updated_at' => now(),
-            ...($clearStaleScripture ? [
-                'scripture_ref' => null,
-                'scripture_text' => null,
-                'scripture_updated_at' => null,
-            ] : []),
-        ])->save();
+        return [
+            'ndi_source' => null,
+            'ndi_image_path' => null,
+        ];
+    }
+
+    public function discardNdiImage(): void
+    {
+        if (filled($this->ndi_image_path)) {
+            $this->deletePublicFile((string) $this->ndi_image_path);
+        }
+    }
+
+    private function deletePublicFile(string $path): void
+    {
+        try {
+            Storage::disk('public')->delete($path);
+        } catch (Throwable) {
+            // Missing file is fine.
+        }
     }
 }

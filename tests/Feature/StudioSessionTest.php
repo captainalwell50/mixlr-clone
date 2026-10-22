@@ -5,14 +5,18 @@ namespace Tests\Feature;
 use App\Enums\EventStatus;
 use App\Enums\OrgRole;
 use App\Enums\StreamStatus;
+use App\Jobs\AssembleEventRecordingJob;
 use App\Models\Event;
 use App\Models\Organization;
 use App\Models\Stream;
 use App\Models\User;
+use App\Support\PublisherClaim;
 use App\Support\StudioExpiry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\URL;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class StudioSessionTest extends TestCase
@@ -93,6 +97,25 @@ class StudioSessionTest extends TestCase
         $this->assertNotNull($second);
         $this->assertNotSame($firstId, $second->id);
         $this->assertSame('Second', $second->title);
+    }
+
+    public function test_end_live_marks_offline_without_waiting_for_recording_assembly(): void
+    {
+        Bus::fake([AssembleEventRecordingJob::class]);
+
+        [$user, $stream] = $this->creatorStream();
+        $goLive = URL::temporarySignedRoute('studio.session.go-live', now()->addHour(), ['stream' => $stream]);
+        $end = URL::temporarySignedRoute('studio.session.end', now()->addHour(), ['stream' => $stream]);
+
+        $this->actingAs($user)->postJson($goLive, ['title' => 'Sunday'])->assertOk();
+
+        $this->actingAs($user)
+            ->postJson($end)
+            ->assertOk()
+            ->assertJsonPath('event.status', EventStatus::Ended->value);
+
+        $this->assertSame(StreamStatus::Offline, $stream->fresh()->status);
+        Bus::assertDispatched(AssembleEventRecordingJob::class);
     }
 
     public function test_create_event_then_go_live_uses_that_event(): void
@@ -201,6 +224,31 @@ class StudioSessionTest extends TestCase
         $this->assertNotSame('', $csrf);
     }
 
+    public function test_session_show_includes_reload_at_and_command_bumps_it(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        $url = URL::temporarySignedRoute('studio.session.show', StudioExpiry::at(), ['stream' => $stream]);
+
+        $before = $this->actingAs($user)
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('stream_id', $stream->id)
+            ->json('reload_at');
+
+        $this->assertSame(0, $before);
+
+        $this->artisan('studio:reload', ['--stream' => $stream->uuid])
+            ->assertSuccessful();
+
+        $after = $this->actingAs($user)
+            ->getJson($url)
+            ->assertOk()
+            ->json('reload_at');
+
+        $this->assertGreaterThan(0, $after);
+        $this->assertGreaterThanOrEqual($before, $after);
+    }
+
     public function test_studio_end_url_from_page_still_works_after_overnight_live(): void
     {
         [$user, $stream] = $this->creatorStream();
@@ -223,6 +271,179 @@ class StudioSessionTest extends TestCase
         $this->assertSame(EventStatus::Ended, Event::query()->where('stream_id', $stream->id)->first()?->status);
     }
 
+    public function test_replacement_keeps_the_event_live_and_blocks_the_old_claim(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        config([
+            'streaming.mediamtx.webhook_secret' => 'test-secret',
+            'streaming.mediamtx.publisher_disconnect_grace_seconds' => 0,
+            'streaming.mediamtx.not_ready_race_ms' => 0,
+        ]);
+
+        $goLive = URL::temporarySignedRoute('studio.session.go-live', now()->addHour(), ['stream' => $stream]);
+        $claimUrl = URL::temporarySignedRoute('studio.session.publisher-claim', now()->addHour(), ['stream' => $stream]);
+        $this->actingAs($user)->postJson($goLive)->assertOk();
+
+        $claimA = '11111111-1111-4111-8111-111111111111';
+        $claimB = '22222222-2222-4222-8222-222222222222';
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimA, 'intent' => 'claim'])
+            ->assertOk()
+            ->assertJsonPath('owns', true)
+            ->assertJsonPath('replaced', false);
+
+        $this->postJson('/api/webhooks/mediamtx', [
+            'event' => 'ready',
+            'path' => 'live/'.$stream->uuid,
+        ], ['Authorization' => 'Bearer test-secret'])->assertNoContent();
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimB, 'intent' => 'claim'])
+            ->assertOk()
+            ->assertJsonPath('owns', true)
+            ->assertJsonPath('replaced', false);
+
+        cache()->put('mediamtx:last_ready:'.$stream->uuid, microtime(true) + 1, now()->addDay());
+        $this->postJson('/api/webhooks/mediamtx', [
+            'event' => 'not_ready',
+            'path' => 'live/'.$stream->uuid,
+        ], ['Authorization' => 'Bearer test-secret'])->assertNoContent();
+
+        $event = Event::query()->where('stream_id', $stream->id)->first();
+        $this->assertSame(EventStatus::Live, $event->status);
+        $this->assertSame($claimB, PublisherClaim::current($stream->uuid));
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimA, 'intent' => 'check'])
+            ->assertOk()
+            ->assertJsonPath('owns', false)
+            ->assertJsonPath('replaced', true);
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimA, 'intent' => 'claim'])
+            ->assertOk()
+            ->assertJsonPath('owns', true)
+            ->assertJsonPath('replaced', false);
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimB, 'intent' => 'check'])
+            ->assertOk()
+            ->assertJsonPath('replaced', true);
+    }
+
+    public function test_a_real_publisher_drop_clears_ownership_so_the_same_client_can_recover(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        config([
+            'streaming.mediamtx.webhook_secret' => 'test-secret',
+            'streaming.mediamtx.publisher_disconnect_grace_seconds' => 0,
+            'streaming.mediamtx.not_ready_race_ms' => 0,
+        ]);
+
+        $goLive = URL::temporarySignedRoute('studio.session.go-live', now()->addHour(), ['stream' => $stream]);
+        $claimUrl = URL::temporarySignedRoute('studio.session.publisher-claim', now()->addHour(), ['stream' => $stream]);
+        $this->actingAs($user)->postJson($goLive)->assertOk();
+
+        $claimA = '33333333-3333-4333-8333-333333333333';
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimA, 'intent' => 'claim'])
+            ->assertOk();
+        // The live client claimed when it connected, not in the seconds before this drop.
+        PublisherClaim::remember($stream->uuid, $claimA, microtime(true) - 30);
+
+        $this->postJson('/api/webhooks/mediamtx', [
+            'event' => 'not_ready',
+            'path' => 'live/'.$stream->uuid,
+        ], ['Authorization' => 'Bearer test-secret'])->assertNoContent();
+
+        $this->assertNull(PublisherClaim::current($stream->uuid));
+        $this->assertSame(EventStatus::Paused, Event::query()->where('stream_id', $stream->id)->first()->status);
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimA, 'intent' => 'check'])
+            ->assertOk()
+            ->assertJsonPath('owns', false)
+            ->assertJsonPath('replaced', false);
+    }
+
+    public function test_native_clients_use_the_same_publisher_claim_as_web_studio(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        Sanctum::actingAs($user);
+
+        $claimA = '11111111-1111-4111-8111-111111111111';
+        $claimB = '22222222-2222-4222-8222-222222222222';
+        $url = '/api/v1/streams/'.$stream->uuid.'/publisher-claim';
+
+        $this->postJson($url, ['claim' => $claimA, 'intent' => 'claim'])
+            ->assertOk()
+            ->assertJsonPath('owns', true)
+            ->assertJsonPath('replaced', false);
+
+        $this->postJson($url, ['claim' => $claimB, 'intent' => 'check'])
+            ->assertOk()
+            ->assertJsonPath('owns', false)
+            ->assertJsonPath('replaced', true);
+
+        $this->postJson($url, ['claim' => $claimA, 'intent' => 'release'])
+            ->assertOk();
+        $this->assertNull(PublisherClaim::current($stream->uuid));
+    }
+
+    public function test_a_takeover_claim_survives_not_ready_when_ready_loses_the_race(): void
+    {
+        [$user, $stream] = $this->creatorStream();
+        config([
+            'streaming.mediamtx.webhook_secret' => 'test-secret',
+            'streaming.mediamtx.publisher_disconnect_grace_seconds' => 0,
+            'streaming.mediamtx.not_ready_race_ms' => 0,
+        ]);
+
+        $goLive = URL::temporarySignedRoute('studio.session.go-live', now()->addHour(), ['stream' => $stream]);
+        $claimUrl = URL::temporarySignedRoute('studio.session.publisher-claim', now()->addHour(), ['stream' => $stream]);
+        $this->actingAs($user)->postJson($goLive)->assertOk();
+
+        $claimA = '11111111-1111-4111-8111-111111111111';
+        $claimB = '44444444-4444-4444-8444-444444444444';
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimA, 'intent' => 'claim'])
+            ->assertOk();
+        PublisherClaim::remember($stream->uuid, $claimA, microtime(true) - 30);
+
+        $this->postJson('/api/webhooks/mediamtx', [
+            'event' => 'ready',
+            'path' => 'live/'.$stream->uuid,
+        ], ['Authorization' => 'Bearer test-secret'])->assertNoContent();
+
+        // B claims, then MediaMTX not_ready arrives before the new ready stamp.
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimB, 'intent' => 'claim'])
+            ->assertOk()
+            ->assertJsonPath('owns', true);
+
+        cache()->put('mediamtx:last_ready:'.$stream->uuid, microtime(true) - 30, now()->addDay());
+        $this->postJson('/api/webhooks/mediamtx', [
+            'event' => 'not_ready',
+            'path' => 'live/'.$stream->uuid,
+        ], ['Authorization' => 'Bearer test-secret'])->assertNoContent();
+
+        $this->assertSame($claimB, PublisherClaim::current($stream->uuid));
+        $this->assertSame(EventStatus::Live, Event::query()->where('stream_id', $stream->id)->first()->status);
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimA, 'intent' => 'check'])
+            ->assertOk()
+            ->assertJsonPath('owns', false)
+            ->assertJsonPath('replaced', true);
+
+        $this->actingAs($user)
+            ->postJson($claimUrl, ['claim' => $claimB, 'intent' => 'release'])
+            ->assertOk();
+        $this->assertNull(PublisherClaim::current($stream->uuid));
+    }
+
     /**
      * @return array{0: User, 1: Stream}
      */
@@ -234,6 +455,7 @@ class StudioSessionTest extends TestCase
             'slug' => 'church-'.uniqid(),
         ]);
         $org->users()->attach($user->id, ['role' => OrgRole::Owner->value]);
+        $this->grantFreeBroadcast($org);
         $stream = Stream::query()->create([
             'organization_id' => $org->id,
             'uuid' => fake()->uuid(),

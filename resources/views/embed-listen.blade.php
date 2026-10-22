@@ -47,6 +47,9 @@
                 data-prefer-hls="{{ ! empty($preferHls) ? '1' : '0' }}"
                 data-stream-status="{{ $stream->status->value }}"
                 data-status-url="{{ route('listen.status', $stream) }}"
+                data-title="{{ $stream->title }}"
+                data-artist="{{ $organization?->name }}"
+                data-artwork="{{ $artwork }}"
                 class="hidden"
             ></div>
 

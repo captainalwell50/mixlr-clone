@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Plan;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ class UserController extends Controller
                 });
             })
             ->withCount('organizations')
+            ->with(['organizations.subscription.plan'])
             ->orderByDesc('is_admin')
             ->orderBy('name')
             ->paginate(25)
@@ -40,6 +42,7 @@ class UserController extends Controller
 
         return view('admin.users.form', [
             'user' => new User(['is_admin' => false]),
+            'plans' => collect(),
         ]);
     }
 
@@ -70,9 +73,12 @@ class UserController extends Controller
     {
         abort_unless($request->user()?->isAdmin(), 403);
 
-        $user->load('organizations');
+        $user->load('organizations.subscription.plan');
 
-        return view('admin.users.form', compact('user'));
+        return view('admin.users.form', [
+            'user' => $user,
+            'plans' => Plan::query()->orderBy('sort_order')->orderBy('id')->get(),
+        ]);
     }
 
     public function update(Request $request, User $user): RedirectResponse

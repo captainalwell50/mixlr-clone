@@ -125,7 +125,13 @@ if (root && audio) {
         }
     } else {
         audio.src = src;
+        audio.preload = 'auto';
         player.enable();
+        try {
+            audio.load();
+        } catch {
+            /* ignore */
+        }
 
         // Paint known length immediately (WebM often keeps duration === Infinity).
         if (knownDurationSec > 0 && seekEl) {
@@ -159,6 +165,12 @@ if (root && audio) {
                 statusEl.textContent = 'Ended';
             }
             syncTimes();
+        });
+        audio.addEventListener('error', () => {
+            if (statusEl) {
+                statusEl.textContent = 'Recording file missing.';
+            }
+            player.disable();
         });
 
         seekEl?.addEventListener('pointerdown', () => {

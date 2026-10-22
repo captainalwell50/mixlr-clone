@@ -208,22 +208,32 @@ export function bindSongStudio(root) {
             return;
         }
         if (!songs.length) {
-            listEl.innerHTML = '<p class="mixer-hint">No songs yet</p>';
+            listEl.innerHTML = '<p class="mixer-hint">No songs or slide decks yet. Click + New song to create one.</p>';
             return;
         }
         listEl.innerHTML = songs
             .map((s) => {
-                const live = cue?.id === s.id ? ' is-live' : '';
+                const isLiveSong = cue?.id === s.id;
+                const live = isLiveSong ? ' is-live' : '';
                 const count = s.slide_count || (s.slides || []).length || 0;
+                const cueLabel = isLiveSong ? 'Showing' : 'Show on Board';
+                const liveBadge = isLiveSong ? '<span class="song-live-badge">LIVE ON BOARD</span>' : '';
                 return (
                     `<div class="song-list-item${live}" data-song-id="${s.id}">` +
                     `<div class="song-list-main">` +
-                    `<strong>${escapeHtml(s.title)}</strong>` +
+                    `<div class="song-list-meta">` +
+                    `<div class="song-list-title-row"><strong>${escapeHtml(s.title)}</strong>${liveBadge}</div>` +
                     `<span>${count} slide${count === 1 ? '' : 's'}</span>` +
+                    `</div>` +
                     `<div class="song-list-actions">` +
-                    `<button type="button" class="song-action song-action--cue" data-action="cue">Go live</button>` +
+                    `<button type="button" class="song-action song-action--cue" data-action="cue">${cueLabel}</button>` +
                     `<button type="button" class="song-action song-action--edit" data-action="edit">Edit</button>` +
-                    `<button type="button" class="song-action song-action--delete" data-action="delete">Delete</button>` +
+                    `<details class="studio-overflow-menu">` +
+                    `<summary class="studio-overflow-trigger" aria-label="More song actions">•••</summary>` +
+                    `<div class="studio-overflow-popover">` +
+                    `<button type="button" class="studio-overflow-item is-danger song-action song-action--delete" data-action="delete">Delete</button>` +
+                    `</div>` +
+                    `</details>` +
                     `</div>` +
                     `</div>` +
                     renderSlideList(s) +
@@ -419,7 +429,7 @@ export function bindSongStudio(root) {
 
     window.addEventListener('live-board-changed', (ev) => {
         const mode = ev?.detail?.mode;
-        if (mode !== 'scripture') {
+        if (mode !== 'scripture' && mode !== 'ndi') {
             return;
         }
         cue = null;

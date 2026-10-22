@@ -73,6 +73,25 @@ class RegisteredUserController extends Controller
 
         event(new Registered($user));
 
+        try {
+            app(\App\Services\OutboundEmailService::class)->sendTransactional(
+                mailable: new \App\Mail\WelcomeOnboardingMail($user),
+                recipient: $user->email,
+                type: 'welcome',
+                eventKey: 'onboarding:welcome:'.$user->id,
+                user: $user,
+                metadata: [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                ]
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Welcome email dispatch deferred or failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // Soft flag only — do not lock out when mail is log/array or verification
         // routes are missing. Operator-created users set email_verified_at themselves.
         if (config('registration.require_verification')) {
@@ -83,7 +102,7 @@ class RegisteredUserController extends Controller
 
         $request->session()->forget('registration_started_at');
 
-        return redirect()->route('onboarding.show');
+        return redirect()->intended(route('onboarding.show'));
     }
 
     private function assertMinimumFormTime(Request $request): void

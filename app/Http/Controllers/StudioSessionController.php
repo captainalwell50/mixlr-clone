@@ -4,8 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Enums\EventStatus;
 use App\Models\Event;
+use App\Models\Recording;
+use App\Models\SiteSetting;
 use App\Models\Stream;
 use App\Services\EventBroadcastService;
+use App\Support\PublisherClaim;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,6 +26,8 @@ class StudioSessionController extends Controller
             'stream_id' => $stream->id,
             'event' => $open ? $this->broadcast->eventPayload($open) : null,
             'csrf' => csrf_token(),
+            'reload_at' => SiteSetting::studioReloadAt($stream->uuid),
+            'opus_send_bitrate' => SiteSetting::opusSendBitrate(),
         ]);
     }
 
@@ -128,6 +133,7 @@ class StudioSessionController extends Controller
             'ok' => true,
             'event' => $this->broadcast->eventPayload($live),
             'whip_url' => $stream->whipUrl(),
+            'opus_send_bitrate' => SiteSetting::opusSendBitrate(),
         ]);
     }
 
@@ -160,6 +166,7 @@ class StudioSessionController extends Controller
             'ok' => true,
             'event' => $this->broadcast->eventPayload($open->fresh()),
             'whip_url' => $stream->whipUrl(),
+            'opus_send_bitrate' => SiteSetting::opusSendBitrate(),
         ]);
     }
 
@@ -171,10 +178,60 @@ class StudioSessionController extends Controller
         abort_unless($open !== null, 422, 'No open event to end.');
 
         $this->broadcast->markEnded($open);
+        PublisherClaim::forget($stream->uuid);
 
         return response()->json([
             'ok' => true,
             'event' => $this->broadcast->eventPayload($open->fresh()),
+        ]);
+    }
+
+    public function latestRecording(Request $request, Stream $stream): JsonResponse
+    {
+        $this->authorizeStudio($request, $stream);
+
+        $validated = $request->validate([
+            'event_id' => ['required', 'integer'],
+        ]);
+
+        $recording = Recording::query()
+            ->where('stream_id', $stream->id)
+            ->where('event_id', (int) $validated['event_id'])
+            ->whereIn('source', [Recording::SOURCE_STUDIO, Recording::SOURCE_ASSEMBLED])
+            ->latest('id')
+            ->first();
+
+        return response()->json([
+            'recording' => $recording
+                ? app(RecordingController::class)->recordingPayload($stream, $recording)
+                : null,
+        ]);
+    }
+
+    public function publisherClaim(Request $request, Stream $stream): JsonResponse
+    {
+        $this->authorizeStudio($request, $stream);
+
+        $validated = $request->validate([
+            'claim' => ['required', 'uuid'],
+            'intent' => ['required', 'in:claim,check,release'],
+        ]);
+
+        if ($validated['intent'] === 'claim') {
+            PublisherClaim::remember($stream->uuid, $validated['claim']);
+        }
+
+        if ($validated['intent'] === 'release'
+            && PublisherClaim::current($stream->uuid) === $validated['claim']) {
+            PublisherClaim::forget($stream->uuid);
+        }
+
+        $owns = PublisherClaim::current($stream->uuid) === $validated['claim'];
+
+        return response()->json([
+            'ok' => true,
+            'owns' => $owns,
+            'replaced' => PublisherClaim::replaced($stream->uuid, $validated['claim']),
         ]);
     }
 

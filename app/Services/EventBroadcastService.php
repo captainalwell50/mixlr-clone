@@ -5,11 +5,11 @@ namespace App\Services;
 use App\Enums\EventAccess;
 use App\Enums\EventStatus;
 use App\Enums\StreamStatus;
-use App\Jobs\SyncRecordingToObjectStorage;
+use App\Jobs\AssembleEventRecordingJob;
 use App\Models\Event;
-use App\Models\Recording;
 use App\Models\Stream;
 use App\Notifications\ChannelWentLiveNotification;
+use App\Support\LocalTime;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 
@@ -65,7 +65,7 @@ class EventBroadcastService
             $channel = trim((string) $stream->title);
         }
         if ($channel === '') {
-            return 'Live · '.now()->timezone(config('app.timezone'))->format('M j');
+            return 'Live · '.LocalTime::now()->format('M j');
         }
 
         return 'Live from '.$channel;
@@ -170,6 +170,10 @@ class EventBroadcastService
         $event->scripture_ref = null;
         $event->scripture_text = null;
         $event->scripture_updated_at = null;
+        $event->discardNdiImage();
+        $event->ndi_source = null;
+        $event->ndi_image_path = null;
+        $event->ndi_updated_at = null;
         $event->save();
 
         if ($event->stream) {
@@ -178,42 +182,48 @@ class EventBroadcastService
             $event->stream->save();
         }
 
-        $this->publishHeldMediaMtxRecordings($event);
+        AssembleEventRecordingJob::queueForEvent($event->id);
     }
 
     /**
-     * Segments captured during pause/reconnect stay private until the event ends,
-     * unless a Studio upload already owns the public podcast slot.
+     * Close live/paused events whose publisher has been gone longer than the idle window.
+     *
+     * @return list<int> Ended event IDs
      */
-    public function publishHeldMediaMtxRecordings(Event $event): void
+    public function endIdleOpenEvents(?int $idleMinutes = null, bool $dryRun = false): array
     {
-        $studioPublic = Recording::query()
-            ->where('event_id', $event->id)
-            ->where('source', Recording::SOURCE_STUDIO)
-            ->where('is_public', true)
-            ->exists();
-
-        if ($studioPublic) {
-            return;
+        $minutes = $idleMinutes ?? (int) config('streaming.idle_event_auto_end_minutes', 60);
+        if ($minutes <= 0) {
+            return [];
         }
 
-        $held = Recording::query()
-            ->where('event_id', $event->id)
-            ->where('source', Recording::SOURCE_MEDIAMTX)
-            ->where('is_public', false)
+        $cutoff = now()->subMinutes($minutes);
+        $endedIds = [];
+
+        $open = Event::query()
+            ->with('stream')
+            ->whereIn('status', [EventStatus::Live, EventStatus::Paused])
+            ->orderBy('id')
             ->get();
 
-        foreach ($held as $recording) {
-            $recording->is_public = true;
-            if (! filled($recording->title)) {
-                $recording->title = $event->title;
+        foreach ($open as $event) {
+            $stream = $event->stream;
+            if ($stream !== null && $stream->status === StreamStatus::Live) {
+                continue;
             }
-            $recording->save();
 
-            if (config('object_storage.enabled')) {
-                SyncRecordingToObjectStorage::dispatch($recording->id);
+            $idleAt = $stream?->ended_at ?? $event->updated_at;
+            if ($idleAt === null || $idleAt->gt($cutoff)) {
+                continue;
             }
+
+            if (! $dryRun) {
+                $this->markEnded($event);
+            }
+            $endedIds[] = $event->id;
         }
+
+        return $endedIds;
     }
 
     public function notifyFollowers(Event $event): void

@@ -39,7 +39,7 @@ class StudioRecordingUploadTest extends TestCase
             ['stream' => $stream],
         );
 
-        $file = UploadedFile::fake()->create('session.webm', 240, 'audio/webm');
+        $file = UploadedFile::fake()->createWithContent('session.webm', str_repeat('a', 240 * 1024), 'audio/webm');
 
         $this->post($url, [
             'audio' => $file,
@@ -52,16 +52,16 @@ class StudioRecordingUploadTest extends TestCase
         $recording = Recording::query()->first();
         $this->assertNotNull($recording);
         $this->assertSame(Recording::SOURCE_STUDIO, $recording->source);
-        $this->assertTrue($recording->is_public);
+        $this->assertFalse($recording->is_public);
         $this->assertSame('125', $recording->duration_raw);
         $this->assertTrue(Storage::disk('mediamtx_recordings')->exists($recording->relative_path));
 
         $this->get(route('archive.index'))
             ->assertOk()
-            ->assertSee('Church', false);
+            ->assertDontSee('Church', false);
     }
 
-    public function test_studio_upload_hides_mediamtx_copy_for_same_event(): void
+    public function test_studio_upload_deletes_mediamtx_copy_for_same_event(): void
     {
         Storage::fake('mediamtx_recordings');
 
@@ -82,13 +82,16 @@ class StudioRecordingUploadTest extends TestCase
             'status' => EventStatus::Ended,
             'ended_at' => now(),
         ]);
+        $autoPath = $stream->mediaPath().'/auto.mp4';
+        Storage::disk('mediamtx_recordings')->put($autoPath, str_repeat('m', 400_000));
         $auto = Recording::query()->create([
             'stream_id' => $stream->id,
             'event_id' => $event->id,
             'title' => 'Service',
             'source' => Recording::SOURCE_MEDIAMTX,
             'is_public' => true,
-            'relative_path' => $stream->mediaPath().'/auto.mp4',
+            'relative_path' => $autoPath,
+            'size_bytes' => 400_000,
             'completed_at' => now(),
         ]);
 
@@ -99,15 +102,16 @@ class StudioRecordingUploadTest extends TestCase
         );
 
         $this->post($url, [
-            'audio' => UploadedFile::fake()->create('session.webm', 240, 'audio/webm'),
+            'audio' => UploadedFile::fake()->createWithContent('session.webm', str_repeat('a', 240 * 1024), 'audio/webm'),
             'event_id' => $event->id,
             'duration_seconds' => 90,
         ], [
             'Accept' => 'application/json',
         ])->assertCreated();
 
-        $this->assertFalse($auto->fresh()->is_public);
-        $this->assertTrue(Recording::query()->where('source', Recording::SOURCE_STUDIO)->first()->is_public);
+        $this->assertNull($auto->fresh());
+        $this->assertFalse(Storage::disk('mediamtx_recordings')->exists($autoPath));
+        $this->assertFalse(Recording::query()->where('source', Recording::SOURCE_STUDIO)->first()->is_public);
     }
 
     public function test_upload_requires_valid_signature(): void

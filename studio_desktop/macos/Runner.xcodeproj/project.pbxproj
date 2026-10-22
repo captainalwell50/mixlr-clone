@@ -26,7 +26,9 @@
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		A1B2C3D42026072300000001 /* MixerEnginePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42026072300000002 /* MixerEnginePlugin.swift */; };
+		A1B2C3D42026091200000001 /* NdiPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42026091200000002 /* NdiPlugin.swift */; };
 		A1B2C3D42026072300000003 /* NativeAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42026072300000004 /* NativeAudioEngine.swift */; };
+		A1B2C3D4202607230000000C /* PlaylistPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4202607230000000B /* PlaylistPlayback.swift */; };
 		A1B2C3D42026072300000005 /* NativeWhipPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42026072300000006 /* NativeWhipPublisher.swift */; };
 		A1B2C3D42026072300000007 /* WebRTCHelpers.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42026072300000008 /* WebRTCHelpers.m */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
@@ -75,7 +77,10 @@
 		33CC10ED2044A3C60003C045 /* soundmix_studio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = soundmix_studio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		33CC10F02044A3C60003C045 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A1B2C3D42026072300000002 /* MixerEnginePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixerEnginePlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D42026091200000002 /* NdiPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NdiPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D42026091200000003 /* NdiSdkShim.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NdiSdkShim.h; sourceTree = "<group>"; };
 		A1B2C3D42026072300000004 /* NativeAudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAudioEngine.swift; sourceTree = "<group>"; };
+		A1B2C3D4202607230000000B /* PlaylistPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistPlayback.swift; sourceTree = "<group>"; };
 		A1B2C3D42026072300000006 /* NativeWhipPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWhipPublisher.swift; sourceTree = "<group>"; };
 		A1B2C3D42026072300000008 /* WebRTCHelpers.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WebRTCHelpers.m; sourceTree = "<group>"; };
 		A1B2C3D42026072300000009 /* WebRTCHelpers.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WebRTCHelpers.h; sourceTree = "<group>"; };
@@ -192,7 +197,10 @@
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				A1B2C3D42026072300000002 /* MixerEnginePlugin.swift */,
+				A1B2C3D42026091200000002 /* NdiPlugin.swift */,
+				A1B2C3D42026091200000003 /* NdiSdkShim.h */,
 				A1B2C3D42026072300000004 /* NativeAudioEngine.swift */,
+				A1B2C3D4202607230000000B /* PlaylistPlayback.swift */,
 				A1B2C3D42026072300000006 /* NativeWhipPublisher.swift */,
 				A1B2C3D42026072300000009 /* WebRTCHelpers.h */,
 				A1B2C3D42026072300000008 /* WebRTCHelpers.m */,
@@ -488,7 +496,9 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				A1B2C3D42026072300000001 /* MixerEnginePlugin.swift in Sources */,
+				A1B2C3D42026091200000001 /* NdiPlugin.swift in Sources */,
 				A1B2C3D42026072300000003 /* NativeAudioEngine.swift in Sources */,
+				A1B2C3D4202607230000000C /* PlaylistPlayback.swift in Sources */,
 				A1B2C3D42026072300000005 /* NativeWhipPublisher.swift in Sources */,
 				A1B2C3D42026072300000007 /* WebRTCHelpers.m in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
@@ -528,13 +538,15 @@
 			baseConfigurationReference = 506E1A9DA975FD8BC5672554 /* Pods-RunnerTests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ULKDC5T87A;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = live.soundmix.soundmixStudio.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/soundmix_studio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/soundmix_studio";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sound Mix Live Studio.app/Contents/MacOS/Sound Mix Live Studio";
 			};
 			name = Debug;
 		};
@@ -543,13 +555,15 @@
 			baseConfigurationReference = E31863442D147BAE68E1F575 /* Pods-RunnerTests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ULKDC5T87A;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = live.soundmix.soundmixStudio.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/soundmix_studio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/soundmix_studio";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sound Mix Live Studio.app/Contents/MacOS/Sound Mix Live Studio";
 			};
 			name = Release;
 		};
@@ -558,13 +572,15 @@
 			baseConfigurationReference = 1D7D9F54DE9E2FB9A2C8AAC3 /* Pods-RunnerTests.profile.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ULKDC5T87A;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = live.soundmix.soundmixStudio.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/soundmix_studio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/soundmix_studio";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sound Mix Live Studio.app/Contents/MacOS/Sound Mix Live Studio";
 			};
 			name = Profile;
 		};
@@ -609,7 +625,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -697,7 +713,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -747,7 +763,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;

@@ -133,8 +133,11 @@ class MediaMtxWebhookTest extends TestCase
 
     public function test_record_segment_complete_ignores_short_reconnect_junk(): void
     {
+        Storage::fake('mediamtx_recordings');
+
         $stream = $this->makeStream();
         $rel = $stream->mediaPath().'/2026-01-01_12-00-00-000001';
+        Storage::disk('mediamtx_recordings')->put($rel, str_repeat('x', 1024));
 
         $this->postJson('/api/webhooks/mediamtx', [
             'event' => 'record_segment_complete',
@@ -150,11 +153,44 @@ class MediaMtxWebhookTest extends TestCase
             'stream_id' => $stream->id,
             'relative_path' => $rel,
         ]);
+        $this->assertFalse(Storage::disk('mediamtx_recordings')->exists($rel));
     }
 
-    public function test_record_segment_complete_publishes_ended_event_podcast(): void
+    public function test_record_segment_complete_keeps_short_but_real_reconnect_audio(): void
+    {
+        config(['streaming.mediamtx.archive_min_segment_seconds' => 60]);
+        Storage::fake('mediamtx_recordings');
+
+        $stream = $this->makeStream();
+        Event::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'title' => 'Reconnect',
+            'status' => EventStatus::Live,
+        ]);
+        $rel = $stream->mediaPath().'/reconnect.mp4';
+        Storage::disk('mediamtx_recordings')->put($rel, str_repeat('a', 500_000));
+
+        $this->postJson('/api/webhooks/mediamtx', [
+            'event' => 'record_segment_complete',
+            'path' => $stream->mediaPath(),
+            'segment_relative' => $rel,
+            'duration_raw' => '45s',
+            'size_bytes' => 500_000,
+        ], [
+            'Authorization' => 'Bearer test-secret',
+        ])->assertNoContent();
+
+        $recording = Recording::query()->first();
+        $this->assertNotNull($recording);
+        $this->assertFalse($recording->is_public);
+        $this->assertTrue(Storage::disk('mediamtx_recordings')->exists($rel));
+    }
+
+    public function test_record_segment_complete_assembles_ended_event_into_one_podcast(): void
     {
         Storage::fake('mediamtx_recordings');
+        $this->fakeAudioConcatenator();
 
         $stream = $this->makeStream();
         $event = Event::query()->create([
@@ -165,12 +201,13 @@ class MediaMtxWebhookTest extends TestCase
             'ended_at' => now(),
         ]);
         $rel = $stream->mediaPath().'/2026-01-01_12-00-00-000001';
+        Storage::disk('mediamtx_recordings')->put($rel, str_repeat('a', 2_500_000));
 
         $this->postJson('/api/webhooks/mediamtx', [
             'event' => 'record_segment_complete',
             'path' => $stream->mediaPath(),
             'segment_relative' => $rel,
-            'duration_raw' => '1h5m0s',
+            'duration_raw' => '10m0s',
             'size_bytes' => 2_500_000,
         ], [
             'Authorization' => 'Bearer test-secret',
@@ -178,11 +215,11 @@ class MediaMtxWebhookTest extends TestCase
 
         $recording = Recording::query()->first();
         $this->assertNotNull($recording);
-        $this->assertSame(Recording::SOURCE_MEDIAMTX, $recording->source);
-        $this->assertTrue($recording->is_public);
+        $this->assertSame(Recording::SOURCE_ASSEMBLED, $recording->source);
+        $this->assertFalse($recording->is_public);
         $this->assertSame($event->id, $recording->event_id);
         $this->assertSame('Sunday Live', $recording->title);
-        $this->assertSame('3900', $recording->duration_raw);
+        $this->assertSame('600', $recording->duration_raw);
     }
 
     public function test_record_segment_complete_keeps_paused_segments_private(): void
@@ -209,6 +246,87 @@ class MediaMtxWebhookTest extends TestCase
         $recording = Recording::query()->first();
         $this->assertNotNull($recording);
         $this->assertFalse($recording->is_public);
+    }
+
+    public function test_record_segment_complete_discards_copy_when_studio_file_exists(): void
+    {
+        Storage::fake('mediamtx_recordings');
+
+        $stream = $this->makeStream();
+        $event = Event::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'title' => 'Studio wins',
+            'status' => EventStatus::Live,
+        ]);
+        $studioPath = $stream->mediaPath().'/studio.webm';
+        Storage::disk('mediamtx_recordings')->put($studioPath, str_repeat('s', 400_000));
+        Recording::query()->create([
+            'stream_id' => $stream->id,
+            'event_id' => $event->id,
+            'title' => $event->title,
+            'source' => Recording::SOURCE_STUDIO,
+            'is_public' => true,
+            'relative_path' => $studioPath,
+            'size_bytes' => 400_000,
+            'completed_at' => now(),
+        ]);
+
+        $rel = $stream->mediaPath().'/2026-01-01_12-00-00-000003.mp4';
+        Storage::disk('mediamtx_recordings')->put($rel, str_repeat('a', 900_000));
+
+        $this->postJson('/api/webhooks/mediamtx', [
+            'event' => 'record_segment_complete',
+            'path' => $stream->mediaPath(),
+            'segment_relative' => $rel,
+            'duration_raw' => '10m0s',
+            'size_bytes' => 900_000,
+        ], [
+            'Authorization' => 'Bearer test-secret',
+        ])->assertNoContent();
+
+        $this->assertSame(0, Recording::query()->where('source', Recording::SOURCE_MEDIAMTX)->count());
+        $this->assertFalse(Storage::disk('mediamtx_recordings')->exists($rel));
+        $this->assertTrue(Storage::disk('mediamtx_recordings')->exists($studioPath));
+    }
+
+    public function test_record_segment_complete_keeps_copy_when_studio_file_is_missing(): void
+    {
+        Storage::fake('mediamtx_recordings');
+
+        $stream = $this->makeStream();
+        $event = Event::query()->create([
+            'organization_id' => $stream->organization_id,
+            'stream_id' => $stream->id,
+            'title' => 'Broken studio',
+            'status' => EventStatus::Live,
+        ]);
+        Recording::query()->create([
+            'stream_id' => $stream->id,
+            'event_id' => $event->id,
+            'title' => $event->title,
+            'source' => Recording::SOURCE_STUDIO,
+            'is_public' => true,
+            'relative_path' => $stream->mediaPath().'/studio.webm',
+            'size_bytes' => 400_000,
+            'completed_at' => now(),
+        ]);
+
+        $rel = $stream->mediaPath().'/2026-01-01_12-00-00-000004.mp4';
+        Storage::disk('mediamtx_recordings')->put($rel, str_repeat('a', 900_000));
+
+        $this->postJson('/api/webhooks/mediamtx', [
+            'event' => 'record_segment_complete',
+            'path' => $stream->mediaPath(),
+            'segment_relative' => $rel,
+            'duration_raw' => '10m0s',
+            'size_bytes' => 900_000,
+        ], [
+            'Authorization' => 'Bearer test-secret',
+        ])->assertNoContent();
+
+        $this->assertNotNull(Recording::query()->where('relative_path', $rel)->first());
+        $this->assertTrue(Storage::disk('mediamtx_recordings')->exists($rel));
     }
 
     private function makeStream(): Stream

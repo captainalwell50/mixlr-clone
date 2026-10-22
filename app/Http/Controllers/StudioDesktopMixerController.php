@@ -14,6 +14,7 @@ class StudioDesktopMixerController extends Controller
 
         return view('studio-desktop-mixer', [
             'stream' => $stream,
+            'opusSendBitrate' => \App\Models\SiteSetting::opusSendBitrate(),
         ]);
     }
 

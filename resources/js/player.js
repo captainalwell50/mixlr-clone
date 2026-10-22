@@ -127,6 +127,22 @@ function syncButton(audio, btn) {
  * @param {HTMLAudioElement} audio
  * @param {{ onUserPlay?: () => boolean|void|Promise<boolean|void>, onUserPause?: () => void }} [options]
  */
+/** Peak 0–255 from the listen meter, or null if the analyser is not wired. */
+export function listenMeterPeak() {
+    if (!analyser) {
+        return null;
+    }
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) {
+        if (data[i] > peak) {
+            peak = data[i];
+        }
+    }
+    return peak;
+}
+
 export function bindStagePlayer(audio, options = {}) {
     const btn = document.getElementById('btn-play');
     const wave = document.getElementById('stage-wave');
@@ -161,8 +177,30 @@ export function bindStagePlayer(audio, options = {}) {
             }
         });
 
+        const stageVolume = document.getElementById('stage-volume');
+        if (stageVolume) {
+            stageVolume.value = String(audio.volume ?? 1);
+            stageVolume.style.setProperty('--seek-pct', `${(audio.volume ?? 1) * 100}%`);
+            stageVolume.addEventListener('input', () => {
+                const val = parseFloat(stageVolume.value);
+                audio.volume = val;
+                audio.muted = val === 0;
+                stageVolume.style.setProperty('--seek-pct', `${val * 100}%`);
+                volumeBtn?.classList.toggle('is-muted', audio.muted);
+                volumeBtn?.setAttribute('aria-label', audio.muted ? 'Unmute' : 'Mute');
+                const vol = volumeBtn?.querySelector('.icon-volume');
+                const muted = volumeBtn?.querySelector('.icon-muted');
+                vol?.classList.toggle('hidden', audio.muted);
+                muted?.classList.toggle('hidden', !audio.muted);
+            });
+        }
+
         volumeBtn?.addEventListener('click', () => {
             audio.muted = !audio.muted;
+            if (stageVolume) {
+                stageVolume.value = audio.muted ? '0' : String(audio.volume || 1);
+                stageVolume.style.setProperty('--seek-pct', `${(audio.muted ? 0 : (audio.volume || 1)) * 100}%`);
+            }
             volumeBtn.classList.toggle('is-muted', audio.muted);
             volumeBtn.setAttribute('aria-label', audio.muted ? 'Unmute' : 'Mute');
             const vol = volumeBtn.querySelector('.icon-volume');

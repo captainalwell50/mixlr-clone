@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -7,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'audio_file_extension.dart';
+import 'publisher_reconnect.dart';
 
 typedef MixerHostMessage = void Function(Map<String, dynamic> data);
 
@@ -29,6 +31,16 @@ class WindowsStudioMixer {
   double _playlistGain = 1;
   double _masterGain = 1;
   String _publish = 'idle';
+  String mixLayout = 'auto';
+  String? _claimUrl;
+  String? _authToken;
+  String? _claimId;
+  String? _whipUrl;
+  bool _wantLive = false;
+  bool _republishing = false;
+  int _reconnectAttempt = 0;
+  Timer? _reconnectTimer;
+  Timer? _disconnectGraceTimer;
 
   Future<void> start() async {
     onMessage({'type': 'ready'});
@@ -231,8 +243,23 @@ class WindowsStudioMixer {
     _emitTracks();
   }
 
-  Future<void> goLive(String whipUrl) async {
-    await stopPublish();
+  int _opusSendBitrate = 320000;
+
+  Future<void> goLive(
+    String whipUrl, {
+    String? claimUrl,
+    String? authToken,
+    int? opusSendBitrate,
+  }) async {
+    if (claimUrl != null && claimUrl.isNotEmpty) _claimUrl = claimUrl;
+    if (authToken != null && authToken.isNotEmpty) _authToken = authToken;
+    const allowed = {128000, 160000, 192000, 256000, 320000, 510000};
+    if (opusSendBitrate != null && allowed.contains(opusSendBitrate)) {
+      _opusSendBitrate = opusSendBitrate;
+    }
+    _whipUrl = whipUrl;
+    _wantLive = true;
+    await stopPublish(releaseOwnership: false);
     if (_micStream == null) {
       await armMic(deviceId: _selectedDeviceId);
     }
@@ -250,6 +277,21 @@ class WindowsStudioMixer {
       ],
     });
     _pc = pc;
+    pc.onIceConnectionState = (state) {
+      if (pc != _pc || _publish == 'replaced' || !_wantLive) return;
+      if (state == RTCIceConnectionState.RTCIceConnectionStateConnected ||
+          state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
+        _reconnectAttempt = 0;
+        _disconnectGraceTimer?.cancel();
+        _disconnectGraceTimer = null;
+        _publish = 'connected';
+        onMessage({'type': 'publish', 'state': 'connected'});
+      } else if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
+        _scheduleRepublish();
+      } else if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+        _armDisconnectGrace();
+      }
+    };
     for (final track in mic.getAudioTracks()) {
       await pc.addTrack(track, mic);
     }
@@ -259,34 +301,46 @@ class WindowsStudioMixer {
         'OfferToReceiveVideo': false,
       },
     });
-    final sdp = preferHighQualityOpus(offer.sdp ?? '');
+    final sdp = preferHighQualityOpus(offer.sdp ?? '', stereo: _publishStereo(mic), bitrate: _opusSendBitrate);
     await pc.setLocalDescription(RTCSessionDescription(sdp, 'offer'));
     await _waitForIce(pc);
-    final local = await pc.getLocalDescription();
-    if (local == null || (local.sdp ?? '').isEmpty) {
+    final gathered = await pc.getLocalDescription();
+    if (gathered == null || (gathered.sdp ?? '').isEmpty) {
       throw Exception('No local session description yet');
     }
-    final res = await http.post(
-      Uri.parse(whipUrl),
-      headers: {
-        'Content-Type': 'application/sdp',
-        'Accept': 'application/sdp',
-      },
-      body: local.sdp,
-    );
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw Exception('WHIP failed (${res.statusCode})');
+    final publishSdp = preferHighQualityOpus(gathered.sdp ?? '', stereo: _publishStereo(mic), bitrate: _opusSendBitrate);
+    await _establishClaim();
+    try {
+      final res = await http.post(
+        Uri.parse(whipUrl),
+        headers: {
+          'Content-Type': 'application/sdp',
+          'Accept': 'application/sdp',
+        },
+        body: publishSdp,
+      );
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw Exception('WHIP failed (${res.statusCode})');
+      }
+      final loc = res.headers['location'];
+      if (loc != null && loc.isNotEmpty) {
+        _whipResource = resolveWhipResource(whipUrl, loc);
+      }
+      await pc.setRemoteDescription(RTCSessionDescription(res.body, 'answer'));
+    } catch (e) {
+      await _releaseClaim();
+      rethrow;
     }
-    final loc = res.headers['location'];
-    if (loc != null && loc.isNotEmpty) {
-      _whipResource = Uri.parse(whipUrl).resolve(loc).toString();
-    }
-    await pc.setRemoteDescription(RTCSessionDescription(res.body, 'answer'));
     _publish = 'connected';
     onMessage({'type': 'publish', 'state': 'connected'});
   }
 
-  Future<void> stopPublish() async {
+  Future<void> stopPublish({bool releaseOwnership = true}) async {
+    _clearReconnectTimers();
+    if (releaseOwnership) {
+      _wantLive = false;
+      await _releaseClaim();
+    }
     final resource = _whipResource;
     _whipResource = null;
     if (resource != null) {
@@ -296,8 +350,138 @@ class WindowsStudioMixer {
     }
     await _pc?.close();
     _pc = null;
-    _publish = 'idle';
-    onMessage({'type': 'publish', 'state': 'idle'});
+    if (_publish != 'replaced') {
+      _publish = 'idle';
+      onMessage({'type': 'publish', 'state': 'idle'});
+    }
+  }
+
+  void _armDisconnectGrace() {
+    if (!_wantLive || _publish == 'replaced') return;
+    _disconnectGraceTimer?.cancel();
+    _disconnectGraceTimer = Timer(const Duration(seconds: 12), () {
+      _disconnectGraceTimer = null;
+      if (!_wantLive || _publish == 'connected' || _publish == 'replaced') return;
+      _scheduleRepublish();
+    });
+  }
+
+  void _scheduleRepublish() {
+    if (!_wantLive || _whipUrl == null || _republishing || _publish == 'replaced') return;
+    if (_reconnectTimer != null) return;
+    _publish = 'recovering';
+    onMessage({
+      'type': 'publish',
+      'state': 'recovering',
+      'message': 'Audio link dropped — reconnecting…',
+    });
+    final seconds = (1 << _reconnectAttempt.clamp(0, 4)).clamp(2, 30);
+    _reconnectAttempt = (_reconnectAttempt + 1).clamp(0, 5);
+    _reconnectTimer = Timer(Duration(seconds: seconds), () {
+      _reconnectTimer = null;
+      unawaited(_republish());
+    });
+  }
+
+  Future<void> _republish() async {
+    final url = _whipUrl;
+    if (!_wantLive || url == null || _republishing || _publish == 'replaced') return;
+    _republishing = true;
+    try {
+      if (await _ownershipLost()) {
+        await _markReplaced();
+        return;
+      }
+      await goLive(url);
+    } catch (_) {
+      _publish = 'failed';
+      onMessage({'type': 'publish', 'state': 'failed'});
+      _scheduleRepublish();
+    } finally {
+      _republishing = false;
+    }
+  }
+
+  Future<void> _markReplaced() async {
+    _wantLive = false;
+    _publish = 'replaced';
+    _clearReconnectTimers();
+    final pc = _pc;
+    _pc = null;
+    _whipResource = null;
+    await pc?.close();
+    onMessage({
+      'type': 'publish',
+      'state': 'replaced',
+      'message': publisherReplacedNotice,
+    });
+  }
+
+  Future<void> _establishClaim() async {
+    final url = _claimUrl;
+    final token = _authToken;
+    if (url == null || token == null || token.isEmpty) return;
+    _claimId = newPublisherClaimId();
+    try {
+      await _postClaim(intent: 'claim', claim: _claimId!);
+    } catch (_) {}
+  }
+
+  Future<void> _releaseClaim() async {
+    final claim = _claimId;
+    _claimId = null;
+    if (claim == null) return;
+    try {
+      await _postClaim(intent: 'release', claim: claim);
+    } catch (_) {}
+  }
+
+  Future<bool> _ownershipLost() async {
+    final claim = _claimId;
+    if (claim == null || _claimUrl == null) return false;
+    try {
+      final body = await _postClaim(intent: 'check', claim: claim);
+      return decidePublisherReconnect(
+            owns: body['owns'] == true,
+            replaced: body['replaced'] == true,
+          ) ==
+          PublisherReconnectDecision.replaced;
+    } catch (_) {
+      return decidePublisherReconnect(checkFailed: true) ==
+          PublisherReconnectDecision.replaced;
+    }
+  }
+
+  Future<Map<String, dynamic>> _postClaim({
+    required String intent,
+    required String claim,
+  }) async {
+    final url = _claimUrl;
+    final token = _authToken;
+    if (url == null || token == null || token.isEmpty) {
+      throw Exception('Publisher claim is not configured.');
+    }
+    final res = await http.post(
+      Uri.parse(url),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'claim': claim, 'intent': intent}),
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception('Publisher claim failed (${res.statusCode}).');
+    }
+    final decoded = jsonDecode(res.body);
+    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+  }
+
+  void _clearReconnectTimers() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _disconnectGraceTimer?.cancel();
+    _disconnectGraceTimer = null;
   }
 
   Future<void> dispose() async {
@@ -306,10 +490,23 @@ class WindowsStudioMixer {
     await _replaceMicStream(null);
   }
 
+  void setLayout(String mode) {
+    mixLayout = (mode == 'mono' || mode == 'stereo') ? mode : 'auto';
+  }
+
+  bool _publishStereo(MediaStream mic) {
+    return mixLayoutPublishesStereo(mixLayout);
+  }
+
   dynamic _audioConstraints(String? deviceId) {
     final audio = Map<String, dynamic>.from(studioCleanAudioConstraints());
     if (deviceId != null && deviceId.isNotEmpty && deviceId != 'default') {
       audio['deviceId'] = deviceId;
+    }
+    if (mixLayout == 'mono') {
+      audio['channelCount'] = {'ideal': 1};
+    } else if (mixLayout == 'stereo') {
+      audio['channelCount'] = {'ideal': 2};
     }
     return audio;
   }
@@ -425,7 +622,6 @@ Map<String, dynamic> studioCleanAudioConstraints() {
     'echoCancellation': false,
     'noiseSuppression': false,
     'autoGainControl': false,
-    'channelCount': {'ideal': 2},
     'sampleRate': {'ideal': 48000},
     'googEchoCancellation': false,
     'googNoiseSuppression': false,
@@ -434,10 +630,94 @@ Map<String, dynamic> studioCleanAudioConstraints() {
   };
 }
 
-String preferHighQualityOpus(String sdp) {
-  const bitrate = 510000;
-  const fmtp =
-      'minptime=20;useinbandfec=1;usedtx=0;stereo=1;sprop-stereo=1;maxaveragebitrate=$bitrate;maxplaybackrate=48000';
+/// Programme-bus stereo for WHIP. Auto is stereo-capable; only Mono collapses.
+/// Mic channelCount remains available via [mediaStreamLooksStereo] for diagnostics.
+bool mixLayoutPublishesStereo(String mixLayout) {
+  return mixLayout != 'mono';
+}
+
+bool mediaStreamLooksStereo(MediaStream stream) {
+  for (final track in stream.getAudioTracks()) {
+    try {
+      final n = track.getSettings()['channelCount'];
+      if (n is num && n >= 2) {
+        return true;
+      }
+    } catch (_) {}
+  }
+  return false;
+}
+
+String resolveWhipResource(String whipUrl, String loc) {
+  final base = Uri.parse(whipUrl);
+  var abs = base.resolve(loc);
+  final host = abs.host;
+  final private = host == 'localhost' ||
+      host == '127.0.0.1' ||
+      host.startsWith('172.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.');
+  final mtxPort = abs.hasPort && (abs.port == 8889 || abs.port == 8888);
+  if (private || mtxPort) {
+    var path = abs.path;
+    if (path.startsWith('/live/')) {
+      path = '/rtc$path';
+    }
+    return base.replace(path: path, query: abs.hasQuery ? abs.query : null).toString();
+  }
+  if (abs.host == base.host &&
+      abs.path.startsWith('/live/') &&
+      base.path.startsWith('/rtc/')) {
+    return abs.replace(path: '/rtc${abs.path}').toString();
+  }
+  return abs.toString();
+}
+
+String stripNonOpusAudioCodecs(String sdp) {
+  final opusPts = <String>{};
+  for (final match in RegExp(
+    r'^a=rtpmap:(\d+) opus/48000',
+    caseSensitive: false,
+    multiLine: true,
+  ).allMatches(sdp)) {
+    opusPts.add(match.group(1)!);
+  }
+  if (opusPts.isEmpty) return sdp;
+  final lines = sdp.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+  final out = <String>[];
+  var inAudio = false;
+  for (final line in lines) {
+    if (line.startsWith('m=audio ')) {
+      inAudio = true;
+      final parts = line.split(' ');
+      final kept = <String>[
+        ...parts.take(3),
+        ...parts.skip(3).where(opusPts.contains),
+      ];
+      out.add(kept.join(' '));
+      continue;
+    }
+    if (line.startsWith('m=')) {
+      inAudio = false;
+    }
+    if (inAudio) {
+      final pt = RegExp(r'^a=(?:rtpmap|fmtp|rtcp-fb):(\d+)\b').firstMatch(line);
+      if (pt != null && !opusPts.contains(pt.group(1))) {
+        continue;
+      }
+    }
+    out.add(line);
+  }
+  return out.join('\n');
+}
+
+String preferHighQualityOpus(String sdp, {bool stereo = false, int bitrate = 320000}) {
+  sdp = stripNonOpusAudioCodecs(sdp);
+  const allowed = {128000, 160000, 192000, 256000, 320000, 510000};
+  if (!allowed.contains(bitrate)) bitrate = 320000;
+  final flag = stereo ? 1 : 0;
+  final fmtp =
+      'minptime=20;useinbandfec=1;usedtx=0;stereo=$flag;sprop-stereo=$flag;maxaveragebitrate=$bitrate;maxplaybackrate=48000';
   final lines = sdp.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
   final opusPts = <String>{};
   for (final line in lines) {

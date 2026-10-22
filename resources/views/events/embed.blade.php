@@ -42,6 +42,9 @@
                     data-prefer-hls="{{ ! empty($preferHls) ? '1' : '0' }}"
                     data-stream-status="live"
                     data-status-url="{{ route('events.status', $event) }}"
+                    data-title="{{ $event->title }}"
+                    data-artist="{{ $event->organization->name }}"
+                    data-artwork="{{ $artwork }}"
                     class="hidden"
                 ></div>
             @else

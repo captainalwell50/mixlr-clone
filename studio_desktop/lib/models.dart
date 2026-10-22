@@ -309,6 +309,7 @@ class PublishInfo {
     this.whepUrl,
     this.stream,
     this.event,
+    this.opusSendBitrate = 320000,
   });
 
   final String whipUrl;
@@ -316,6 +317,7 @@ class PublishInfo {
   final String? whepUrl;
   final StreamSummary? stream;
   final EventSummary? event;
+  final int opusSendBitrate;
 
   factory PublishInfo.fromJson(Map<String, dynamic> json) {
     final streamJson = json['stream'] as Map<String, dynamic>?;
@@ -328,6 +330,7 @@ class PublishInfo {
           ? null
           : StreamSummary.fromJson(streamJson),
       event: eventJson == null ? null : EventSummary.fromJson(eventJson),
+      opusSendBitrate: json['opus_send_bitrate'] as int? ?? 320000,
     );
   }
 }

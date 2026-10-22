@@ -10,7 +10,7 @@
     </style>
     @vite(['resources/js/desktop-mixer.js'])
 </head>
-<body>
+<body data-opus-bitrate="{{ $opusSendBitrate ?? 320000 }}">
     <div id="boot">Sound Mix mixer engine</div>
     <audio id="cue-audio" playsinline></audio>
 </body>

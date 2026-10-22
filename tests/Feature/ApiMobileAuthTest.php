@@ -149,6 +149,7 @@ class ApiMobileAuthTest extends TestCase
             'slug' => 'church-'.uniqid(),
             'is_public' => true,
         ]);
+        $this->grantFreeBroadcast($org);
 
         return Stream::query()->create([
             'organization_id' => $org->id,

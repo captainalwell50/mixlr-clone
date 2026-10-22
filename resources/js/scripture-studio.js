@@ -1259,7 +1259,7 @@ export function bindScriptureStudio(root) {
 
     window.addEventListener('live-board-changed', (ev) => {
         const mode = ev?.detail?.mode;
-        if (mode === 'song') {
+        if (mode === 'song' || mode === 'ndi') {
             setStatus('No scripture on listen');
         }
     });
@@ -1277,7 +1277,7 @@ export function bindScriptureStudio(root) {
                     setStatus(`Showing ${selectedRef} on listen`);
                     return;
                 }
-                if (data.live_board === 'song') {
+                if (data.live_board === 'song' || data.live_board === 'ndi') {
                     setStatus('No scripture on listen');
                 }
             })

@@ -12,7 +12,9 @@ Run **Laravel + MediaMTX + Caddy on one Azure Linux VM**. This avoids Azure App 
 | DB | SQLite on small churches, or Azure Database for MySQL Flexible Server |
 | Recordings | `storage/app/mediamtx-recordings` (Docker volume bind) |
 
-Suggested size: **Ubuntu 24.04**, VM size **B2s** or larger, public IP, DNS A record to that IP.
+Suggested size: **Ubuntu 24.04**, idle **B2s**, peak **D2as_v7** (or B4ms). Public IP must stay **Static**. With CDN HLS, idle B2s is enough for the website + one Studio publish; scale up around services.
+
+See **§7 Origin VM autoscale** below.
 
 ## 1. Azure resources
 
@@ -31,7 +33,7 @@ Suggested size: **Ubuntu 24.04**, VM size **B2s** or larger, public IP, DNS A re
 ```bash
 sudo apt update
 sudo apt install -y docker.io docker-compose-v2 php8.4-fpm php8.4-cli php8.4-sqlite3 \
-  php8.4-mysql php8.4-xml php8.4-mbstring php8.4-curl php8.4-zip unzip git curl
+  php8.4-mysql php8.4-xml php8.4-mbstring php8.4-curl php8.4-zip unzip git curl ffmpeg
 sudo usermod -aG docker "$USER"
 # log out/in for docker group
 ```
@@ -70,6 +72,10 @@ APP_NAME="Your Church Live"
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://stream.yourchurch.org
+
+# Storage UTC; on-screen times Nigeria WAT (GMT+1). Also: sudo timedatectl set-timezone Africa/Lagos
+APP_TIMEZONE=UTC
+APP_DISPLAY_TIMEZONE=Africa/Lagos
 
 REGISTRATION_ENABLED=false
 ADMIN_EMAIL=admin@yourchurch.org
@@ -160,6 +166,45 @@ sudo crontab -u www-data -e
 5. Spot-check Listen on a phone (cellular) and a laptop.
 6. After service: Stop in Studio; confirm Archive lists the recording; download from admin if needed.
 7. If Studio fails ICE: verify NSG UDP 8189 and `webrtcAdditionalHosts`.
+
+## 7. Origin VM autoscale (smaller when idle)
+
+The VM cannot deallocate *itself* and then start again. A job **outside** the guest (Azure Automation, Cloud Shell, or `./deploy/azure/reconcile-vm-size.sh` on a laptop) polls:
+
+`GET https://soundmix.live/api/ops/vm-capacity`  
+Header: `Authorization: Bearer $AZURE_VM_CAPACITY_TOKEN`
+
+Response includes `desired` (`idle`|`peak`) and `desired_sku`. Peak when a stream is live, an event is live/paused, a scheduled event is within 45 minutes, admin “hold peak”, or a show ended within the grace window. Otherwise idle.
+
+### One-time Azure setup
+
+1. Confirm the public IP is **Static** (script does this before resize).
+2. Production `.env`:
+
+```env
+AZURE_VM_AUTOSCALE_ENABLED=true
+AZURE_VM_RESOURCE_GROUP=<rg>
+AZURE_VM_NAME=<vm>
+AZURE_VM_SKU_IDLE=Standard_B2s
+AZURE_VM_SKU_PEAK=Standard_D2as_v7
+AZURE_VM_IDLE_GRACE_MINUTES=20
+AZURE_VM_PEAK_LOOKAHEAD_MINUTES=45
+AZURE_VM_CAPACITY_TOKEN=<long-random>
+```
+
+3. Import `deploy/azure/autoscale-runbook.ps1` into an **Azure Automation** account (system-assigned identity + **Virtual Machine Contributor** on the VM). Schedule every 10 minutes. Set variables `CapacityUrl`, `CapacityToken`, `ResourceGroup`, `VmName`.
+
+Or run from a logged-in machine:
+
+```bash
+export AZURE_VM_CAPACITY_TOKEN=... AZURE_VM_RESOURCE_GROUP=... AZURE_VM_NAME=...
+# DRY_RUN=1 ./deploy/azure/reconcile-vm-size.sh
+./deploy/azure/reconcile-vm-size.sh
+```
+
+Admin → **Settings** shows desired idle/peak and can hold peak for N hours before a large service.
+
+**Expect ~2–5 minutes of downtime** on each resize (Studio disconnects; go live again after the VM is back). Do not resize while a service is on air — the API will keep `desired=peak` until idle grace expires.
 
 ## Troubleshooting
 

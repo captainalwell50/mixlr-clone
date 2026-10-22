@@ -30,6 +30,7 @@ class PlanController extends Controller
             'currency' => config('services.paystack.currency', env('PAYSTACK_CURRENCY', 'NGN')),
             'interval' => 'monthly',
             'is_active' => true,
+            'is_custom' => false,
             'sort_order' => (int) Plan::query()->max('sort_order') + 1,
             'limits' => PlanFeatureCatalog::defaultLimits(),
         ]);
@@ -58,6 +59,7 @@ class PlanController extends Controller
             'interval' => $validated['interval'],
             'limits' => PlanFeatureCatalog::limitsFromInput($request->all()),
             'is_active' => $request->boolean('is_active', true),
+            'is_custom' => $request->boolean('is_custom'),
             'sort_order' => (int) $validated['sort_order'],
         ]);
 
@@ -92,6 +94,7 @@ class PlanController extends Controller
             'interval' => $validated['interval'],
             'limits' => PlanFeatureCatalog::limitsFromInput($request->all()),
             'is_active' => $request->boolean('is_active'),
+            'is_custom' => $request->boolean('is_custom'),
             'sort_order' => (int) $validated['sort_order'],
         ])->save();
 
@@ -131,6 +134,7 @@ class PlanController extends Controller
             'interval' => ['required', 'in:monthly,yearly'],
             'sort_order' => ['required', 'integer', 'min:0', 'max:9999'],
             'is_active' => ['sometimes', 'boolean'],
+            'is_custom' => ['sometimes', 'boolean'],
             'max_streams' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'max_recordings' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'storage_gb' => ['nullable', 'integer', 'min:0', 'max:10240'],
