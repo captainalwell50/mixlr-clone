@@ -46,33 +46,124 @@
             <p class="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Your personal name and sign-in credentials.</p>
         </div>
 
-        <div>
-            <label for="name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-zinc-300">
-                Full Name
-            </label>
-            <input
-                id="name"
-                name="profile_name"
-                type="text"
-                readonly
-                value="{{ old('name', $user->name) }}"
-                class="auth-input cursor-not-allowed mt-1.5"
-            >
+        <form method="POST" action="{{ route('account.update') }}" class="space-y-4">
+            @csrf
+            @method('PUT')
+
+            <div class="auth-field-group">
+                <label for="name" class="auth-label text-slate-700 dark:text-zinc-300">
+                    Full Name <span class="text-red-500 dark:text-red-400">*</span>
+                </label>
+                <input
+                    id="name"
+                    name="name"
+                    type="text"
+                    required
+                    value="{{ old('name', $user->name) }}"
+                    class="auth-input @error('name') is-invalid @enderror mt-1.5"
+                    aria-invalid="{{ $errors->has('name') ? 'true' : 'false' }}"
+                    placeholder="Enter your full name..."
+                >
+                @error('name')
+                    <p class="auth-error-msg" role="alert">
+                        <span>{{ $message }}</span>
+                    </p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="email" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-zinc-400">
+                    Email Address
+                </label>
+                <input
+                    id="email"
+                    type="email"
+                    value="{{ $user->email }}"
+                    disabled
+                    class="auth-input cursor-not-allowed mt-1.5 opacity-70"
+                >
+                <p class="mt-1 text-[11px] text-slate-500 dark:text-zinc-500">Contact a platform administrator to update your account email address.</p>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button
+                    type="submit"
+                    class="auth-btn-primary sm:w-auto px-6 h-11 text-xs"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                    <span>Save profile</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- CONNECTED ACCOUNTS -->
+    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-5 sm:p-6 space-y-4 shadow-sm dark:shadow-none">
+        <div class="border-b border-zinc-100 dark:border-zinc-800/80 pb-3">
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <svg class="h-4 w-4 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+                </svg>
+                Connected Accounts
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Manage external sign-in providers linked to your SoundMix profile.</p>
         </div>
 
-        <div>
-            <label for="email" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-zinc-400">
-                Email Address
-            </label>
-            <input
-                id="email"
-                type="email"
-                value="{{ $user->email }}"
-                disabled
-                class="auth-input cursor-not-allowed mt-1.5"
-            >
-            <p class="mt-1 text-[11px] text-slate-500 dark:text-zinc-500">Contact a platform administrator to update your account email address.</p>
+        <div class="flex items-center justify-between p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/40">
+            <div class="flex items-center gap-3">
+                <div class="h-8 w-8 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center shadow-sm">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-xs font-semibold text-slate-900 dark:text-white">Google</p>
+                    @if ($user->hasGoogleIdentity())
+                        @php $googleIdentity = $user->googleIdentity(); @endphp
+                        <p class="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium mt-0.5">
+                            <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                            Connected ({{ $googleIdentity?->provider_email ?: $user->email }})
+                        </p>
+                    @else
+                        <p class="text-[11px] text-slate-500 dark:text-zinc-500 mt-0.5">Not connected</p>
+                    @endif
+                </div>
+            </div>
+
+            <div>
+                @if ($user->hasGoogleIdentity())
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                            Connected
+                        </span>
+                        @if ($user->hasPassword())
+                            <form method="POST" action="{{ route('account.identities.destroy', 'google') }}" onsubmit="return confirm('Disconnect Google sign-in from your account?');" class="inline">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="text-[11px] font-medium text-red-600 dark:text-red-400 hover:underline px-1.5 py-0.5">
+                                    Disconnect
+                                </button>
+                            </form>
+                        @endif
+                    </div>
+                @else
+                    <a href="{{ route('auth.google', ['intended' => route('account.edit')]) }}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm">
+                        Connect Google
+                    </a>
+                @endif
+            </div>
         </div>
+
+        @if (! $user->hasPassword() && $user->hasGoogleIdentity())
+            <p class="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg p-2.5">
+                Your account is authenticated via Google. You can set a local password below to also enable email &amp; password sign-in.
+            </p>
+        @endif
     </div>
 
     <!-- 2. PASSWORD & SECURITY -->
@@ -82,51 +173,54 @@
                 <span class="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">2</span>
                 Password &amp; Security
             </h2>
-            <p class="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Security & Password: Update your credentials to protect your broadcasting account.</p>
+            <p class="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Security & Password: Update your credentials to protect your account.</p>
         </div>
 
         <form method="POST" action="{{ route('account.update') }}" class="space-y-4">
             @csrf
             @method('PUT')
-            <input type="hidden" name="name" value="{{ old('name', $user->name) }}">
 
-            <div class="auth-field-group">
-                <label for="current_password" class="auth-label text-slate-700 dark:text-zinc-300">
-                    Current password <span class="text-red-500 dark:text-red-400">*</span>
-                </label>
-                <div class="auth-input-password-wrap">
-                    <input
-                        id="current_password"
-                        type="password"
-                        name="current_password"
-                        required
-                        autocomplete="current-password"
-                        placeholder="Enter current password..."
-                        aria-invalid="{{ $errors->has('current_password') ? 'true' : 'false' }}"
-                        class="auth-input @error('current_password') is-invalid @enderror"
-                    >
-                    <button
-                        type="button"
-                        class="auth-password-toggle"
-                        aria-label="Show current password"
-                        title="Show current password"
-                        onclick="toggleAuthPassword(this)"
-                    >
-                        <svg class="auth-eye-open h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178Z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                        </svg>
-                        <svg class="auth-eye-closed hidden h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" />
-                        </svg>
-                    </button>
+            @if ($user->hasPassword())
+                <div class="auth-field-group">
+                    <label for="current_password" class="auth-label text-slate-700 dark:text-zinc-300">
+                        Current password <span class="text-red-500 dark:text-red-400">*</span>
+                    </label>
+                    <div class="auth-input-password-wrap">
+                        <input
+                            id="current_password"
+                            type="password"
+                            name="current_password"
+                            required
+                            autocomplete="current-password"
+                            placeholder="Enter current password..."
+                            aria-invalid="{{ $errors->has('current_password') ? 'true' : 'false' }}"
+                            class="auth-input @error('current_password') is-invalid @enderror"
+                        >
+                        <button
+                            type="button"
+                            class="auth-password-toggle"
+                            aria-label="Show current password"
+                            title="Show current password"
+                            onclick="toggleAuthPassword(this)"
+                        >
+                            <svg class="auth-eye-open h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            </svg>
+                            <svg class="auth-eye-closed hidden h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" />
+                            </svg>
+                        </button>
+                    </div>
+                    @error('current_password')
+                        <p class="auth-error-msg" role="alert">
+                            <span>{{ $message }}</span>
+                        </p>
+                    @enderror
                 </div>
-                @error('current_password')
-                    <p class="auth-error-msg" role="alert">
-                        <span>{{ $message }}</span>
-                    </p>
-                @enderror
-            </div>
+            @else
+                <input type="hidden" name="current_password" value="">
+            @endif
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="auth-field-group">
@@ -160,11 +254,13 @@
                             </svg>
                         </button>
                     </div>
-                    @error('password')
-                        <p class="auth-error-msg" role="alert">
-                            <span>{{ $message }}</span>
-                        </p>
-                    @enderror
+                    @if (! old('confirm'))
+                        @error('password')
+                            <p class="auth-error-msg" role="alert">
+                                <span>{{ $message }}</span>
+                            </p>
+                        @enderror
+                    @endif
                 </div>
 
                 <div class="auth-field-group">
@@ -308,9 +404,9 @@
                     placeholder="Enter current password..."
                     class="mt-1.5 w-full rounded-lg border border-red-300 dark:border-red-900/60 bg-white dark:bg-zinc-900 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-600 focus:border-red-500 focus:ring-1 focus:ring-red-500"
                 >
-                @error('password')
-                    <span class="mt-1 block text-xs text-red-600 dark:text-red-400">{{ $message }}</span>
-                @enderror
+                @if (old('confirm') && $errors->has('password'))
+                    <span class="mt-1 block text-xs text-red-600 dark:text-red-400">{{ $errors->first('password') }}</span>
+                @endif
             </div>
 
             <button
